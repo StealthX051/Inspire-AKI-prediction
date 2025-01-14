@@ -1,0 +1,143 @@
+{
+    "uid": "090fce5c-9a8a-49c8-a308-2add14f838f3",
+    "name": "82_CatBoost",
+    "preprocessing": [
+        {
+            "kmeans": {
+                "new_features": [
+                    "Dist_Cluster_0",
+                    "Dist_Cluster_1",
+                    "Dist_Cluster_2",
+                    "Dist_Cluster_3",
+                    "Dist_Cluster_4",
+                    "Dist_Cluster_5",
+                    "Dist_Cluster_6",
+                    "Dist_Cluster_7",
+                    "Dist_Cluster_8",
+                    "Dist_Cluster_9",
+                    "Dist_Cluster_10",
+                    "Dist_Cluster_11",
+                    "Dist_Cluster_12",
+                    "Dist_Cluster_13",
+                    "Dist_Cluster_14",
+                    "Dist_Cluster_15",
+                    "Dist_Cluster_16",
+                    "Dist_Cluster_17",
+                    "Cluster"
+                ],
+                "result_file": "82_CatBoost/kmeans_fold_0.joblib",
+                "input_columns": [
+                    "age",
+                    "sex",
+                    "emop",
+                    "bmi",
+                    "andur",
+                    "preop_hb",
+                    "preop_platelet",
+                    "preop_wbc",
+                    "preop_aptt",
+                    "preop_ptinr",
+                    "preop_glucose",
+                    "preop_bun",
+                    "preop_albumin",
+                    "preop_ast",
+                    "preop_alt",
+                    "preop_creatinine",
+                    "preop_sodium",
+                    "preop_potassium"
+                ]
+            },
+            "ml_task": "binary_classification",
+            "params": {
+                "columns_preprocessing": {},
+                "target_preprocessing": [
+                    "na_exclude"
+                ],
+                "ml_task": "binary_classification",
+                "kmeans_features": {
+                    "results_path": "mljar_results_improved"
+                }
+            }
+        }
+    ],
+    "learners": [
+        {
+            "library_version": "1.2.7",
+            "algorithm_name": "CatBoost",
+            "algorithm_short_name": "CatBoost",
+            "uid": "e389e717-d5de-4bb7-8022-d935b71ee9ff",
+            "params": {
+                "model_type": "CatBoost",
+                "ml_task": "binary_classification",
+                "n_jobs": -1,
+                "seed": 1235,
+                "learning_rate": 0.05,
+                "depth": 8,
+                "rsm": 0.7,
+                "loss_function": "Logloss",
+                "eval_metric": "AUC",
+                "explain_level": 2
+            },
+            "name": "learner_fold_0",
+            "best_ntree_limit": 485
+        }
+    ],
+    "params": {
+        "additional": {
+            "max_rounds": 10000,
+            "early_stopping_rounds": 50,
+            "max_rows_limit": null,
+            "max_cols_limit": null
+        },
+        "preprocessing": {
+            "columns_preprocessing": {},
+            "target_preprocessing": [
+                "na_exclude"
+            ],
+            "ml_task": "binary_classification",
+            "kmeans_features": {
+                "results_path": "mljar_results_improved"
+            }
+        },
+        "validation_strategy": {
+            "validation_type": "split",
+            "train_ratio": 0.9,
+            "shuffle": true,
+            "stratify": true,
+            "X_path": "mljar_results_improved/X.data",
+            "y_path": "mljar_results_improved/y.data",
+            "results_path": "mljar_results_improved"
+        },
+        "learner": {
+            "model_type": "CatBoost",
+            "ml_task": "binary_classification",
+            "n_jobs": -1,
+            "seed": 1235,
+            "learning_rate": 0.05,
+            "depth": 8,
+            "rsm": 0.7,
+            "loss_function": "Logloss",
+            "eval_metric": "AUC",
+            "explain_level": 2
+        },
+        "automl_random_state": 1234,
+        "ml_task": "binary_classification",
+        "explain_level": 2,
+        "name": "82_CatBoost",
+        "status": "initialized",
+        "final_loss": null,
+        "train_time": null,
+        "data_type": "original_kmeans_features",
+        "max_time_for_learner": 360.0
+    },
+    "saved": [
+        "82_CatBoost/learner_fold_0.catboost"
+    ],
+    "predictions_fname": "82_CatBoost/predictions_validation.csv",
+    "metric_name": "auc",
+    "final_loss": "-0.9839678716917323",
+    "train_time": 15.517504215240479,
+    "is_stacked": false,
+    "joblib_version": "1.4.2",
+    "threshold": 0.02679912043382352
+}

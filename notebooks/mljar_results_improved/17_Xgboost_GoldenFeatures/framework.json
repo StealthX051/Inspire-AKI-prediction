@@ -1,0 +1,183 @@
+{
+    "uid": "0465d08d-b839-459d-a9be-8b6693bec7af",
+    "name": "17_Xgboost_GoldenFeatures",
+    "preprocessing": [
+        {
+            "golden_features": {
+                "new_features": [
+                    {
+                        "feature1": "emop",
+                        "feature2": "preop_albumin",
+                        "operation": "diff",
+                        "score": 0.0196013446
+                    },
+                    {
+                        "feature1": "preop_glucose",
+                        "feature2": "preop_hb",
+                        "operation": "ratio",
+                        "score": 0.0199189992
+                    },
+                    {
+                        "feature1": "preop_hb",
+                        "feature2": "preop_glucose",
+                        "operation": "ratio",
+                        "score": 0.0199189992
+                    },
+                    {
+                        "feature1": "preop_hb",
+                        "feature2": "sex",
+                        "operation": "sum",
+                        "score": 0.0202197214
+                    },
+                    {
+                        "feature1": "preop_ast",
+                        "feature2": "emop",
+                        "operation": "ratio",
+                        "score": 0.0202910352
+                    },
+                    {
+                        "feature1": "preop_ast",
+                        "feature2": "emop",
+                        "operation": "multiply",
+                        "score": 0.0202910352
+                    },
+                    {
+                        "feature1": "emop",
+                        "feature2": "preop_ast",
+                        "operation": "ratio",
+                        "score": 0.020340929
+                    },
+                    {
+                        "feature1": "preop_albumin",
+                        "feature2": "emop",
+                        "operation": "ratio",
+                        "score": 0.0206678623
+                    },
+                    {
+                        "feature1": "preop_albumin",
+                        "feature2": "emop",
+                        "operation": "multiply",
+                        "score": 0.0206678623
+                    },
+                    {
+                        "feature1": "preop_platelet",
+                        "feature2": "preop_alt",
+                        "operation": "diff",
+                        "score": 0.020911995
+                    }
+                ],
+                "new_columns": [
+                    "emop_diff_preop_albumin",
+                    "preop_glucose_ratio_preop_hb",
+                    "preop_hb_ratio_preop_glucose",
+                    "preop_hb_sum_sex",
+                    "preop_ast_ratio_emop",
+                    "preop_ast_multiply_emop",
+                    "emop_ratio_preop_ast",
+                    "preop_albumin_ratio_emop",
+                    "preop_albumin_multiply_emop",
+                    "preop_platelet_diff_preop_alt"
+                ],
+                "ml_task": "binary_classification"
+            },
+            "ml_task": "binary_classification",
+            "params": {
+                "columns_preprocessing": {},
+                "target_preprocessing": [
+                    "na_exclude"
+                ],
+                "ml_task": "binary_classification",
+                "golden_features": {
+                    "results_path": "mljar_results_improved",
+                    "ml_task": "binary_classification",
+                    "n_jobs": -1
+                }
+            }
+        }
+    ],
+    "learners": [
+        {
+            "library_version": "2.1.2",
+            "algorithm_name": "Extreme Gradient Boosting",
+            "algorithm_short_name": "Xgboost",
+            "uid": "243f5981-34b4-4a33-9d41-775bbf0b11de",
+            "params": {
+                "model_type": "Xgboost",
+                "ml_task": "binary_classification",
+                "n_jobs": -1,
+                "seed": 1241,
+                "objective": "binary:logistic",
+                "eta": 0.05,
+                "max_depth": 8,
+                "min_child_weight": 5,
+                "subsample": 0.5,
+                "colsample_bytree": 0.8,
+                "eval_metric": "auc",
+                "explain_level": 2
+            },
+            "name": "learner_fold_0"
+        }
+    ],
+    "params": {
+        "additional": {
+            "max_rounds": 10000,
+            "early_stopping_rounds": 50,
+            "max_rows_limit": null,
+            "max_cols_limit": null
+        },
+        "preprocessing": {
+            "columns_preprocessing": {},
+            "target_preprocessing": [
+                "na_exclude"
+            ],
+            "ml_task": "binary_classification",
+            "golden_features": {
+                "results_path": "mljar_results_improved",
+                "ml_task": "binary_classification",
+                "n_jobs": -1
+            }
+        },
+        "validation_strategy": {
+            "validation_type": "split",
+            "train_ratio": 0.9,
+            "shuffle": true,
+            "stratify": true,
+            "X_path": "mljar_results_improved/X.data",
+            "y_path": "mljar_results_improved/y.data",
+            "results_path": "mljar_results_improved"
+        },
+        "learner": {
+            "model_type": "Xgboost",
+            "ml_task": "binary_classification",
+            "n_jobs": -1,
+            "seed": 1241,
+            "objective": "binary:logistic",
+            "eta": 0.05,
+            "max_depth": 8,
+            "min_child_weight": 5,
+            "subsample": 0.5,
+            "colsample_bytree": 0.8,
+            "eval_metric": "auc",
+            "explain_level": 2
+        },
+        "automl_random_state": 1234,
+        "ml_task": "binary_classification",
+        "explain_level": 2,
+        "name": "17_Xgboost_GoldenFeatures",
+        "status": "initialized",
+        "final_loss": null,
+        "train_time": null,
+        "data_type": "original_golden_features",
+        "max_time_for_learner": 360.0
+    },
+    "saved": [
+        "17_Xgboost_GoldenFeatures/learner_fold_0.xgboost.json"
+    ],
+    "predictions_fname": "17_Xgboost_GoldenFeatures/predictions_validation.csv",
+    "metric_name": "auc",
+    "final_loss": "-0.9814378314672952",
+    "train_time": 12.496142864227295,
+    "is_stacked": false,
+    "joblib_version": "1.4.2",
+    "threshold": 0.06720642745494843
+}

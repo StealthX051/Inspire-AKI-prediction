@@ -1,0 +1,16 @@
+if (preop_albumin > 3.05) and (andur <= 707.5) and (preop_hb > 7.85) then class: 0 (proba: 99.85%) | based on 59,238 samples
+
+if (preop_albumin <= 3.05) and (preop_bun <= 26.5) and (preop_sodium <= 146.0) then class: 0 (proba: 96.75%) | based on 1,506 samples
+
+if (preop_albumin <= 3.05) and (preop_bun > 26.5) and (preop_creatinine > 0.595) then class: 0 (proba: 88.73%) | based on 355 samples
+
+if (preop_albumin > 3.05) and (andur > 707.5) and (preop_potassium > 3.3) then class: 0 (proba: 93.97%) | based on 116 samples
+
+if (preop_albumin > 3.05) and (andur <= 707.5) and (preop_hb <= 7.85) then class: 0 (proba: 87.8%) | based on 41 samples
+
+if (preop_albumin <= 3.05) and (preop_bun > 26.5) and (preop_creatinine <= 0.595) then class: 0 (proba: 52.38%) | based on 21 samples
+
+if (preop_albumin <= 3.05) and (preop_bun <= 26.5) and (preop_sodium > 146.0) then class: 0 (proba: 66.67%) | based on 12 samples
+
+if (preop_albumin > 3.05) and (andur > 707.5) and (preop_potassium <= 3.3) then class: 1 (proba: 100.0%) | based on 3 samples
+
