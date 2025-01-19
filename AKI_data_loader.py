@@ -1,101 +1,105 @@
 import os
-
-import torch
-from torch.utils.data import Dataset, DataLoader
-from pathlib import Path
 import pandas as pd
-from multiprocessing import Pool
-from tqdm import tqdm
+from torch.utils.data import Dataset, DataLoader
+from tqdm import tqdm\
+
+from pathlib import Path
 
 
 class TimeSeriesDataset(Dataset):
-    def __init__(self, data_dir, preopdata_file):
+    def __init__(self, vitals_file, preopdata_file):
         """
-        Custom Dataset for preloading all time series and preopdata.
+        Custom Dataset for loading time series data grouped by op_id directly from vitals.csv.
 
         Args:
-            data_dir (str or Path): The root directory containing per-op_id directories of time series files.
-            preopdata_file (str or Path): The CSV file containing preopdata for each op_id.
+            vitals_file (str or Path): Path to the CSV file containing all time series data.
+            preopdata_file (str or Path): Path to the CSV file containing preopdata for each op_id.
         """
-        self.data_dir = Path(data_dir)
+        # Load preop data
         self.preopdata = pd.read_csv(preopdata_file)
-        self.data = self._load_all_data_parallel()
 
-    def _load_single_op(self, op_dir):
-        """
-        Loads data for a single op_id.
+        # Load and group vitals data
+        print(f"Loading vitals from {vitals_file}")
+        df_vitals = pd.read_csv(vitals_file)
 
-        Args:
-            op_dir (Path): Path to the operation directory.
-
-        Returns:
-            tuple: (op_id, dict containing preopdata and time series data)
-        """
-        op_id = int(op_dir.name.split("_")[1])  # Extract op_id from directory name
-
-        # Fetch preopdata for the current op_id
-        preopdata_row = self.preopdata[self.preopdata['op_id'] == op_id]
-        if preopdata_row.empty:
-            return None  # Skip if no preopdata
-        preopdata_row = preopdata_row.iloc[0].to_dict()
-
-        # Load all time series files in the directory
-        time_series = {}
-        for file in op_dir.glob("*.csv"):
-            item_name = file.stem  # Get item_name from file name
-            df = pd.read_csv(file)
-            time_series[item_name] = {
-                "chart_time": df["chart_time"].values,
-                "value": df["value"].values,
-            }
-
-        return op_id, {"preopdata": preopdata_row, "time_series": time_series}
-
-    def _load_all_data_parallel(self):
-        """
-        Preloads all time series data into memory in parallel.
-
-        Returns:
-            dict: A dictionary where keys are op_id and values are dicts with preopdata and time series data.
-        """
-        op_dirs = list(self.data_dir.glob("op_*"))  # All directories starting with "op_"
-
-        # Use multiprocessing to load data in parallel
-        with Pool() as pool:
-            results = list(
-                tqdm(pool.imap(self._load_single_op, op_dirs), total=len(op_dirs), desc="Loading Time Series Data")
-            )
-
-        # Filter out None results and convert to dictionary
-        data = {op_id: content for op_id, content in results if content is not None}
-        return data
+        print("Grouping vitals data by op_id...")
+        self.grouped = {
+            op_id: group.groupby("item_name")
+            for op_id, group in tqdm(df_vitals.groupby("op_id"), desc="Processing op_id Groups")
+        }
 
     def __len__(self):
-        return len(self.data)
+        return len(self.grouped)
 
     def __getitem__(self, idx):
         """
-        Retrieve the preloaded data for a specific op_id.
+        Retrieve all time series data and corresponding preop data for a specific op_id.
 
         Args:
             idx (int): Index of the operation.
 
         Returns:
-            dict: Contains 'op_id', 'preopdata', and 'time_series' for the operation.
+            dict: Contains 'op_id', 'time_series', and 'preopdata'.
         """
-        op_id = list(self.data.keys())[idx]
-        return {"op_id": op_id, **self.data[op_id]}
+        op_id = list(self.grouped.keys())[idx]
+        item_groups = self.grouped[op_id]
 
+        # Extract all time series for this op_id
+        time_series = {
+            item_name: {
+                "chart_time": group["chart_time"].values,
+                "value": group["value"].values,
+            }
+            for item_name, group in item_groups
+        }
+
+        # Fetch preopdata for the current op_id
+        preopdata_row = self.preopdata[self.preopdata['op_id'] == op_id]
+        preopdata = preopdata_row.iloc[0].to_dict() if not preopdata_row.empty else {}
+
+        return {"op_id": op_id, "time_series": time_series, "preopdata": preopdata}
+
+
+# Custom collate_fn for handling variable-length time series
+def custom_collate_fn(batch):
+    """
+    Custom collate function for variable-length time series data.
+
+    Args:
+        batch: List of dictionaries from the Dataset.
+
+    Returns:
+        dict: Batched data grouped into lists for each key.
+    """
+    batch_data = {
+        "op_id": [],
+        "time_series": [],
+        "preopdata": [],
+    }
+
+    for item in batch:
+        batch_data["op_id"].append(item["op_id"])
+        batch_data["time_series"].append(item["time_series"])
+        batch_data["preopdata"].append(item["preopdata"])
+
+    return batch_data
 
 # Define paths
-data_dir = "/home/server/Projects/data/AKI/intraop_data"
+inspire_path = Path("/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3")
+vitals_file = inspire_path / "vitals.csv"
 preopdata_file = "/home/server/Projects/data/AKI/preop_data.csv"
 
 # Initialize the dataset
-time_series_dataset = TimeSeriesDataset(data_dir, preopdata_file)
+time_series_dataset = TimeSeriesDataset(vitals_file.as_posix(), preopdata_file)
 
 # Create the DataLoader
-time_series_loader = DataLoader(time_series_dataset, batch_size=8, shuffle=True, num_workers=os.cpu_count())
+time_series_loader = DataLoader(
+    time_series_dataset,
+    batch_size=1,
+    shuffle=True,
+    num_workers=os.cpu_count(),  # Use all available CPU cores
+    collate_fn=custom_collate_fn,  # Use the custom collate function
+)
 
 # Example usage
 for batch in tqdm(time_series_loader, desc="Loading Batches"):
