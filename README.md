@@ -40,3 +40,9 @@ The project uses various Python libraries, including:
 - torch for advanced computations
 
 Ensure that the virtual environment is activated before running any scripts to have access to these dependencies.
+
+**Data Paths**
+ - "/home/server/Projects/data/AKI/aki_data.csv" (preop data with postop creatinine)
+ - "/home/server/Projects/data/AKI/preop_data_nidhir.csv" (nidhir's experimental csv)
+ - "/home/server/Projects/data/AKI/preop_trainable/unfiltered.npz" (preop data split into test and train, with aki, aki>0.3, and aki filtered to be positive(see data_preprocessing/create_aki_trainable.py))
+ - "/home/server/Projects/data/AKI/aki_data_trainable.csv" (processed preop data with postop creatinine, ready for train/test split)
