@@ -1,5 +1,6 @@
 from pathlib import Path
 import pandas as pd
+from collections import Counter
 
 def nprint(string):
     print("="*25, string, "="*25)
@@ -11,7 +12,7 @@ vitals_path = inspire_path / "vitals.csv"
 ops_path = inspire_path / "operations.csv"
 
 preopdata_file = "/home/server/Projects/data/AKI/preop_data.csv"
-preopdata_file_nidhir = "/home/server/Projects/data/AKI/preop_data_nidhir.csv"
+preopdata_file_andrew = "/home/server/Projects/data/AKI/preop_data_andrew.csv"
 
 nprint("starting")
 df_labs = pd.read_csv(labs_path)
@@ -26,8 +27,24 @@ df_preop = df_preop[df_preop["age"] >= 18]
 df_preop = df_preop.dropna(subset="opend_time")
 df_preop = df_preop.dropna(subset="opstart_time")
 df_preop["op_len"] = df_preop["opend_time"] - df_preop["opstart_time"]
-ops_general = df_ops[df_ops['antype'] == 'General']
-df_preop = pd.merge(df_preop, ops_general[['op_id', 'subject_id']], on=['op_id', 'subject_id'], how='inner')
+
+# Replace antypes with numbers, after removing rows with regional set as antype
+df_ops = df_ops.drop(df_ops[df_ops['antype'] == 'Regional'].index)
+df_ops.loc[df_ops['antype'] == 'General', 'antype'] = 0     
+df_ops.loc[df_ops['antype'] == 'MAC', 'antype'] = 1
+df_ops.loc[df_ops['antype'] == 'Neuraxial', 'antype'] = 1
+
+#don't want to just add encodings to end of dataframe, so insert it where department used to be
+col = df_ops.columns.get_loc('department') 
+num_cols_added = len(Counter(df_ops['department']))
+ops_general = pd.get_dummies(df_ops, columns=['department'])
+ops_gen_cols_to_keep = ['op_id', 'subject_id', 'antype']
+for column_idx in range(col, col + num_cols_added):
+    department_name = ops_general.columns[-1]
+    ops_gen_cols_to_keep.append(department_name)
+    ops_general.insert(column_idx, department_name, ops_general.pop(department_name))
+df_preop = pd.merge(df_preop, ops_general[ops_gen_cols_to_keep], on=['op_id', 'subject_id'], how='inner')
+
 nprint("finished basic filtering")
 
 item_names = [
@@ -92,6 +109,5 @@ nprint("finished filtering out some procedure prefixes")
 df_preop["aki"] = df_preop["postop_creatinine"] - df_preop["preop_creatinine"]
 nprint("calculated aki")
 
-# actual data stored in "/home/server/Projects/data/AKI/aki_data.csv"
-df_preop.to_csv(preopdata_file_nidhir)
-nprint(f"wrote to {preopdata_file_nidhir}")
+df_preop.to_csv(preopdata_file_andrew)
+nprint(f"wrote to {preopdata_file_andrew}")
