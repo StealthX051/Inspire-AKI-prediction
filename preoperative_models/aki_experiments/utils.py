@@ -44,32 +44,3 @@ def performance_dict(y_binary_test, y_pred, y_prob, bool_print=False, plot=False
         plt.show()
 
     return rtn
-
-
-def performance(y_binary_test, y_pred, y_prob):
-    accuracy = accuracy_score(y_binary_test, y_pred)
-    print(f'Accuracy: {accuracy:.2f}')
-
-    cm = confusion_matrix(y_binary_test, y_pred)
-    print('Confusion Matrix:')
-    print(cm)
-
-    report = classification_report(y_binary_test, y_pred)
-    print('Classification Report:')
-    print(report)
-
-    # Compute ROC curve
-    fpr, tpr, thresholds = roc_curve(y_binary_test, y_prob)
-    roc_auc = auc(fpr, tpr)
-
-    # Plot ROC curve
-    plt.figure()
-    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Receiver Operating Characteristic')
-    plt.legend(loc='lower right')
-    plt.show()

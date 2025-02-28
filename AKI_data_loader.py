@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm\
@@ -27,6 +28,27 @@ class TimeSeriesDataset(Dataset):
             op_id: group.groupby("item_name")
             for op_id, group in tqdm(df_vitals.groupby("op_id"), desc="Processing op_id Groups")
         }
+        # Create a dictionary to store which op_id has which vital labels
+        # op_id_vital_map = {
+        #     op_id: list(group.groups.keys()) for op_id, group in self.grouped.items()
+        # }
+
+        # # Add indicator columns for intraoperative data categories
+        # # 18 column preop_data -> 94 column preop_data
+        # # e.g. 'has_hr' indicates whether the operation has longitudinal heart rate data
+
+        # # Build a DataFrame to track presence of vital labels
+        # vital_presence = pd.DataFrame(0, index=preopdata.index, columns=['has_' + label for label in 
+        #                                 set(v for labels in op_id_vital_map.values() for v in labels)])
+
+        # # Populate the DataFrame
+        # for op_id, vital_labels in op_id_vital_map.items():
+        #     mask = preopdata['op_id'] == op_id
+        #     for vital_label in vital_labels:
+        #         vital_presence.loc[mask, 'has_' + vital_label] = 1
+
+        # # Combine with the original DataFrame
+        # preopdata = pd.concat([preopdata, vital_presence], axis=1)
 
     def __len__(self):
         return len(self.grouped)

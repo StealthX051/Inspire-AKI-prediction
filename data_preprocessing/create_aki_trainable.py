@@ -7,13 +7,29 @@ import sys
 from collections import Counter
 from imblearn.over_sampling import SMOTE
 
+
+# three files for preop, intraop, and combined.
+# output_file = "/home/server/Projects/data/AKI/tabular_preop.npz"
+# output_file = "/home/server/Projects/data/AKI/tabular_intraop.npz"
+# output_file = "/home/server/Projects/data/AKI/tabular_trainable.npz"
+
+
+
+output_file = "/home/server/Projects/data/AKI/preop_trainable/upsampled.npz"
+output_csv = "/home/server/Projects/data/AKI/preop_cleaned.csv"
+
+
 # Set to True to enable SMOTE resampling instead of simple upsampling
 SMOTE_BOOLEAN = False
 if 'smote' in sys.argv: #lol
     SMOTE_BOOLEAN = True
+    output_file = "/home/server/Projects/data/AKI/preop_trainable/smoted.npz"
+
 
 # df = pd.read_csv('/home/server/Projects/data/AKI/aki_data.csv')
 df = pd.read_csv("/home/server/Projects/data/AKI/preop_data_andrew.csv")
+
+
 
 df["sex"] = df["sex"] == "M"
 df = df[(df['weight'] != 0) & (df['height'] != 0) & (df['op_id'] != 435191458)]
@@ -46,7 +62,7 @@ df[int_columns] = df[int_columns].astype(float)
 np.random.seed(42)
 
 # Ignore columns that are not numerical
-ignore = ["sex", "asa", "emop", "num_card_events"]
+ignore = ["sex", "asa", "emop", "num_card_events", 'op_id']
 for col in df.columns:
     if 'department' in col:
         ignore.append(col)
@@ -80,7 +96,7 @@ cols_to_norm = ['age', 'height', 'weight', 'BSA', 'BMI', 'booking_case_length',
 scaler = StandardScaler()
 df[cols_to_norm] = scaler.fit_transform(df[cols_to_norm])
 
-
+# df.to_csv(output_csv)
 
 # Split BEFORE upsampling (preserves real-world test distribution)
 df_train, df_test = train_test_split(df, test_size=0.2, random_state=42, stratify=df["aki_boolean"])
@@ -121,15 +137,15 @@ y_positive_test = df_test.pop('aki_positive').values
 X_test = df_test.values
 
 
-# Step 4: Save the data
-# np.savez_compressed(
-#     "/home/server/Projects/data/AKI/preop_trainable/unfiltered_andrew.npz",
-#     X_train=X_train,
-#     X_test=X_test,
-#     y_train=y_train,
-#     y_test=y_test,
-#     y_binary_train=y_binary_train,
-#     y_binary_test=y_binary_test,
-#     y_positive_train=y_positive_train,
-#     y_positive_test=y_positive_test
-# )
+# Save the data
+np.savez_compressed(
+    output_file,
+    X_train=X_train,
+    X_test=X_test,
+    y_train=y_train,
+    y_test=y_test,
+    y_binary_train=y_binary_train,
+    y_binary_test=y_binary_test,
+    y_positive_train=y_positive_train,
+    y_positive_test=y_positive_test
+)
