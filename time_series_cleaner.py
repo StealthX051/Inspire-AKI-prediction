@@ -57,4 +57,4 @@ for op_id, df in tqdm(df_regular.groupby('op_id')):
 df_final = pd.concat(interpolated_dfs)
 df.pop('Unnamed: 0')
 df.insert(0, 'op_id', df.pop('op_id'))
-df_final.to_csv(output_csv)
+df_final.to_csv(output_csv, index=False)

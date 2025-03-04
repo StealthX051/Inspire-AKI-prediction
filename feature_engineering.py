@@ -9,7 +9,7 @@ vitals_file = inspire_path / "vitals.csv"
 preop_cleaned = "/home/server/Projects/data/AKI/preop_cleaned.csv"
 output_csv = '/home/server/Projects/data/AKI/feature_engineered.csv'
 
-# INTENDED TO THEREAFTER BE COMBINED WITH PREOP DATA AND CLEANED WITH CREATE_AKI_TRAINABLE.PY
+# INTENDED TO HEREAFTER BE COMBINED WITH PREOP DATA AND CLEANED WITH CREATE_AKI_TRAINABLE.PY
 
 # Define statistical trend and energy
 def trend(y):
@@ -135,4 +135,4 @@ for df in df_list:
     df_final = df_final.merge(df, on='op_id', how='left')
 
 
-df_final.to_csv(output_csv)
+df_final.to_csv(output_csv, index=False)

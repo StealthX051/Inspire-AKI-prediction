@@ -7,32 +7,35 @@ import sys
 from collections import Counter
 from imblearn.over_sampling import SMOTE
 
-
-# three files for preop, intraop, and combined.
-# output_file = "/home/server/Projects/data/AKI/tabular_preop.npz"
-# output_file = "/home/server/Projects/data/AKI/tabular_intraop.npz"
-# output_file = "/home/server/Projects/data/AKI/tabular_trainable.npz"
-
-
-
-output_file = "/home/server/Projects/data/AKI/preop_trainable/upsampled.npz"
-output_csv = "/home/server/Projects/data/AKI/preop_cleaned.csv"
-
-
-# Set to True to enable SMOTE resampling instead of simple upsampling
 SMOTE_BOOLEAN = False
-if 'smote' in sys.argv: #lol
-    SMOTE_BOOLEAN = True
-    output_file = "/home/server/Projects/data/AKI/preop_trainable/smoted.npz"
+INCLUDE_PREOP = True
+INCLUDE_INTRAOP = False
 
 
-# df = pd.read_csv('/home/server/Projects/data/AKI/aki_data.csv')
-df = pd.read_csv("/home/server/Projects/data/AKI/preop_data_andrew.csv")
+preop_csv =     "/home/server/Projects/data/AKI/preop_data_andrew.csv"
+intraop_csv =   "/home/server/Projects/data/AKI/feature_engineered.csv"
 
 
+df_preop = pd.read_csv(preop_csv)
+df_intraop = pd.read_csv(intraop_csv)
 
-df["sex"] = df["sex"] == "M"
-df = df[(df['weight'] != 0) & (df['height'] != 0) & (df['op_id'] != 435191458)]
+if INCLUDE_PREOP and INCLUDE_INTRAOP:
+    output_file =   "/home/server/Projects/data/AKI/tabular_combined.npz"
+    df = df_preop.merge(df_intraop, on='op_id', how='inner')
+elif INCLUDE_PREOP:
+    output_file =   "/home/server/Projects/data/AKI/tabular_preop.npz"
+    df = df_preop.copy()
+elif INCLUDE_INTRAOP:
+    output_file =   "/home/server/Projects/data/AKI/tabular_intraop.npz"
+    # take only aki column from preop
+    df = df_preop[['op_id', 'aki']].merge(df_intraop, on='op_id', how='inner') 
+else:
+    print('You have selected nothing')
+
+if INCLUDE_PREOP:
+    df["sex"] = df["sex"] == "M"
+    df = df[(df['weight'] != 0) & (df['height'] != 0)] #& (df['op_id'] != 435191458)] # pride and
+df.replace([np.inf, -np.inf], np.nan, inplace=True)
 cols_to_pop = ["postop_creatinine", "Unnamed: 0", "op_id", "subject_id", 
             "opstart_time", "opend_time", "inhosp_death_time", 
             "allcause_death_time", "Unnamed: 0.1", "Unnamed: 0.2"
@@ -41,62 +44,48 @@ for col in cols_to_pop:
     if col in df.columns:
         df.pop(col)
 
-
 # missing data indicators and zero out missing
+indicator_columns = []
 for col in df.columns:
-    # Create a new column with a suffix '_isna' indicating NaN status 
-    # if the column contains any NA values
-    if df[col].isnull().values.any() > 0:
-        df[f'{col}_isna'] = df[col].isna()
+    if df[col].isnull().any():
+        indicator_columns.append(pd.Series(df[col].isna(), name=f'{col}_isna'))
+df = pd.concat([df] + indicator_columns, axis=1)
 df.fillna(df.mean(), inplace=True)
 
-# move y vars to end
-col_to_move = "aki"
-df = df[[col for col in df.columns if col != col_to_move] + [col_to_move]]
-df["aki_boolean"] = (df["aki"] > 0.3)
-df["aki_positive"] = df["aki"].clip(lower=0)
+#create additional y variable columns
+y_vars = [(df["aki"] > 0.3).rename("aki_boolean"), df["aki"].clip(lower=0).rename("aki_positive")]
+df = pd.concat([df] + y_vars,axis=1)
 
-# replace outliers w more reasonable values
+# replace outliers
 int_columns = df.select_dtypes(include=['int']).columns
 df[int_columns] = df[int_columns].astype(float)
 np.random.seed(42)
 
-# Ignore columns that are not numerical
+# Ignore columns that are not numerical for outlier handling and normalization
 ignore = ["sex", "asa", "emop", "num_card_events", 'op_id']
 for col in df.columns:
-    if 'department' in col:
+    if ('department' in col) or ('_isna' in col) or ('aki' in col):
         ignore.append(col)
 
 # remove outliers
 for col in df.columns:
-    if "isna" in col or "aki" in col or col in ignore:
-        continue
-    lower_1 = df[col].quantile(0.01)
-    upper_1 = df[col].quantile(0.99)
-    lower_05 = df[col].quantile(0.005)
-    lower_5 = df[col].quantile(0.05)
-    upper_95 = df[col].quantile(0.95)
-    upper_995 = df[col].quantile(0.995)
-    mask_lower = df[col] < lower_1
-    mask_upper = df[col] > upper_1
-    df.loc[mask_lower, col] = np.random.uniform(lower_05, lower_5, mask_lower.sum())
-    df.loc[mask_upper, col] = np.random.uniform(upper_95, upper_995, mask_upper.sum())
+    if col not in ignore:
+        lower_1 = df[col].quantile(0.01)
+        upper_1 = df[col].quantile(0.99)
+        lower_05 = df[col].quantile(0.005)
+        lower_5 = df[col].quantile(0.05)
+        upper_95 = df[col].quantile(0.95)
+        upper_995 = df[col].quantile(0.995)
+        mask_lower = df[col] < lower_1
+        mask_upper = df[col] > upper_1
+        df.loc[mask_lower, col] = np.random.uniform(lower_05, lower_5, mask_lower.sum())
+        df.loc[mask_upper, col] = np.random.uniform(upper_95, upper_995, mask_upper.sum())
 
-
-# Normalize only the specified columns
-cols_to_norm = ['age', 'height', 'weight', 'BSA', 'BMI', 'booking_case_length', 
-        'num_card_events',  'last_preop_scr',
-       'min_preop_scr', 'preop_total_protein', 'preop_sodium',
-       'preop_potassium', 'preop_platelet', 'preop_glucose', 'preop_wbc',
-       'preop_alt', 'preop_chloride', 'preop_lymphocyte', 'preop_phosphorus',
-       'preop_albumin', 'preop_fibrinogen', 'preop_creatinine', 'preop_ptinr',
-       'preop_total_bilirubin', 'preop_alp', 'preop_aptt', 'preop_calcium',
-       'preop_bun', 'preop_ast', 'preop_crp', 'preop_hb', 'preop_hct',
-       'preop_seg', 'op_len']
+cols_to_norm = [col for col in df.columns if col not in ignore]
 scaler = StandardScaler()
 df[cols_to_norm] = scaler.fit_transform(df[cols_to_norm])
 
-# df.to_csv(output_csv)
+
 
 # Split BEFORE upsampling (preserves real-world test distribution)
 df_train, df_test = train_test_split(df, test_size=0.2, random_state=42, stratify=df["aki_boolean"])
