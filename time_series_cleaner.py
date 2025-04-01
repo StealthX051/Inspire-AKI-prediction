@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
+from sklearn.preprocessing import StandardScaler
+
 
 inspire_path = Path("/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3")
 vitals_file = inspire_path / "vitals.csv"
@@ -16,7 +18,7 @@ df_preop = pd.read_csv(preop_cleaned)
 # Cut down df_vitals to only include op_ids included in df_preop
 df_vitals = df_vitals[df_vitals['op_id'].isin(df_preop['op_id'].unique())]
 df_vitals = df_vitals.drop_duplicates(subset=['op_id', 'chart_time', 'item_name'], keep='first')
-# Cut down df_vitals to only include item_names of high-frequency vitals
+# Cut down df_vitals to only include item_names of high-and-medium-frequency vitals
 high_frequency_labels = ["rr", "hr", "spo2", "fio2", "pmean", "etco2", "peep", 
 "pip", "art_mbp", "cpat", "vt", "art_sbp", "art_dbp", 
 "minvol", "pplat", "bt", "etgas", "cvp"]
@@ -41,6 +43,7 @@ for label in tqdm(regular_labels):
     contained_df.append(df)
 df_regular = pd.concat(contained_df)
 
+
 interpolated_dfs = []
 for op_id, df in tqdm(df_regular.groupby('op_id')):
     df = df[['item_name', 'value', 'chart_time']]
@@ -53,8 +56,13 @@ for op_id, df in tqdm(df_regular.groupby('op_id')):
     df_complete.fillna(df_complete.mean(), inplace=True)
     df_complete['op_id'] = op_id
     interpolated_dfs.append(df_complete)
-# df_complete.rename(columns={'value':f'value_{regular_labels[0]}'}, inplace=True)
+
 df_final = pd.concat(interpolated_dfs)
-df.pop('Unnamed: 0')
-df.insert(0, 'op_id', df.pop('op_id'))
+df_final.insert(0, 'op_id', df_final.pop('op_id'))
+
+ignore = ['op_id', 'chart_time', 'aki']
+cols_to_norm = [col for col in df_final.columns if col not in ignore]
+scaler = StandardScaler()
+df_final[cols_to_norm] = scaler.fit_transform(df_final[cols_to_norm])
+
 df_final.to_csv(output_csv, index=False)

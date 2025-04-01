@@ -1,9 +1,18 @@
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_curve, auc, precision_recall_curve
 import matplotlib.pyplot as plt
+import numpy as np
 
+def pstats(x):
+    print("mean: " + str(np.mean(x)))
+    print("std: " + str(np.std(x)))
+    print("min: " + str(np.min(x)))
+    print("max: " + str(np.max(x)))
+    
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
 
-def performance_dict(y_binary_test, y_pred, y_prob, bool_print=False, plot=False):
-    print("----------")
+def performance_dict(y_binary_test, y_pred, y_prob, bool_print=False, plot=False, copy_print=False):
+    
     rtn = {}
     report = classification_report(y_binary_test, y_pred, output_dict=True)
     rtn['Precision'] = report['True']['precision']
@@ -18,9 +27,14 @@ def performance_dict(y_binary_test, y_pred, y_prob, bool_print=False, plot=False
     rtn['F1 Score'] = report['True']['f1-score']
 
     if bool_print:
+        print("----------")
+        for key, value in rtn.items():
+            print(f"{key}: {value:.4f}")
+    if copy_print:
+        print("----------")
         for item in rtn.items():
-            print(item)
-    
+            print(f"{item[1]:.4f}")
+
     if plot:
         # Plot ROC Curve
         plt.figure()
