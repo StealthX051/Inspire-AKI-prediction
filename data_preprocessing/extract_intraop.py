@@ -1,3 +1,6 @@
+# REQUIRES preopdata_file FROM EXTRACT_PREOP.PY
+# EXTRACTS INTRAOP DATA TO BE COMBINED WITH PREOP DATA IN CREATE_BASE.PY
+
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -6,7 +9,7 @@ from tqdm import tqdm
 
 inspire_path = Path("/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3")
 vitals_file = inspire_path / "vitals.csv"
-preop_cleaned = "/home/server/Projects/data/AKI/preop_cleaned.csv"
+preop_csv = "/home/server/Projects/data/AKI/preop_data.csv"
 output_csv = '/home/server/Projects/data/AKI/feature_engineered.csv'
 
 # INTENDED TO HEREAFTER BE COMBINED WITH PREOP DATA AND CLEANED WITH CREATE_AKI_TRAINABLE.PY
@@ -23,7 +26,7 @@ def energy(x):
 # Load data from CSVs
 print(f"Loading Data")
 df_vitals = pd.read_csv(vitals_file)
-df_preop = pd.read_csv(preop_cleaned)
+df_preop = pd.read_csv(preop_csv)
 
 # Cut down df_vitals to only include op_ids included in df_preop
 df_vitals = df_vitals[df_vitals['op_id'].isin(df_preop['op_id'].unique())]

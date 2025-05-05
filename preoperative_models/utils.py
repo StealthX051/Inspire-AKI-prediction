@@ -11,17 +11,18 @@ def pstats(x):
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
-def performance_dict(y_binary_test, y_pred, y_prob, bool_print=False, plot=False, copy_print=False):
+def performance_dict(y_binary_test, y_pred, y_prob=[], bool_print=False, plot=False, copy_print=False, prob=True):
     
     rtn = {}
     report = classification_report(y_binary_test, y_pred, output_dict=True)
     rtn['Precision'] = report['True']['precision']
     rtn['Sensitivity'] = report['True']['recall']
     rtn["Accuracy"] = accuracy_score(y_binary_test, y_pred)
-    fpr, tpr, thresholds = roc_curve(y_binary_test, y_prob)
-    rtn["rc_auc"] = auc(fpr, tpr)
-    prec, rec, thresholds = precision_recall_curve(y_binary_test, y_prob)
-    rtn["pr_auc"] = auc(rec, prec)
+    if prob:
+        fpr, tpr, thresholds = roc_curve(y_binary_test, y_prob)
+        rtn["rc_auc"] = auc(fpr, tpr)
+        prec, rec, thresholds = precision_recall_curve(y_binary_test, y_prob)
+        rtn["pr_auc"] = auc(rec, prec)
     rtn['Specificity'] = report['False']['recall']
     rtn['Negative Predictive Value'] = report['False']['precision']
     rtn['F1 Score'] = report['True']['f1-score']

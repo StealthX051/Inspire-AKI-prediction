@@ -1,6 +1,13 @@
+# Used to require preopdata_file FROM AKI_DATA_CLEANER.IPYNB, that code
+# is now in this file
+# EXTRACTS PREOP DATA TO BE COMBINED WITH INTRAOP DATA IN CREATE_BASE.PY
+
+
 from pathlib import Path
 import pandas as pd
+import numpy as np
 from collections import Counter
+from tqdm import tqdm
 
 def nprint(string):
     print("="*25, string, "="*25)
@@ -10,17 +17,76 @@ inspire_path = Path("/home/server/Projects/data/INSPIRE/physionet.org/files/insp
 labs_path = inspire_path / "labs.csv"
 vitals_path = inspire_path / "vitals.csv"
 ops_path = inspire_path / "operations.csv"
+diagnosis_path = inspire_path / "diagnosis.csv"
 
-preopdata_file = "/home/server/Projects/data/AKI/preop_data.csv"
-preopdata_file_andrew = "/home/server/Projects/data/AKI/preop_data_andrew.csv"
+
+# move from /aki to /base later
+base_path = Path("/home/server/Projects/data/base/")
+
+# if you change output_csv, also change in aki data selection and create base
+output_csv = "/home/server/Projects/data/AKI/preop_data_test.csv"
 
 nprint("starting")
 df_labs = pd.read_csv(labs_path)
 df_labs["chart_time"] = df_labs["chart_time"].astype(float)
 df_vitals = pd.read_csv(vitals_path)
-df_preop = pd.read_csv(preopdata_file)
 df_ops = pd.read_csv(ops_path)
+df_diags = pd.read_csv(diagnosis_path.as_posix())
+
 nprint("finished reading csvs")
+
+
+
+### code from AKI_data_cleaner.ipynb
+df_preop = df_ops.copy()
+# Keeping only the necessary columns
+desired_columns = [
+    'op_id', 'subject_id', 'age', 'sex', 'height', 'weight', 
+    'asa', 'emop', 'opstart_time', 'opend_time', 
+    'inhosp_death_time', 'allcause_death_time', 'orin_time', 'orout_time',
+]
+# Select only the desired columns
+df_preop = df_preop[desired_columns]
+# Add BSA (Body Surface Area) and BMI (Body Mass Index) columns
+# Ensure height and weight are valid (not NaN) for calculations
+valid_mask = df_preop['height'].notna() & df_preop['weight'].notna()
+# Initialize BSA and BMI with NaN
+df_preop['BSA'] = np.nan
+df_preop['BMI'] = np.nan
+# Calculate BSA and BMI only for valid rows
+df_preop.loc[valid_mask, 'BSA'] = np.sqrt((df_preop.loc[valid_mask, 'height'] * df_preop.loc[valid_mask, 'weight']) / 3600)
+df_preop.loc[valid_mask, 'BMI'] = df_preop.loc[valid_mask, 'weight'] / ((df_preop.loc[valid_mask, 'height'] / 100) ** 2)
+# Add Booking Case Length column
+valid_mask = df_preop['orin_time'].notna() & df_preop['orout_time'].notna()
+df_preop['booking_case_length'] = np.nan
+df_preop.loc[valid_mask, 'booking_case_length'] = df_preop.loc[valid_mask, 'orout_time'] - df_preop.loc[valid_mask, 'orin_time']
+# Remove orin_time and orout_time columns
+df_preop = df_preop.drop(columns=['orin_time', 'orout_time'])
+# Filter cardiovascular diagnoses (ICD-10-CM codes starting with 'I')
+df_diags_cvd = df_diags[df_diags['icd10_cm'].str.startswith('I', na=False)]
+# Merge operations and cardiovascular diagnoses on subject_id
+merged = pd.merge(
+    df_preop[['op_id', 'subject_id', 'opstart_time']],
+    df_diags_cvd[['subject_id', 'chart_time']],
+    on='subject_id',
+    how='inner'
+)
+# Filter diagnoses where chart_time < opstart_time
+merged = merged[merged['chart_time'] < merged['opstart_time']]
+# Count the number of diagnoses for each operation
+num_card_events = merged.groupby('op_id').size().reset_index(name='num_card_events')
+# Merge the counts back into the operations DataFrame
+df_preop = pd.merge(
+    df_preop,
+    num_card_events,
+    on='op_id',
+    how='left'
+)
+# Fill NaN values with 0 for operations with no past cardiovascular diagnoses
+df_preop['num_card_events'] = df_preop['num_card_events'].fillna(0).astype(int)
+### end of code from AKI_data_cleaner.ipynb
+
+
 
 df_preop = df_preop[df_preop["asa"] < 6]
 df_preop = df_preop[df_preop["age"] >= 18]
@@ -30,6 +96,7 @@ df_preop["op_len"] = df_preop["opend_time"] - df_preop["opstart_time"]
 
 # encode gender and remove rows with missing height/weight
 df_preop["sex"] = df_preop["sex"] == "M"
+df_preop = df_preop[~(df_preop['weight'].isna() | df_preop['height'].isna())]
 df_preop = df_preop[(df_preop['weight'] != 0) & (df_preop['height'] != 0)] #& (df['op_id'] != 435191458)] # pride and
 
 # Replace antypes with numbers, after removing rows with regional set as antype
@@ -38,16 +105,14 @@ df_ops.loc[df_ops['antype'] == 'General', 'antype'] = 0
 df_ops.loc[df_ops['antype'] == 'MAC', 'antype'] = 1
 df_ops.loc[df_ops['antype'] == 'Neuraxial', 'antype'] = 1
 
-#don't want to just add encodings to end of dataframe, so insert it where department used to be
-col = df_ops.columns.get_loc('department') 
-num_cols_added = len(Counter(df_ops['department']))
-ops_general = pd.get_dummies(df_ops, columns=['department'])
-ops_gen_cols_to_keep = ['op_id', 'subject_id', 'antype']
-for column_idx in range(col, col + num_cols_added):
-    department_name = ops_general.columns[-1]
-    ops_gen_cols_to_keep.append(department_name)
-    ops_general.insert(column_idx, department_name, ops_general.pop(department_name))
-df_preop = pd.merge(df_preop, ops_general[ops_gen_cols_to_keep], on=['op_id', 'subject_id'], how='inner')
+# Replace departments with one-hot encodings
+df_ops = df_ops[df_ops['department'] != 'PED']
+df_ops = pd.get_dummies(df_ops, columns=['department'])
+cols_to_keep = ['op_id', 'subject_id', 'antype']
+for col in df_ops.columns:
+    if 'department_' in col:
+        cols_to_keep.append(col)
+df_preop = pd.merge(df_preop, df_ops[cols_to_keep], on=['op_id', 'subject_id'], how='inner')
 
 nprint("finished basic filtering")
 
@@ -87,22 +152,6 @@ for item_name in item_names:
     df_preop.rename(columns={'value':f'preop_{item_name}'}, inplace=True)
 nprint("finished getting preop data from time series")
 
-# df_creatinine = df_labs[df_labs['item_name'] == 'creatinine']
-# df_merge = pd.merge(df_preop, df_creatinine, on='subject_id', suffixes=('_preop', '_lab'))
-# df_merge_filtered = df_merge[
-#     (df_merge['chart_time'] > df_merge['opend_time']) &
-#     (df_merge['chart_time'] < (df_merge['opend_time'] + 2*24*60))
-# ]
-# max_creatinine = (
-#     df_merge_filtered.groupby(['subject_id', 'op_id'])['value']
-#     .max()
-#     .reset_index()
-#     .rename(columns={'value': 'postop_creatinine'})
-# )
-# df_preop = pd.merge(df_preop, max_creatinine, on=['subject_id', 'op_id'], how='inner')
-nprint("finished getting postop data from time series")
-
-# df_preop = df_preop[df_preop["preop_creatinine"] <= 4.5] #serum preop creatinine over 4.5 means severe renal failure or disease
 
 prefixes_to_exclude = ["10", "0TY", "B50", "B51"]
 mask = df_ops["icd10_pcs"].astype(str).str.startswith(tuple(prefixes_to_exclude))
@@ -110,8 +159,5 @@ ops_to_exclude = df_ops.loc[mask, "op_id"]
 df_preop = df_preop[~df_preop["op_id"].isin(ops_to_exclude)]
 nprint("finished filtering out some procedure prefixes")
 
-# df_preop["aki"] = df_preop["postop_creatinine"] - df_preop["preop_creatinine"]
-# nprint("calculated aki")
-
-df_preop.to_csv(preopdata_file_andrew)
-nprint(f"wrote to {preopdata_file_andrew}")
+df_preop.to_csv(output_csv, index=False)
+nprint(f"wrote to {output_csv}")

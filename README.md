@@ -43,14 +43,14 @@ Ensure that the virtual environment is activated before running any scripts to h
 
 **Data Paths**
 
- - "/home/server/Projects/data/AKI/tabular_combined.npz"    (preop and intraop merged and split into test and train, upsampled by repetition)   TABULAR
- - "/home/server/Projects/data/AKI/tabular_preop.npz"       (preop data split into test and train, upsampled by repetition)                     TABULAR
- - "/home/server/Projects/data/AKI/tabular_intraop.npz"     (intraop split into test and train, upsampled by repetition)                        TABULAR
+ - '/home/server/Projects/data/base/tabular_combined.csv'   (generic X data with no y variables,
+ - '/home/server/Projects/data/base/tabular_preop.csv'      formatted as a dataframe with ~120k 
+ - '/home/server/Projects/data/base/tabular_intraop.csv'    rows and ~500 columns. )
+
+
+
  - '/home/server/Projects/data/AKI/time_series_cleaned.csv' (intraop data)                                                                      TIME SERIES
 
- - "/home/server/Projects/data/AKI/preop_trainable/upsampled.npz" (preop data split into test and train, upsampled by repetition)
- - "/home/server/Projects/data/AKI/preop_trainable/smoted.npz" (preop data split into test and train, upsampled by SMOTE)
- - '/home/server/Projects/data/AKI/cross_sectional_stats_longitudinal.csv' (8 cross sectional stats about longitudinal data)
 
  - "/home/server/Projects/data/AKI/aki_data.csv" (preop data with postop creatinine)
  - "/home/server/Projects/data/AKI/preop_data_nidhir.csv" (nidhir's experimental csv)

@@ -6,7 +6,17 @@ from pathlib import Path
 # ----------------------------------------------------------------------------
 ops_path = Path("/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/operations.csv")
 diag_path = Path("/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/diagnosis.csv")
-macce_output_file = "/home/server/Projects/data/MACCE/ops_macce_events.csv"
+base_path = Path("/home/server/Projects/data/base/")
+macce_path = Path("/home/server/Projects/data/MACCE/")
+
+base_combined_csv =     base_path / 'tabular_combined.csv'
+base_preop_csv =        base_path / 'tabular_preop.csv'
+base_intraop_csv =      base_path / 'tabular_intraop.csv'
+
+macce_combined_csv =    macce_path / "tabular_combined.csv"
+macce_preop_csv =       macce_path / "tabular_preop.csv"
+macce_intraop_csv =     macce_path / "tabular_intraop.csv"
+
 
 # ----------------------------------------------------------------------------
 # Read in data
@@ -51,7 +61,7 @@ df_grouped = (
 )
 
 # Add a macce = 1 indicator
-df_grouped["macce"] = 1
+df_grouped["macce"] = True
 
 # ----------------------------------------------------------------------------
 # Merge back to the ops DataFrame
@@ -64,7 +74,7 @@ df_final = pd.merge(
 )
 
 # If an op_id wasn’t found in the 30-day MACCE group, fill as no MACCE
-df_final["macce"] = df_final["macce"].fillna(0)
+df_final["macce"] = df_final["macce"].fillna(False)
 df_final["macce_event"] = df_final["macce_event"].fillna("")
 
 # ----------------------------------------------------------------------------
@@ -72,11 +82,26 @@ df_final["macce_event"] = df_final["macce_event"].fillna("")
 # ----------------------------------------------------------------------------
 df_final = df_final[["op_id", "macce", "macce_event"]]
 
+df_combined = pd.read_csv(base_combined_csv)
+df_combined = df_combined.merge(df_final[['op_id', 'macce']], on='op_id', how='inner')
+df_combined.to_csv(macce_combined_csv, index=False)
+
+df_preop = pd.read_csv(base_preop_csv)
+df_preop = df_preop.merge(df_final[['op_id', 'macce']], on='op_id', how='inner')
+df_preop.to_csv(macce_preop_csv, index=False)
+
+df_intraop = pd.read_csv(base_intraop_csv)
+df_intraop = df_intraop.merge(df_final[['op_id', 'macce']], on='op_id', how='inner')
+df_intraop.to_csv(macce_intraop_csv, index=False)
+
 # ----------------------------------------------------------------------------
 # Save to CSV
 # ----------------------------------------------------------------------------
-df_final.to_csv(macce_output_file, index=False)
+# df_final.to_csv(macce_output_file, index=False)
 
-print(df_final.shape)
-print(len(df_final["op_id"].unique()))
-print(f"Saved to {macce_output_file}")
+
+
+
+# print(df_final.shape)
+# print(len(df_final["op_id"].unique()))
+# print(f"Saved to {macce_output_file}")

@@ -213,3 +213,5 @@ pip-selfcheck.json
 *.vsix
 
 saved_data/
+
+preoperative_models/AutogluonModels/
