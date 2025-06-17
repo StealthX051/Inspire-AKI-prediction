@@ -1,0 +1,19 @@
+digraph {
+	A [label="Total operations recorded: 130,960"]
+	B [label="Exclusion of operations with unrecorded start or end time: 127,342"]
+	C [label="Exclusion of operations with unrecorded height or weight: 125,577"]
+	D [label="Exclusion of operations with Regional antype: 125,420"]
+	E [label="Exclusion of operations with prefixes \"10\", \"0TY\", \"B50\", \"B51\": 122,586"]
+	F [label="Exclusion of operations without recorded intraoperative variables: 122,558"]
+	G [label="Exclusion of operations with unrecorded preoperative creatinine levels: 120,772"]
+	H [label="Exclusion of operations without recorded creatinine level within 48 hours of operation end: 58,378"]
+	I [label="Exclusion of operations with preoperative creatinine levels over 4.5: 57,724"]
+	A -> B
+	B -> C
+	C -> D
+	D -> E
+	E -> F
+	F -> G
+	G -> H
+	H -> I
+}

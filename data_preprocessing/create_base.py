@@ -4,7 +4,7 @@ from sklearn.preprocessing import StandardScaler
 
 norm_csv = '/home/server/Projects/data/base/normalization_stats.csv'
 
-preop_csv =     "/home/server/Projects/data/AKI/preop_data.csv"
+preop_csv =     "/home/server/Projects/data/AKI/preop_data_test.csv"
 intraop_csv =   "/home/server/Projects/data/AKI/feature_engineered.csv"
 
 
@@ -29,14 +29,14 @@ for col in cols_to_pop:
         df.pop(col)
 print(f"Removed columns: {removed}")
 
-# missing data indicators and zero out missing
-indicator_columns = []
-for col in df.columns:
-    if df[col].isnull().any():
-        # indicates missing, e.g. True => missing
-        indicator_columns.append(pd.Series(df[col].isna(), name=f'{col}_isna'))
-df = pd.concat([df] + indicator_columns, axis=1)
-df.fillna(df.mean(), inplace=True)
+# # missing data indicators and zero out missing
+# indicator_columns = []
+# for col in df.columns:
+#     if df[col].isnull().any():
+#         # indicates missing, e.g. True => missing
+#         indicator_columns.append(pd.Series(df[col].isna(), name=f'{col}_isna'))
+# df = pd.concat([df] + indicator_columns, axis=1)
+# df.fillna(df.mean(), inplace=True)
 
 
 # replace outliers
@@ -89,6 +89,23 @@ for col in df_intraop.columns:
     for col_2 in df.columns:
         if col in col_2:
             intraop_cols.append(col_2)
+
+
+# you need to give imputer.fit_transform the whole df, not just the columns
+# thats why you should do the -99 first
+from sklearn.impute import KNNImputer
+nan_percentage = (df.isna().mean() * 100).to_dict()
+# if missing rate is greater than 10%, replace NANs with -99 post normalization
+cols = [col for col, nan_pct in nan_percentage.items() if nan_pct >= 10]
+print(f'{len(cols)} columns to be simply flagged with -99')
+df[cols] = pd.DataFrame(df[cols].fillna(-99), columns=cols, index=df.index)
+# if missing rate is less than 10% use knn imputer. 
+# takes 40 minutes
+cols = [col for col, nan_pct in nan_percentage.items() if nan_pct < 10]
+print(f'{len(cols)} columns to be imputed')
+imputer = KNNImputer(n_neighbors=5)
+df = pd.DataFrame(imputer.fit_transform(df), columns=df.columns, index=df.index)
+
 
 print(f'saving output to {combined_csv}')
 df.to_csv(combined_csv, index=False)

@@ -18,6 +18,7 @@ labs_path = inspire_path / "labs.csv"
 vitals_path = inspire_path / "vitals.csv"
 ops_path = inspire_path / "operations.csv"
 diagnosis_path = inspire_path / "diagnosis.csv"
+ward_vitals_path = inspire_path / "ward_vitals.csv"
 
 
 # move from /aki to /base later
@@ -29,6 +30,8 @@ output_csv = "/home/server/Projects/data/AKI/preop_data_test.csv"
 nprint("starting")
 df_labs = pd.read_csv(labs_path)
 df_labs["chart_time"] = df_labs["chart_time"].astype(float)
+df_ward = pd.read_csv(ward_vitals_path)
+df_ward["chart_time"] = df_ward["chart_time"].astype(float)
 df_vitals = pd.read_csv(vitals_path)
 df_ops = pd.read_csv(ops_path)
 df_diags = pd.read_csv(diagnosis_path.as_posix())
@@ -116,7 +119,7 @@ df_preop = pd.merge(df_preop, df_ops[cols_to_keep], on=['op_id', 'subject_id'], 
 
 nprint("finished basic filtering")
 
-item_names = [
+preop_item_names = [
     "total_protein",
     "sodium",
     "potassium",
@@ -143,7 +146,7 @@ item_names = [
     "seg"
 ]
 
-for item_name in item_names:
+for item_name in preop_item_names:
     df_preop = pd.merge_asof(df_preop.sort_values('opstart_time'), 
                     df_labs.loc[df_labs['item_name'] == item_name].sort_values('chart_time'), # grab rows w the item name we want and sort by chart_time
                     left_on='opstart_time', right_on='chart_time', by='subject_id',           # chooses row in df_labs w greatest chart_time that is still less than opstart_time and matches subject_id
@@ -151,6 +154,24 @@ for item_name in item_names:
     df_preop.drop(columns=['chart_time', 'item_name'], inplace=True)
     df_preop.rename(columns={'value':f'preop_{item_name}'}, inplace=True)
 nprint("finished getting preop data from time series")
+
+ward_item_names = [
+    "spo2",
+    "bt",
+    "rr",
+    "nibp_dbp",
+    "nibp_sbp",
+    "hr"
+]
+
+for item_name in ward_item_names:
+    df_preop = pd.merge_asof(df_preop.sort_values('opstart_time'), 
+                    df_ward.loc[df_ward['item_name'] == item_name].sort_values('chart_time'),
+                    left_on='opstart_time', right_on='chart_time', by='subject_id',
+                    tolerance=90 * 24 * 60, suffixes=('', '_'))
+    df_preop.drop(columns=['chart_time', 'item_name'], inplace=True)
+    df_preop.rename(columns={'value':f'ward_{item_name}'}, inplace=True)
+nprint("finished getting ward data from time series")
 
 
 prefixes_to_exclude = ["10", "0TY", "B50", "B51"]

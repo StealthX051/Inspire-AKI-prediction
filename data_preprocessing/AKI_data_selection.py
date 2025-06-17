@@ -13,7 +13,12 @@ inspire_path = Path("/home/server/Projects/data/INSPIRE/physionet.org/files/insp
 labs_path =             inspire_path / "labs.csv"
 preopdata_file =        aki_path / "preop_data.csv"
 base_combined_csv =     base_path / 'tabular_combined.csv'
+ward_vitals_path = inspire_path / "ward_vitals.csv"
 
+df_ward = pd.read_csv(ward_vitals_path)
+df_dialysis = df_ward[df_ward['item_name'] == 'crrt'][['subject_id', 'value']]
+df_dialysis = df_dialysis.rename(columns={'value': 'dialysis'})
+df_dialysis = df_dialysis.drop_duplicates(subset='subject_id', keep='first').reset_index(drop=True)
 
 cols_to_keep = ["op_id", "subject_id",
                 "preop_creatinine", "opend_time"]
@@ -30,26 +35,36 @@ df_preop = df_preop[df_preop['preop_creatinine'].notna()]
 # Cuts samples down to almost half because insufficient data
 df_creatinine = df_labs[df_labs['item_name'] == 'creatinine']
 df_merge = pd.merge(df_preop, df_creatinine, on='subject_id')
-df_merge_filtered = df_merge[
-    (df_merge['chart_time'] > df_merge['opend_time']) &
-    (df_merge['chart_time'] < (df_merge['opend_time'] + 2*24*60))
-]
 
-max_creatinine = (
-    df_merge_filtered.groupby('op_id')['value']
-    .max()
-    .reset_index()
-    .rename(columns={'value': 'postop_creatinine'})
-)
-df_aki = pd.merge(df_preop, max_creatinine, on='op_id', how='inner')
+df_aki = df_preop.copy()
+df_aki = df_aki.merge(df_dialysis, on='subject_id', how='left')
 
-df_aki = df_aki[df_aki["preop_creatinine"] <= 4.5]
-df_aki["aki"] = df_aki["postop_creatinine"] - df_aki["preop_creatinine"]
-df_final = df_aki[['op_id', 'aki']].copy()
-df_final['aki_boolean'] = df_final['aki'] > 0.3
+for n_days in [2, 7]:
+    n_minutes = n_days * 24 * 60
+    df_merge_filtered = df_merge[
+        (df_merge['chart_time'] > df_merge['opend_time']) &
+        (df_merge['chart_time'] < (df_merge['opend_time'] + n_minutes))
+    ]
+    max_creatinine = (
+        df_merge_filtered.groupby('op_id')['value']
+        .max()
+        .reset_index()
+        .rename(columns={'value': f'postop_creatinine_{n_days}_days'})
+    )
+    df_aki = pd.merge(df_aki, max_creatinine, on='op_id', how='outer')
 
+df_aki = df_aki[~df_aki[['postop_creatinine_2_days', 'postop_creatinine_7_days', 'dialysis']].isna().all(axis=1)]
+df_aki = df_aki.fillna({'dialysis': 0})
 
+df_aki['crt_7_day_ratio'] = df_aki["postop_creatinine_7_days"] / df_aki["preop_creatinine"]
+df_aki['aki_1'] =   ((df_aki['crt_7_day_ratio'] > 1.5) & (df_aki['crt_7_day_ratio'] < 2)) | \
+                    ((df_aki['postop_creatinine_2_days'] - df_aki['preop_creatinine']) > 0.3)
+df_aki['aki_2'] =   (df_aki['crt_7_day_ratio'] >= 2) & (df_aki['crt_7_day_ratio'] < 3)
+df_aki['aki_3'] =   (df_aki['crt_7_day_ratio'] >= 3) | (df_aki["postop_creatinine_7_days"] > 4) | \
+                    (df_aki['dialysis'])
 
+df_aki['aki_boolean'] = df_aki[['aki_2', 'aki_3']].any(axis=1).astype(bool)
+df_final = df_aki[['op_id', 'aki_boolean']].copy()
 
 
 base_combined_unnormalized_csv =     base_path / 'tabular_combined_unnormalized.csv'
