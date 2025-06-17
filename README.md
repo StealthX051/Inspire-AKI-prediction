@@ -19,6 +19,11 @@ All scripts are located in the create_results folder.
 5. Kill tmux
     `tmux kill-session -t {name of session}`
 
+## Pushing
+`Git add —all`
+`Git commit -m “insert message”`
+`Git push`
+
 ## Data Preparation
 
 ## Hyperparameter Optimization 
@@ -47,7 +52,7 @@ Trains a LSTM (intaop only) and Hybrid MLP + LSTM model (combined). Saves both r
 This notebook creates Table 1 Cohort Characteristics and the Variable Fill Table in the first two cells. 
 
 ### performance_metrics.ipynb 
-This notebook creates the AUROC, AUPRC, and Calibration curves for all models, including ASA for preop, LSTM for intraop, and Hybrid for combined. Uses two base truths, base which is for the tabular datasets which contains about 67k patients and `base_54k` which is for LSTM and Hybrid models, which contain about 54k patients. Also creates the detailed performance metrics supplemental table in teh 2nd cell. Saves all plots to **create_results/figures**
+This notebook creates the AUROC, AUPRC, and Calibration curves for all models, including ASA for preop, LSTM for intraop, and Hybrid for combined. Uses two base truths, base which is for the tabular datasets which contains about 67k patients and `base_54k` which is for LSTM and Hybrid models, which contain about 54k patients. Also creates the detailed performance metrics supplemental table in teh 2nd cell. Saves all plots to **create_results/figures**. Can plot confidence intervals by setting `PLOT_CONFIDENCE_INTERVALS = True`
 
 ### delong_table.ipynb
 Runs and creates the DeLong supplemental table that checks AUROC statistical difference between preop combined programs, within each group and between each group. Outputs a formatted html table that can be copy pasted into Google Docs and also outputs raw HTML code that can be rendered and then copy pasted into Google Docs 
