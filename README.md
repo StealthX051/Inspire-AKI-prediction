@@ -78,7 +78,10 @@ This notebook creates Table 1 Cohort Characteristics and the Variable Fill Table
 This notebook creates the AUROC, AUPRC, and Calibration curves for all models, including ASA for preop, LSTM for intraop, and Hybrid for combined. Uses two base truths, base which is for the tabular datasets which contains about 67k patients and `base_54k` which is for LSTM and Hybrid models, which contain about 54k patients. Also creates the detailed performance metrics supplemental table in teh 2nd cell. Saves all plots to **create_results/figures**. Can plot confidence intervals by setting `PLOT_CONFIDENCE_INTERVALS = True`
 
 ### delong_table.ipynb
-Runs and creates the DeLong supplemental table that checks AUROC statistical difference between preop combined programs, within each group and between each group. Outputs a formatted html table that can be copy pasted into Google Docs and also outputs raw HTML code that can be rendered and then copy pasted into Google Docs 
+Runs and creates the DeLong supplemental table that checks AUROC statistical difference between preop combined programs, within each group and between each group. Saves to **figures/scatters**. Outputs a formatted html table that can be copy pasted into Google Docs and also outputs raw HTML code that can be rendered and then copy pasted into Google Docs 
+
+### shap.ipynb
+Trains a HPO optimized XGBoost model on combined data, calculates SHAP values and saves them, and then plots a Beeswarm, random positive cases, scatters, and partial dependence plots. Saves plots to **figures/scatters** and **figures/cross_scatters** (warning, cross_scatters shouldn't be run with no max features because it will output 24k)
 
 # Code Stuff - Not Verified by Justin
 **Using the Virtual Environment**
