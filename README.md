@@ -26,6 +26,29 @@ All scripts are located in the create_results folder.
 
 ## Data Preparation
 
+### extract_preop.py
+This file extracts preoperative data into tabular format, from labs.csv, operations.csv, diagnosis.csv, and ward.csv into a preop data file.
+This file should be run first when preparing data.
+
+### extract_intraop.py
+This file summarizes time series intraoperative data with eight different statistical metrics into tabular format, from vitals.csv into an intraop data file.
+This file is dependent on extract_preop.py
+
+### create_base.py
+This file merges preop and intraop data files. Then, it removes non-data elements, normalizes, replaces outliers, and fills in missing data. 
+This file is dependent on extract_intraop.py
+
+### AKI_data_selection.py
+This file assigns each operation in the base file from create_base to an AKI classification based on creatinine levels. This file outputs trainable files for
+preop, intraop, and combined tabular data.
+This file is dependent on create_base.py
+
+### MACCE_data_selection.py
+This file assigns each operation in the base file from create_base to a MACCE classification. This file outputs trainable files for
+preop, intraop, and combined tabular data.
+This file is dependent on create_base.py
+
+
 ## Hyperparameter Optimization 
 
 ### tabular_hpo.py
