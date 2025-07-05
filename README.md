@@ -83,6 +83,9 @@ Runs and creates the DeLong supplemental table that checks AUROC statistical dif
 ### shap.ipynb
 Trains a HPO optimized XGBoost model on combined data, calculates SHAP values and saves them, and then plots a Beeswarm, random positive cases, scatters, and partial dependence plots. Saves plots to **figures/scatters** and **figures/cross_scatters** (warning, cross_scatters shouldn't be run with no max features because it will output 24k)
 
+### shap_batch.ipynb
+Creates shap beeswarm plots for GBT, RF, LR, and SVM (MLP optional)
+
 # Code Stuff - Not Verified by Justin
 **Using the Virtual Environment**
 

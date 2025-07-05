@@ -44,7 +44,7 @@ datasets_to_run = [
 ]
 
 # --- Dataset & Model Toggles ---
-dataset_configs = {'preop': True, 'intraop': True, 'combined': True}
+dataset_configs = {'preop': False, 'intraop': True, 'combined': True}
 model_configs = {
     'log_reg': False, 'autogluon': True, 'xgb': False, 'rf': False,
     'svm': False, 'mlp': False, 'knn': False, 'asa_rule': False,
