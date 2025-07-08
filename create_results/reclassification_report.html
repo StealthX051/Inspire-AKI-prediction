@@ -1,0 +1,91 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patient Reclassification Analysis</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 40px; background-color: #f8f9fa; color: #212529; }
+        .container { max-width: 900px; margin: auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #343a40; }
+        .results-table { border-collapse: collapse; width: 100%; margin-top: 20px; border: 1px solid #dee2e6; }
+        .results-table th, .results-table td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
+        .results-table thead th { background-color: #e9ecef; color: #495057; }
+        .results-table tbody tr:nth-child(even) { background-color: #f8f9fa; }
+        .widget { margin-top: 30px; border: 1px solid #ced4da; border-radius: 5px; padding: 15px; }
+        .widget-header { display: flex; justify-content: space-between; align-items: center; }
+        #copy-button { padding: 8px 12px; border: 1px solid #007bff; background-color: #007bff; color: white; border-radius: 4px; cursor: pointer; }
+        #copy-button:hover { background-color: #0056b3; }
+        #copy-button:active { background-color: #004085; }
+        #html-code { width: 100%; height: 200px; margin-top: 15px; font-family: "Courier New", Courier, monospace; font-size: 14px; background-color: #e9ecef; border: 1px solid #ced4da; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Patient Reclassification Analysis</h1>
+        <p>The table below shows the correction rate of initially missed positive cases (false negatives) when transitioning between datasets with increasing feature richness.</p>
+        
+        <!-- Results Table -->
+        
+<table class="results-table">
+    <thead>
+        <tr>
+            <th>Model</th>
+            <th>Correction Rate: Intraop → Preop</th>
+            <th>Correction Rate: Preop → Combined</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr><td><strong>AutoGluon</strong></td><td>54.2% (80.1 / 147.9)</td><td>10.4% (10.3 / 98.7)</td></tr>
+<tr><td><strong>GBT</strong></td><td>41.2% (92.0 / 223.2)</td><td>3.9% (7.9 / 204.2)</td></tr>
+<tr><td><strong>KNN</strong></td><td>12.6% (69.1 / 546.8)</td><td>0.0% (0.0 / 477.7)</td></tr>
+<tr><td><strong>Logistic Regression</strong></td><td>56.9% (90.8 / 159.6)</td><td>15.0% (16.0 / 107.0)</td></tr>
+<tr><td><strong>MLP</strong></td><td>58.8% (94.0 / 159.8)</td><td>21.0% (21.4 / 102.0)</td></tr>
+<tr><td><strong>Random Forest</strong></td><td>55.9% (230.8 / 413.2)</td><td>2.3% (4.9 / 209.6)</td></tr>
+<tr><td><strong>SVM (Linear)</strong></td><td>56.3% (89.2 / 158.4)</td><td>19.7% (21.3 / 108.3)</td></tr>
+    </tbody>
+</table>
+
+
+        <!-- HTML Code Widget -->
+        <div class="widget">
+            <div class="widget-header">
+                <h3>HTML for Table</h3>
+                <button id="copy-button" onclick="copyHtml()">Copy to Clipboard</button>
+            </div>
+            <textarea id="html-code" readonly>
+&lt;table class=&quot;results-table&quot;&gt;
+    &lt;thead&gt;
+        &lt;tr&gt;
+            &lt;th&gt;Model&lt;/th&gt;
+            &lt;th&gt;Correction Rate: Intraop → Preop&lt;/th&gt;
+            &lt;th&gt;Correction Rate: Preop → Combined&lt;/th&gt;
+        &lt;/tr&gt;
+    &lt;/thead&gt;
+    &lt;tbody&gt;
+        &lt;tr&gt;&lt;td&gt;&lt;strong&gt;AutoGluon&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;54.2% (80.1 / 147.9)&lt;/td&gt;&lt;td&gt;10.4% (10.3 / 98.7)&lt;/td&gt;&lt;/tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;GBT&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;41.2% (92.0 / 223.2)&lt;/td&gt;&lt;td&gt;3.9% (7.9 / 204.2)&lt;/td&gt;&lt;/tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;KNN&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;12.6% (69.1 / 546.8)&lt;/td&gt;&lt;td&gt;0.0% (0.0 / 477.7)&lt;/td&gt;&lt;/tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Logistic Regression&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;56.9% (90.8 / 159.6)&lt;/td&gt;&lt;td&gt;15.0% (16.0 / 107.0)&lt;/td&gt;&lt;/tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;MLP&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;58.8% (94.0 / 159.8)&lt;/td&gt;&lt;td&gt;21.0% (21.4 / 102.0)&lt;/td&gt;&lt;/tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Random Forest&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;55.9% (230.8 / 413.2)&lt;/td&gt;&lt;td&gt;2.3% (4.9 / 209.6)&lt;/td&gt;&lt;/tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;SVM (Linear)&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;56.3% (89.2 / 158.4)&lt;/td&gt;&lt;td&gt;19.7% (21.3 / 108.3)&lt;/td&gt;&lt;/tr&gt;
+    &lt;/tbody&gt;
+&lt;/table&gt;
+</textarea>
+        </div>
+    </div>
+
+    <script>
+        function copyHtml() {
+            const textarea = document.getElementById('html-code');
+            textarea.select();
+            document.execCommand('copy');
+            const button = document.getElementById('copy-button');
+            button.innerText = 'Copied!';
+            setTimeout(() => { button.innerText = 'Copy to Clipboard'; }, 2000);
+        }
+    </script>
+</body>
+</html>
