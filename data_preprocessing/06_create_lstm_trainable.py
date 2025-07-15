@@ -37,7 +37,7 @@ op_ids = []
 sequence_lengths = []
 for op_id, group in tqdm(df_time.groupby("op_id"), desc="grouping by op_ids"):
     mat = torch.tensor(group.drop(columns=['op_id', 'chart_time']).values)
-    if mat.shape[0] < 200: # throws away about 4% of longest operations bc they would extend max pad length from 200 to like 600
+    if mat.shape[0] < 200: # throws away about 4% of longest operations bc they would extend max pad length from 200 to like 600. Consider including all. 
         padded_tensors.append(torch.nn.functional.pad(mat, pad=(0, 0, 0, pad_length - mat.shape[0]), value=0))
         op_ids.append(op_id)
         sequence_lengths.append(mat.shape[0])

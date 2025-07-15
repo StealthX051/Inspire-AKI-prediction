@@ -26,7 +26,7 @@ All scripts are located in the create_results folder.
 
 ## Data Preparation
 Order of operations For Tabular: extract_preop --> extract_intraop --> create_base --> aki_data_selection
-Order of operations LSTM: after completing extract_intraop --> time_series_cleaner --> create_lstm_trainable
+Order of operations LSTM: after completing extract_intraop --> time_series_cleaner --> create_lstm_trainable, When in doubt, followed the order. 
 
 ### extract_preop.py
 This file extracts preoperative data into tabular format, from labs.csv, operations.csv, diagnosis.csv, and ward.csv into a preop data file.
@@ -72,6 +72,9 @@ This script creates all the tabular models (HPO parameters provided by previous 
 Trains a LSTM (intaop only) and Hybrid MLP + LSTM model (combined). Saves both results to **'/home/server/Projects/data/AKI/results/lstm_hybrid_test_optimized.pkl'**. Also saves the LSTM to **/home/server/Projects/data/AKI/results/tabular_intraop_test.pkl** as `lstm` and saves the Hybrid MLP + LSTM model to **/home/server/Projects/data/AKI/results/tabular_combined_test.pkl** as `hybrid`. Also saves `base_54k` to all three output pkls if the training/validation sets of the LSTM and Hybrid models are different than the tabular dataset.
 
 ## Results/Figure Creation
+
+### consort.ipynb 
+Creates Figure 1 Cohort selection CONSORT diagram, saves DOT code to consort_diagram.dot. 
 
 ### cohort_characteristics.ipynb
 This notebook creates Table 1 Cohort Characteristics and the Variable Fill Table in the first two cells. 
