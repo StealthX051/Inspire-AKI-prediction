@@ -1,0 +1,68 @@
+digraph consort_flow {
+    graph [splines=ortho, nodesep=0.8, ranksep=0.8];
+    node [shape=box, style="rounded", fontname="Arial", fontsize=10];
+    edge [fontname="Arial", fontsize=9, arrowhead=normal];
+
+    N0 [label=<Total operations recorded<BR/><B>(n=130,960)</B>>];
+    N1 [label=<Operations after excluding unrecorded start/end time<BR/><B>(n=130,946)</B>>];
+    X1 [label=<Excluded (n=14)<BR ALIGN="LEFT"/>- Unrecorded start or end time<BR ALIGN="LEFT"/>>, shape=plaintext, fontcolor="grey40"];
+    N0 -> N1;
+    { rank=same; N1; X1; }
+
+    N2 [label=<Adult operations <BR/>(&gt;= 18 years)<BR/><B>(n=130,946)</B>>];
+    X2 [label=<Excluded (n=0)<BR ALIGN="LEFT"/>- Patient age &lt; 18<BR ALIGN="LEFT"/>>, shape=plaintext, fontcolor="grey40"];
+    N1 -> N2;
+    { rank=same; N2; X2; }
+
+    N3 [label=<After excluding ASA VI <BR/>(Organ Donors)<BR/><B>(n=127,342)</B>>];
+    X3 [label=<Excluded (n=3,604)<BR ALIGN="LEFT"/>- ASA status VI<BR ALIGN="LEFT"/>>, shape=plaintext, fontcolor="grey40"];
+    N2 -> N3;
+    { rank=same; N3; X3; }
+
+    N4 [label=<After excluding Pediatrics department<BR/><B>(n=127,304)</B>>];
+    X4 [label=<Excluded (n=38)<BR ALIGN="LEFT"/>- Pediatrics department<BR ALIGN="LEFT"/>>, shape=plaintext, fontcolor="grey40"];
+    N3 -> N4;
+    { rank=same; N4; X4; }
+
+    N5 [label=<After excluding invalid height/weight<BR/><B>(n=125,539)</B>>];
+    X5 [label=<Excluded (n=1,765)<BR ALIGN="LEFT"/>- Missing (NaN) or zero value height/weight<BR ALIGN="LEFT"/>>, shape=plaintext, fontcolor="grey40"];
+    N4 -> N5;
+    { rank=same; N5; X5; }
+
+    N6 [label=<Operations after excluding Regional antype<BR/><B>(n=125,382)</B>>];
+    X6 [label=<Excluded (n=157)<BR ALIGN="LEFT"/>- Regional antype<BR ALIGN="LEFT"/>>, shape=plaintext, fontcolor="grey40"];
+    N5 -> N6;
+    { rank=same; N6; X6; }
+
+    N7 [label=<Operations after excluding specific prefixes<BR/><B>(n=122,548)</B>>];
+    X7 [label=<Excluded (n=2,834)<BR ALIGN="LEFT"/>- Specified ICD-10-PCS prefix<BR ALIGN="LEFT"/>>, shape=plaintext, fontcolor="grey40"];
+    N6 -> N7;
+    { rank=same; N7; X7; }
+
+    N8 [label=<Operations after excluding missing intraoperative data<BR/><B>(n=122,520)</B>>];
+    X8 [label=<Excluded (n=28)<BR ALIGN="LEFT"/>- No recorded intraoperative data<BR ALIGN="LEFT"/>>, shape=plaintext, fontcolor="grey40"];
+    N7 -> N8;
+    { rank=same; N8; X8; }
+
+    N9 [label=<Operations after excluding unrecorded preoperative creatinine<BR/><B>(n=121,396)</B>>];
+    X9 [label=<Excluded (n=1,124)<BR ALIGN="LEFT"/>- No pre-op sCr in 90 days<BR ALIGN="LEFT"/>>, shape=plaintext, fontcolor="grey40"];
+    N8 -> N9;
+    { rank=same; N9; X9; }
+
+    N10 [label=<Operations after excluding missing creatinine within 48h post-op<BR/><B>(n=85,237)</B>>];
+    X10 [label=<Excluded (n=36,159)<BR ALIGN="LEFT"/>- No post-op sCr in 48 hours<BR ALIGN="LEFT"/>>, shape=plaintext, fontcolor="grey40"];
+    N9 -> N10;
+    { rank=same; N10; X10; }
+
+    N11 [label=<Operations after excluding preoperative creatinine &gt; 4.5<BR/><B>(n=84,334)</B>>];
+    X11 [label=<Excluded (n=903)<BR ALIGN="LEFT"/>- Pre-op sCr &gt; 4.5 mg/dL<BR ALIGN="LEFT"/>>, shape=plaintext, fontcolor="grey40"];
+    N10 -> N11;
+    { rank=same; N11; X11; }
+
+    N_neg [label=<Final Cohort: Negative AKI Cases<BR/><B>(n=80,124)</B>>];
+    N_pos [label=<Final Cohort: Positive AKI Cases<BR/><B>(n=4,210)</B>>];
+    N11 -> N_neg;
+    N11 -> N_pos;
+    { rank=same; N_neg; N_pos; }
+
+}

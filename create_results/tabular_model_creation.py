@@ -184,7 +184,7 @@ class BootstrapSplitter:
                 self.df, test_size=0.2, random_state=RANDOM_STATE, stratify=self.df[TARGET]
             )
 
-        feature_cols = [col for col in self.df.columns if col not in ['op_id', TARGET]]
+        feature_cols = [col for col in self.df.columns if col not in ['op_id', TARGET]] # instead of dropping 'op_id' remember to exclude all outcome columns
         X_train, y_train = train_df[feature_cols].values, train_df[TARGET].values
         X_test, y_test = test_df[feature_cols].values, test_df[TARGET].values
 

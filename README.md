@@ -1,6 +1,6 @@
 # VitalDB-Dimensionality-Reduction 
 
-The name is misleading, this is using the INSPIRE database. This projects evaluates several machine learning methods in the prediction of postoperative AKI in a non-cardiac surgery population using the INSPIRE database
+This projects evaluates several machine learning methods in the prediction of postoperative AKI in a non-cardiac surgery population using the INSPIRE database
 
 # Create Results
 
@@ -25,6 +25,8 @@ All scripts are located in the create_results folder.
 `Git push`
 
 ## Data Preparation
+Order of operations For Tabular: extract_preop --> extract_intraop --> create_base --> aki_data_selection
+Order of operations LSTM: after completing extract_intraop --> time_series_cleaner --> create_lstm_trainable
 
 ### extract_preop.py
 This file extracts preoperative data into tabular format, from labs.csv, operations.csv, diagnosis.csv, and ward.csv into a preop data file.
