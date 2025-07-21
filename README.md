@@ -2,9 +2,9 @@
 
 This projects evaluates several machine learning methods in the prediction of postoperative AKI in a non-cardiac surgery population using the INSPIRE database
 
-# Create Results
+# data_preprocessing & create_results
 
-All scripts are located in the create_results folder. 
+Use the numbered scripts in order. All scripts are found in either the data_preprocessing folder or create_results. All data preprocessing steps are found in data_preprocessing. Create_results take the prepared data and trains models and creates figures. 
 
 ## Setting up tmux 
 1. Make a new tmux

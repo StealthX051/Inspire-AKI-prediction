@@ -100,7 +100,7 @@ df_preop["op_len"] = df_preop["opend_time"] - df_preop["opstart_time"]
 # encode gender and remove rows with missing height/weight
 df_preop["sex"] = df_preop["sex"] == "M"
 df_preop = df_preop[~(df_preop['weight'].isna() | df_preop['height'].isna())]
-df_preop = df_preop[(df_preop['weight'] != 0) & (df_preop['height'] != 0)] #& (df['op_id'] != 435191458)] # pride and
+df_preop = df_preop[(df_preop['weight'] != 0) & (df_preop['height'] != 0)] #& (df['op_id'] != 435191458)] # prejudicial
 
 # Replace antypes with numbers, after removing rows with regional set as antype
 df_ops = df_ops.drop(df_ops[df_ops['antype'] == 'Regional'].index)

@@ -30,7 +30,7 @@ df_preop = df_preop.merge(base_combined, on='op_id', how='inner')
 
 
 df_preop = df_preop[df_preop['preop_creatinine'].notna()]
-
+df_preop = df_preop[df_preop['preop_creatinine'] < 4.5]
 
 # Cuts samples down to almost half because insufficient data
 df_creatinine = df_labs[df_labs['item_name'] == 'creatinine']
@@ -43,7 +43,7 @@ for n_days in [2, 7]:
     n_minutes = n_days * 24 * 60
     df_merge_filtered = df_merge[
         (df_merge['chart_time'] > df_merge['opend_time']) &
-        (df_merge['chart_time'] < (df_merge['opend_time'] + n_minutes))
+        (df_merge['chart_time'] <= (df_merge['opend_time'] + n_minutes))
     ]
     max_creatinine = (
         df_merge_filtered.groupby('op_id')['value']
@@ -67,21 +67,21 @@ df_aki['aki_boolean'] = df_aki[['aki_2', 'aki_3']].any(axis=1).astype(bool)
 df_final = df_aki[['op_id', 'aki_boolean']].copy()
 
 
-base_combined_unnormalized_csv =     base_path / 'tabular_combined_unnormalized.csv'
+# base_combined_unnormalized_csv =     base_path / 'tabular_combined_unnormalized.csv'
 base_combined_csv =     base_path / 'tabular_combined.csv'
 base_preop_csv =        base_path / 'tabular_preop.csv'
 base_intraop_csv =      base_path / 'tabular_intraop.csv'
 
-aki_combined_unnormalized_csv =      aki_path / "tabular_combined_unnormalized.csv"
+# aki_combined_unnormalized_csv =      aki_path / "tabular_combined_unnormalized.csv"
 aki_combined_csv =      aki_path / "tabular_combined.csv"
 aki_preop_csv =         aki_path / "tabular_preop.csv"
 aki_intraop_csv =       aki_path / "tabular_intraop.csv"
 
-
-df_combined_unnormalized = pd.read_csv(base_combined_unnormalized_csv)
-df_combined_unnormalized = df_combined_unnormalized.merge(df_final, on='op_id', how='inner')
-df_combined_unnormalized.to_csv(aki_combined_unnormalized_csv, index=False)
-nprint(f"wrote to {aki_combined_unnormalized_csv}")
+# deprecated
+# df_combined_unnormalized = pd.read_csv(base_combined_unnormalized_csv)
+# df_combined_unnormalized = df_combined_unnormalized.merge(df_final, on='op_id', how='inner')
+# df_combined_unnormalized.to_csv(aki_combined_unnormalized_csv, index=False)
+# nprint(f"wrote to {aki_combined_unnormalized_csv}")
 
 df_combined = pd.read_csv(base_combined_csv)
 df_combined = df_combined.merge(df_final, on='op_id', how='inner')
