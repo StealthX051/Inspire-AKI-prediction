@@ -16,7 +16,7 @@ base_preop_csv = base_path / 'tabular_preop.csv'
 base_intraop_csv = base_path / 'tabular_intraop.csv'
 
 # Output directory for the augmented feature sets
-output_path = Path("/home/server/Projects/data/MACCE/")
+output_path = Path("/home/server/Projects/data/Multiple-Outcomes/")
 output_path.mkdir(parents=True, exist_ok=True) # Ensure output directory exists
 
 # Output file paths
@@ -31,7 +31,7 @@ outcomes_intraop_csv = output_path / "outcomes_intraop.csv"
 # This dictionary holds key parameters for defining clinical outcomes.
 # Modifying these values will change the definitions across the script.
 CONFIG = {
-    "ENABLE_PROCEDURE_FILTER": True,      # Master switch for procedure filtering. Set to False to include all operations.
+    "ENABLE_PROCEDURE_FILTER": False,      # Master switch for procedure filtering. Set to False to include all operations.
     "TARGET_PCS_CODES": ["02VW3DZ", "04V00DZ"], # Target ICD-10-PCS codes for filtering.
     "ICD_OUTCOME_WINDOW_DAYS": 30,      # Window for ICD-based outcomes (e.g., MACCE, PNA, PE)
     "MORTALITY_WINDOW_DAYS": 30,        # Window for 30-day all-cause mortality
@@ -55,10 +55,13 @@ def process_icd_outcome(df_ops, df_diag, icd_codes, outcome_name):
     """Identifies operations followed by a specific clinical outcome within a defined window based on ICD-10 codes."""
     print(f"Processing ICD-10 outcome: {outcome_name.upper()}...")
     df_diag_filtered = df_diag[df_diag["icd10_cm"].str.startswith(icd_codes, na=False)].copy()
+    
     df_merge = pd.merge(df_ops, df_diag_filtered, on="subject_id", how="left")
     
     # Calculate time window from the central configuration
     time_window_in_minutes = CONFIG["ICD_OUTCOME_WINDOW_DAYS"] * 24 * 60
+
+    print(f"  - Time window for {outcome_name}: {time_window_in_minutes} minutes")
     
     df_merge_in_window = df_merge[
         (df_merge["chart_time"] >= df_merge["opend_time"]) &
@@ -77,6 +80,7 @@ def process_icd_outcome(df_ops, df_diag, icd_codes, outcome_name):
         df_grouped[outcome_name] = True
     else:
         df_grouped[outcome_name] = pd.Series(dtype=bool)
+    
     return df_grouped
 
 # ----------------------------------------------------------------------------
@@ -90,13 +94,14 @@ def process_prf(df_ops, df_vitals):
     
     # Calculate time window from the central configuration
     prf_window_in_minutes = CONFIG["PRF_WINDOW_HOURS"] * 60
-    
+
     df_prf_events = df_merge[df_merge["chart_time"] > (df_merge["opend_time"] + prf_window_in_minutes)].copy()
     
     prf_op_ids = df_prf_events["op_id"].unique()
     df_prf = pd.DataFrame({'op_id': prf_op_ids})
     if not df_prf.empty:
         df_prf['prf'] = True
+    
     return df_prf
 
 # ----------------------------------------------------------------------------
@@ -166,6 +171,13 @@ df_ops = pd.read_csv(ops_path)
 df_diag = pd.read_csv(diag_path)
 df_vitals = pd.read_csv(vitals_path)
 
+
+for name, df in [("combined", pd.read_csv(base_combined_csv)),
+                 ("preop", pd.read_csv(base_preop_csv)),
+                 ("intraop", pd.read_csv(base_intraop_csv))]:
+    print(name, "rows:", len(df), "unique op_id:", df['op_id'].nunique(),
+          "intersection with ops:", len(set(df['op_id']).intersection(set(df_ops['op_id']))))
+
 # 2. Prepare data types for merging and comparison
 for df in [df_ops, df_diag, df_vitals]:
     time_cols = [col for col in df.columns if 'time' in col]
@@ -175,6 +187,7 @@ for df in [df_ops, df_diag, df_vitals]:
 df_diag["icd10_cm"] = df_diag["icd10_cm"].astype(str)
 # Ensure icd10_pcs exists and is a string for filtering
 if 'icd10_pcs' in df_ops.columns:
+    print("icd10_pcs column found in operations.csv")
     df_ops['icd10_pcs'] = df_ops['icd10_pcs'].astype(str).fillna('')
 
 # 2.5 Filter for Specific Operations (if enabled)
@@ -220,6 +233,7 @@ df_final = pd.merge(df_final, df_icu, on="op_id", how="left")
 df_final = pd.merge(df_final, df_mortality, on="op_id", how="left")
 
 # 5. Clean up the final DataFrame
+# not including prf
 outcomes_to_clean = ["macce", "pna", "pe", "prf", "extended_los", "postop_icu_admission", "mortality_30day"]
 for outcome in outcomes_to_clean:
     df_final[outcome] = df_final[outcome].fillna(False)

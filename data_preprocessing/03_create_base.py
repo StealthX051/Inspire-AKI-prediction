@@ -20,7 +20,7 @@ def main():
     
     # Define base directories
     # Using Path for cross-platform compatibility
-    INPUT_DATA_DIR = Path("/home/server/Projects/data/AKI/")
+    INPUT_DATA_DIR = Path("/home/server/Projects/data/Multiple-Outcomes/")
     OUTPUT_DATA_DIR = Path("/home/server/Projects/data/base/")
 
     # Create the output directory if it doesn't exist to prevent errors
@@ -32,7 +32,7 @@ def main():
         sys.exit(1)
 
     # Define full file paths
-    preop_csv_path = INPUT_DATA_DIR / "preop_data_test.csv"
+    preop_csv_path = INPUT_DATA_DIR / "preop_data.csv"
     intraop_csv_path = INPUT_DATA_DIR / "feature_engineered.csv"
     
     norm_csv_path = OUTPUT_DATA_DIR / "normalization_stats.csv"
@@ -106,13 +106,18 @@ def main():
     # Set a seed for reproducibility of random outlier replacement
     np.random.seed(42)
 
+    print("beginnign dbugging")
     # Define columns to ignore during outlier handling and normalization
     ignore_cols = ['op_id', 'age', 'emop', 'num_card_events', 'antype', 'sex', 'asa']
     # Dynamically add other columns to ignore based on naming patterns
     for col in df.columns:
+        if ('aki' in col):
+            print("AKI BEING IGNORED")
         if ('department' in col) or ('_isna' in col) or ('aki' in col):
             ignore_cols.append(col)
     
+    print("complete")
+    exit(0)
     # Use a set for faster lookups
     ignore_cols = set(ignore_cols) 
 

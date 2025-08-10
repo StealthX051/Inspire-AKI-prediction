@@ -25,7 +25,7 @@ ward_vitals_path = inspire_path / "ward_vitals.csv"
 base_path = Path("/home/server/Projects/data/base/")
 
 # if you change output_csv, also change in aki data selection and create base
-output_csv = "/home/server/Projects/data/AKI/preop_data_test.csv"
+output_csv = "/home/server/Projects/data/Multiple-Outcomes/preop_data.csv"
 
 nprint("starting")
 df_labs = pd.read_csv(labs_path)

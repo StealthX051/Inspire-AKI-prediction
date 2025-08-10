@@ -9,8 +9,8 @@ from tqdm import tqdm
 
 inspire_path = Path("/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3")
 vitals_file = inspire_path / "vitals.csv"
-preop_csv = "/home/server/Projects/data/AKI/preop_data.csv"
-output_csv = '/home/server/Projects/data/AKI/feature_engineered.csv'
+preop_csv = "/home/server/Projects/data/Multiple-Outcomes/preop_data.csv"
+output_csv = '/home/server/Projects/data/Multiple-Outcomes/feature_engineered.csv'
 
 # INTENDED TO HEREAFTER BE COMBINED WITH PREOP DATA AND CLEANED WITH CREATE_AKI_TRAINABLE.PY
 

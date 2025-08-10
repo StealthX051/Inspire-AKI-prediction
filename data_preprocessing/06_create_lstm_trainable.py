@@ -11,13 +11,13 @@ import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 
-tabular_csv = '/home/server/Projects/data/AKI/tabular_combined.csv'
+tabular_csv = '/home/server/Projects/data/base/tabular_combined.csv'
 df_tabular = pd.read_csv(tabular_csv)
 
-time_csv = '/home/server/Projects/data/AKI/time_series_cleaned.csv'
+time_csv = '/home/server/Projects/data/Multiple-Outcomes/time_series_cleaned.csv'
 df_time = pd.read_csv(time_csv)
 
-output_file = '/home/server/Projects/data/AKI/lstm_trainable.pkl'
+output_file = '/home/server/Projects/data/Multiple-Outcomes/lstm_trainable.pkl'
 
 # drops operations that are missing over half of all features
 feature_mask = df_time.drop(columns=['op_id', 'chart_time']).notna().astype(int)
@@ -35,12 +35,22 @@ padded_tensors = []
 pad_length = 200
 op_ids = []
 sequence_lengths = []
+# for op_id, group in tqdm(df_time.groupby("op_id"), desc="grouping by op_ids"):
+#     mat = torch.tensor(group.drop(columns=['op_id', 'chart_time']).values)
+#     if mat.shape[0] < 200: # throws away about 4% of longest operations bc they would extend max pad length from 200 to like 600. Consider including all. 
+#         padded_tensors.append(torch.nn.functional.pad(mat, pad=(0, 0, 0, pad_length - mat.shape[0]), value=0))
+#         op_ids.append(op_id)
+#         sequence_lengths.append(mat.shape[0])
+
 for op_id, group in tqdm(df_time.groupby("op_id"), desc="grouping by op_ids"):
-    mat = torch.tensor(group.drop(columns=['op_id', 'chart_time']).values)
-    if mat.shape[0] < 200: # throws away about 4% of longest operations bc they would extend max pad length from 200 to like 600. Consider including all. 
-        padded_tensors.append(torch.nn.functional.pad(mat, pad=(0, 0, 0, pad_length - mat.shape[0]), value=0))
-        op_ids.append(op_id)
-        sequence_lengths.append(mat.shape[0])
+    mat = torch.tensor(
+        group.drop(columns=["op_id", "chart_time"]).to_numpy(),
+        dtype=torch.float32
+    )
+    padded_tensors.append(mat)          # now holds variable-length tensors
+    op_ids.append(op_id)
+    sequence_lengths.append(mat.shape[0])
+
 df_time = pd.DataFrame({
     'op_id': op_ids,
     'time_tensors': padded_tensors,

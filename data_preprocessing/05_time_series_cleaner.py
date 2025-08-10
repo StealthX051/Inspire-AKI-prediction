@@ -7,8 +7,13 @@ from sklearn.preprocessing import StandardScaler
 
 inspire_path = Path("/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3")
 vitals_file = inspire_path / "vitals.csv"
-preop_cleaned = "/home/server/Projects/data/AKI/preop_cleaned.csv"
-output_csv = '/home/server/Projects/data/AKI/time_series_cleaned.csv'
+
+# Replacing with the preprocessed outcome preop data
+# preop_cleaned = "/home/server/Projects/data/AKI/preop_cleaned.csv"
+
+#@Check this path, it should be the cleaned preop data
+preop_cleaned = "/home/server/Projects/data/Multiple-Outcomes/outcomes_preop.csv"
+output_csv = '/home/server/Projects/data/Multiple-Outcomes/time_series_cleaned.csv'
 
 # Load data from CSVs
 print(f"Loading Data")
