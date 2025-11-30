@@ -27,7 +27,7 @@ import torch.optim as optim
 # =============================================================================
 
 # @Check whether these are the correct names
-TARGETS = ['MACCE', 'PNA', "PE", "PRF"] # all of these are booleans
+TARGETS =  ["macce", "pna", "pe", "prf", "extended_los", "postop_icu_admission", "mortality_30day"] # all of these are booleans
 TARGET_IS_BOOLEAN = True
 RANDOM_STATE = 42
 N_TRIALS = 50 # Number of HPO trials to run for each model
@@ -35,9 +35,9 @@ N_TRIALS = 50 # Number of HPO trials to run for each model
 
 # --- Dataset Configurations ---
 datasets_to_run = [
-    {'name': 'preop', 'path': '/home/server/Projects/data/Multiple-Outcomes/tabular_preop.csv'},
-    {'name': 'intraop', 'path': '/home/server/Projects/data/Multiple-Outcomes/tabular_intraop.csv'},
-    {'name': 'combined', 'path': '/home/server/Projects/data/Multiple-Outcomes/tabular_combined.csv'},
+    {'name': 'preop', 'path': '/home/server/Projects/data/Multiple-Outcomes/outcomes_preop.csv'},
+    {'name': 'intraop', 'path': '/home/server/Projects/data/Multiple-Outcomes/outcomes_intraop.csv'},
+    {'name': 'combined', 'path': '/home/server/Projects/data/Multiple-Outcomes/outcomes_combined.csv'},
 ]
 
 # --- Dataset HPO Toggles ---
@@ -155,10 +155,8 @@ def main():
             train_df, val_df = train_test_split(train_val_df, test_size=0.25, random_state=RANDOM_STATE, stratify=train_val_df[TARGET])
 
             # Need to make sure that not reading the columns that are to predict.
-            feature_cols = [col for col in df.columns if col not in ['op_id', TARGET, f"{TARGET}_boolean", f"{TARGET}_positive"]]
+            feature_cols = [col for col in df.columns if col not in (['op_id'] + TARGETS)]
 
-            print(df.columns)
-            exit(0)
             X_train, y_train = train_df[feature_cols].values, train_df[TARGET].values
             X_val, y_val = val_df[feature_cols].values, val_df[TARGET].values
 

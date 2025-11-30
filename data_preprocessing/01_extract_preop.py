@@ -91,7 +91,7 @@ df_preop['num_card_events'] = df_preop['num_card_events'].fillna(0).astype(int)
 
 
 
-df_preop = df_preop[df_preop["asa"] < 6]
+df_preop = df_preop[df_preop["asa"] < 5]
 df_preop = df_preop[df_preop["age"] >= 18]
 df_preop = df_preop.dropna(subset="opend_time")
 df_preop = df_preop.dropna(subset="opstart_time")
@@ -179,6 +179,46 @@ mask = df_ops["icd10_pcs"].astype(str).str.startswith(tuple(prefixes_to_exclude)
 ops_to_exclude = df_ops.loc[mask, "op_id"]
 df_preop = df_preop[~df_preop["op_id"].isin(ops_to_exclude)]
 nprint("finished filtering out some procedure prefixes")
+
+# === Collapse rare categorical groups (<30) at the very end ===
+nprint("collapsing rare categorical groups (<30)")
+
+# 1) ASA (treat as categorical; move rare levels to 'Other')
+asa_counts = df_preop['asa'].value_counts(dropna=False).sort_index()
+print("ASA counts before collapsing:\n", asa_counts)
+
+rare_asa_levels = asa_counts[asa_counts < 30].index.tolist()
+if rare_asa_levels:
+    # Make sure we can store 'Other' alongside numeric values
+    df_preop['asa'] = df_preop['asa'].astype('object')
+    df_preop.loc[df_preop['asa'].isin(rare_asa_levels), 'asa'] = 'Other'
+    print("Collapsed ASA levels into 'Other':", rare_asa_levels)
+else:
+    print("No ASA levels under 30 instances.")
+
+# 2) Department one-hot columns (sum gives counts)
+dept_cols = [c for c in df_preop.columns if c.startswith('department_')]
+if dept_cols:
+    dept_counts = df_preop[dept_cols].sum().sort_values()
+    print("Department counts before collapsing:\n", dept_counts)
+
+    rare_dept_cols = dept_counts[dept_counts < 30].index.tolist()
+    if rare_dept_cols:
+        other_col = 'department_OTHER'
+        # create/accumulate an OTHER column indicating any rare dept hits
+        if other_col not in df_preop.columns:
+            df_preop[other_col] = 0
+        df_preop[other_col] = ((df_preop[rare_dept_cols].sum(axis=1) > 0).astype(int)
+                               | df_preop[other_col].astype(int))
+        # drop the rare columns themselves
+        df_preop.drop(columns=rare_dept_cols, inplace=True)
+        print("Collapsed department dummies into 'department_OTHER':", rare_dept_cols)
+    else:
+        print("No department dummies under 30 instances.")
+else:
+    print("No department dummy columns found.")
+
+nprint("finished collapsing rare categories")
 
 df_preop.to_csv(output_csv, index=False)
 nprint(f"wrote to {output_csv}")

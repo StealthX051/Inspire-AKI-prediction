@@ -270,25 +270,37 @@ def main():
                 elif model_key == 'autogluon':
                     try:
                         from autogluon.tabular import TabularPredictor
-                        # Using un-scaled data as recommended for AutoGluon
+
+                        # Unscaled data for AutoGluon
                         train_df = pd.DataFrame(X_train, columns=feature_names)
                         train_df[TARGET] = y_train
                         test_df = pd.DataFrame(X_test, columns=feature_names)
-                        
-                        # MODIFIED: Moved sample_weight to the constructor
+
+                        # Optional: simple class-balance weights
+                        pos = (y_train == 1).sum()
+                        neg = (y_train == 0).sum()
+                        if pos > 0 and neg > 0:
+                            w_pos = neg / pos
+                            train_df['balance_weight'] = np.where(train_df[TARGET] == 1, w_pos, 1.0)
+                            sample_weight_col = 'balance_weight'
+                        else:
+                            sample_weight_col = None
+
                         predictor = TabularPredictor(
                             label=TARGET,
-                            eval_metric='balanced_accuracy',
-                            sample_weight='balance_weight'
+                            eval_metric='average_precision',   # <-- PR-AUC
+                            problem_type='binary'
                         )
-                        
-                        # MODIFIED: Removed sample_weight from fit()
+
                         predictor.fit(
                             train_data=train_df,
                             time_limit=600,
                             presets='best_quality',
-                            num_cpus=8
+                            num_cpus=8,
+                            sample_weight=sample_weight_col     # <-- pass the column name here (or None)
                         )
+
+                        # Probs/preds
                         y_prob = predictor.predict_proba(test_df, as_pandas=False)[:, 1]
                         y_pred = predictor.predict(test_df).values
                     except ImportError:
