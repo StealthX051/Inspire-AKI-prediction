@@ -1,151 +1,236 @@
-# VitalDB-Dimensionality-Reduction 
+# Inspire-AKI-prediction
 
-This projects evaluates several machine learning methods in the prediction of postoperative AKI in a non-cardiac surgery population using the INSPIRE database
+Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. This repository is best understood as a codebase for studying postoperative acute kidney injury (AKI) prediction in noncardiac surgery patients using the INSPIRE dataset.
 
-# data_preprocessing & create_results
+## What This Repo Is
 
-Use the numbered scripts in order. All scripts are found in either the data_preprocessing folder or create_results. All data preprocessing steps are found in data_preprocessing. Create_results take the prepared data and trains models and creates figures. 
+- A mixed Python + notebook pipeline for:
+  - cohort construction from INSPIRE source tables
+  - AKI label derivation from perioperative creatinine data
+  - preoperative and intraoperative feature engineering
+  - tabular model training and deep sequence model training
+  - calibration, thresholding, bootstrap confidence intervals, DeLong testing, decision-curve analysis, and SHAP interpretation
+- A messy research repo with both newer numbered scripts and older exploratory code paths.
+- Not a turnkey package. Most execution paths assume private INSPIRE data and hard-coded absolute paths under `/home/server/Projects/data/...`.
 
-## Setting up tmux 
-1. Make a new tmux
-    `tmux new -s mysession`
-2. Activate the venv in the tmux
-    `source .venv/bin/activate`
-3. Run the script - navigate to location of script
-    `python file.py`
-4. How to attach to existing session
-    `tmux ls`
-    `tmux attach-session -t {name of session}`
-5. Kill tmux
-    `tmux kill-session -t {name of session}`
+## Current Code-First Takeaways
 
-## Pushing
-`Git add —all`
-`Git commit -m “insert message”`
-`Git push`
+- The most canonical executable path is the numbered script sequence:
+  - `data_preprocessing/01_extract_preop.py`
+  - `data_preprocessing/02_extract_intraop.py`
+  - `data_preprocessing/03_create_base.py`
+  - `data_preprocessing/04_AKI_data_selection.py`
+  - `data_preprocessing/05_time_series_cleaner.py`
+  - `data_preprocessing/06_create_lstm_trainable.py`
+  - `create_results/07_tabular_hpo.py`
+  - `create_results/08_tabular_model_creation.py`
+  - `create_results/09_lstm_hpo.py`
+  - `create_results/10_lstm_model_creation.py`
+- Evaluation and figure generation then continue in notebooks under `create_results/`.
+- The repo strongly supports the study conclusion that tabular models outperform the sequence path on the checked-in results:
+  - `create_results/performance_table.md` reports combined AutoGluon AUROC `0.932`
+  - `create_results/performance_table.md` reports combined `MLP+LSTM` AUROC `0.825`
+- Important confirmed implementation details:
+  - `data_preprocessing/04_AKI_data_selection.py` includes dialysis via `ward_vitals.csv` `crrt` when defining stage 3 AKI.
+  - `data_preprocessing/03_create_base.py` normalizes before missing-value imputation, uses `-99` for `>=10%` missingness, and uses `KNNImputer` for lower-missingness columns.
+  - `data_preprocessing/05_time_series_cleaner.py` cleans and interpolates 24 regular intraoperative signals.
+  - `data_preprocessing/06_create_lstm_trainable.py` pads sequences to length `200` and drops longer operations.
+  - `create_results/08_tabular_model_creation.py` and `create_results/10_lstm_model_creation.py` use repeated fold-style bootstrap splitting and do not enable every model/dataset by default.
 
-## Data Preparation
-Order of operations For Tabular: extract_preop --> extract_intraop --> create_base --> aki_data_selection
-Order of operations LSTM: after completing extract_intraop --> time_series_cleaner --> create_lstm_trainable, When in doubt, followed the order. 
+## Repo Status
 
-### extract_preop.py
-This file extracts preoperative data into tabular format, from labs.csv, operations.csv, diagnosis.csv, and ward.csv into a preop data file.
-This file should be run first when preparing data.
+Treat this repository as a research archive with a partially modernized pipeline, not as polished production code.
 
-### extract_intraop.py
-This file summarizes time series intraoperative data with eight different statistical metrics into tabular format, from vitals.csv into an intraop data file.
-This file is dependent on extract_preop.py
+- Mixed trust level:
+  - higher trust: numbered scripts, checked-in performance tables, `bootstrap_metrics.py`, `decision_curve.py`
+  - medium trust: `create_results/*.ipynb`, `data_preprocessing/consort_parity.py`, `data_preprocessing/outcomes_data_selection.py`
+  - lower trust: exploratory notebooks, one-off scripts in `preoperative_models/`, legacy cleaners, artifact directories
+- Private data dependency:
+  - raw INSPIRE tables are not checked in
+  - many scripts assume a local server filesystem layout
+- Cohort-count drift exists:
+  - manuscript summary says `49,198` patients
+  - `data_preprocessing/consort_diagram_data.ipynb` records a filtered count of `57,724`
+  - comments in `create_results/13_performance_metrics.ipynb` refer to roughly `67k` tabular patients and `54k` LSTM/hybrid patients
 
-### create_base.py
-This file merges preop and intraop data files. Then, it removes non-data elements, normalizes, replaces outliers, and fills in missing data. 
-This file is dependent on extract_intraop.py
+## Canonical Pipeline Map
 
-### AKI_data_selection.py
-This file assigns each operation in the base file from create_base to an AKI classification based on creatinine levels. This file outputs trainable files for
-preop, intraop, and combined tabular data.
-This file is dependent on create_base.py
+### 1. Preoperative extraction
 
-### MACCE_data_selection.py
-This file assigns each operation in the base file from create_base to a MACCE classification. This file outputs trainable files for
-preop, intraop, and combined tabular data.
-This file is dependent on create_base.py
+`data_preprocessing/01_extract_preop.py`
 
+- Reads `operations.csv`, `labs.csv`, `diagnosis.csv`, and `ward_vitals.csv`
+- Derives:
+  - `BMI`
+  - `BSA`
+  - `booking_case_length`
+  - `num_card_events`
+  - one-hot department indicators
+  - latest preop lab values within 90 days
+  - latest ward vitals within 90 days
+- Writes `preop_data_test.csv` under `/home/server/Projects/data/AKI/`
 
-## Hyperparameter Optimization 
+### 2. Intraoperative tabular feature engineering
 
-### tabular_hpo.py
-This script will perform HPO using Optuna on all tabular models except AutoGluon (because AutoGluon explicitly recommends against HPO) and on three types of data. Results of HPO will be saved in **/home/server/Projects/data/AKI/results/tabular_hpo_results.txt** in an easily copy and paste format into **tabular_model_creation.py**
+`data_preprocessing/02_extract_intraop.py`
 
-### lstm_hpo.py
-Performs HPO optimization on a LSTM (to compare with intraoperative only models) and Hybrid MLP LSTM (to compare with combined models). Saves results to **/home/server/Projects/data/AKI/results/hybrid_hpo_results.txt**
+- Reads `vitals.csv`
+- Builds:
+  - 24 regular signals x 8 summary statistics
+  - mean-only sparse variables
+  - weight-adjusted and time-adjusted summed variables
+  - `fluids_agg`
+  - `equiv_MAC_totals`
+- Writes `feature_engineered.csv`
 
-## time_series testing
+### 3. Base dataset creation
 
-### justin_lstm.ipynb 
-In preoperative_models, tests LSTM, LSTM variants, Transformer, and TCN for supplemental
+`data_preprocessing/03_create_base.py`
 
-## Final Model Creation
-### tabular_model_creation.py
-This script creates all the tabular models (HPO parameters provided by previous step) on all three datasets. Results are saved to **/home/server/Projects/data/AKI/results/tabular_{dataset type}_test.pkl**
+- Merges preop and intraop tables
+- Removes IDs and obvious leakage columns
+- Replaces outliers using percentile windows
+- Standardizes numeric features
+- Fills high-missingness columns with `-99`
+- KNN-imputes lower-missingness columns
+- Writes:
+  - `tabular_combined.csv`
+  - `tabular_preop.csv`
+  - `tabular_intraop.csv`
+  - `normalization_stats.csv`
 
-### lstm.py
-Trains a LSTM (intaop only) and Hybrid MLP + LSTM model (combined). Saves both results to **'/home/server/Projects/data/AKI/results/lstm_hybrid_test_optimized.pkl'**. Also saves the LSTM to **/home/server/Projects/data/AKI/results/tabular_intraop_test.pkl** as `lstm` and saves the Hybrid MLP + LSTM model to **/home/server/Projects/data/AKI/results/tabular_combined_test.pkl** as `hybrid`. Also saves `base_54k` to all three output pkls if the training/validation sets of the LSTM and Hybrid models are different than the tabular dataset.
+### 4. AKI label derivation
 
-## Results/Figure Creation
+`data_preprocessing/04_AKI_data_selection.py`
 
-### consort.ipynb 
-Creates Figure 1 Cohort selection CONSORT diagram, saves DOT code to consort_diagram.dot. 
+- Uses preop creatinine plus postoperative 2-day and 7-day windows
+- Includes dialysis from `ward_vitals.csv`
+- Produces labeled AKI versions of:
+  - `tabular_combined.csv`
+  - `tabular_preop.csv`
+  - `tabular_intraop.csv`
 
-### cohort_characteristics.ipynb
-This notebook creates Table 1 Cohort Characteristics and the Variable Fill Table in the first two cells. 
+### 5. Sequence preparation
 
-### performance_metrics.ipynb 
-This notebook creates the AUROC, AUPRC, and Calibration curves for all models, including ASA for preop, LSTM for intraop, and Hybrid for combined. Uses two base truths, base which is for the tabular datasets which contains about 67k patients and `base_54k` which is for LSTM and Hybrid models, which contain about 54k patients. Also creates the detailed performance metrics supplemental table in teh 2nd cell. Saves all plots to **create_results/figures**. Can plot confidence intervals by setting `PLOT_CONFIDENCE_INTERVALS = True`
+`data_preprocessing/05_time_series_cleaner.py`
 
-### delong_table.ipynb
-Runs and creates the DeLong supplemental table that checks AUROC statistical difference between preop combined programs, within each group and between each group. Saves to **figures/scatters**. Outputs a formatted html table that can be copy pasted into Google Docs and also outputs raw HTML code that can be rendered and then copy pasted into Google Docs 
+- Filters to 24 regular intraoperative signals
+- Removes duplicate `(op_id, chart_time, item_name)` rows
+- Replaces outliers, interpolates onto 5-minute grids, fills within-op missingness with per-op means
+- Writes `time_series_cleaned.csv`
 
-### shap.ipynb
-Trains a HPO optimized XGBoost model on combined data, calculates SHAP values and saves them, and then plots a Beeswarm, random positive cases, scatters, and partial dependence plots. Saves plots to **figures/scatters** and **figures/cross_scatters** (warning, cross_scatters shouldn't be run with no max features because it will output 24k)
+`data_preprocessing/06_create_lstm_trainable.py`
 
-### shap_batch.ipynb
-Creates shap beeswarm plots for GBT, RF, LR, and SVM (MLP optional)
+- Merges cleaned time series with labeled tabular data
+- Keeps only operations with acceptable time-series presence
+- Pads sequences to `200` time steps
+- Drops operations longer than that cap
+- Writes `lstm_trainable.pkl`
 
-# Code Stuff - Not Verified by Justin
-**Using the Virtual Environment**
+### 6. Modeling
 
-To start using the project, follow these steps to activate the pre-configured virtual environment on the Linux server.
+- Tabular HPO: `create_results/07_tabular_hpo.py`
+- Tabular training: `create_results/08_tabular_model_creation.py`
+- Deep HPO: `create_results/09_lstm_hpo.py`
+- Deep training: `create_results/10_lstm_model_creation.py`
 
-1) Activate the Virtual Environment
+### 7. Evaluation and manuscript outputs
 
-From the project directory, run the following command to activate the virtual environment:
+- Cohort diagram: `create_results/11_consort.ipynb`
+- Cohort characteristics: `create_results/12_cohort_characteristics.ipynb`
+- Calibration, F2 thresholding, CI bootstraps, reclassification, DCA: `create_results/13_performance_metrics.ipynb`
+- DeLong testing: `create_results/14_delong_table.ipynb`
+- SHAP for XGBoost combined model: `create_results/15_shap.ipynb`
+- Batch SHAP for multiple models/datasets: `create_results/16_shap_batch.ipynb`
 
-`source .venv/bin/activate`
+## Data and Portability
 
-You should see the prompt change to indicate that the `.venv` environment is active.
+### Private inputs expected by the code
 
-2) Start Coding
-Once the environment is active, you can start working on the project. You can run Python scripts or access the interactive Python shell using:
+- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/operations.csv`
+- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/labs.csv`
+- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/vitals.csv`
+- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/diagnosis.csv`
+- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/ward_vitals.csv`
 
-To run a Python script:
-`python your_script.py`
+### What is actually checked in
 
-To open an interactive Python shell:
-`python`
+- checked-in result summaries:
+  - `create_results/performance_table.md`
+  - `create_results/performance_table_calibrated.md`
+  - `create_results/descriptive_table.html`
+  - `create_results/fill_rate_table.html`
+  - `create_results/reclassification_report.html`
+- checked-in model/artifact directories:
+  - `AutogluonModels/`
+  - `notebooks/mljar_results_improved/`
 
-Deactivate the Environment
-When you're done working, you can deactivate the virtual environment by running:
-`deactivate`
+### Practical portability status
 
-**Project Description**
+| Task | Main entrypoint | Status |
+| --- | --- | --- |
+| Read repo structure and checked-in findings | this README + `docs/` | runnable from repo only |
+| Rebuild cohort/features from raw INSPIRE data | `data_preprocessing/01`-`06` | requires private data and matching `/home/server/...` layout |
+| Re-run model training | `create_results/07`-`10` | requires private data plus the pinned environment in `environment.yml` |
+| Re-read checked-in performance results | `create_results/performance_table*.md` | runnable from repo only |
+| Re-run figure notebooks | `create_results/*.ipynb` | depends on prior outputs and server path layout |
 
-The project uses various Python libraries, including:
+## Main Outputs and Findings
 
-- numpy for numerical operations
-- pandas for data manipulation
-- scikit-learn for machine learning and dimensionality reduction
-- matplotlib for data visualization
-- torch for advanced computations
+The checked-in outputs suggest the repo was used to create:
 
-Ensure that the virtual environment is activated before running any scripts to have access to these dependencies.
+- Figure-style outputs:
+  - cohort flow / consort
+  - ROC and PR curves
+  - calibration curves
+  - decision-curve analysis
+  - SHAP beeswarms, waterfalls, dependence/scatter plots
+- Table-style outputs:
+  - cohort characteristics
+  - model performance
+  - calibrated performance
+  - fill-rate table
+  - reclassification report
+  - DeLong comparison tables
 
-**Data Paths**
+The checked-in performance tables support the manuscript-level story:
 
-***Training Data***
- - '/home/server/Projects/data/base/tabular_combined.csv'   (generic X data with no y variables,
- - '/home/server/Projects/data/base/tabular_preop.csv'      formatted as a dataframe with ~120k 
- - '/home/server/Projects/data/base/tabular_intraop.csv'    rows and ~500 columns. )
+- preop structured data is already very strong
+- low-frequency intraoperative data adds modest value
+- the combined tabular models outperform the hybrid deep sequence path
 
+## Documentation Set
 
+Start with:
 
- - '/home/server/Projects/data/AKI/time_series_cleaned.csv' (intraop data)                                                                      TIME SERIES
+- [AGENTS.md](AGENTS.md)
+- [docs/README.md](docs/README.md)
 
+Deep dives:
 
- - "/home/server/Projects/data/AKI/aki_data.csv" (preop data with postop creatinine)
- - "/home/server/Projects/data/AKI/preop_data_nidhir.csv" (nidhir's experimental csv)
- - "/home/server/Projects/data/AKI/preop_trainable/unfiltered.npz" (preop data split into test and train, with aki, aki>0.3, and aki filtered to be positive(see data_preprocessing/create_aki_trainable.py))
+- [docs/01_repo_map.md](docs/01_repo_map.md)
+- [docs/02_data_pipeline.md](docs/02_data_pipeline.md)
+- [docs/03_labels_and_features.md](docs/03_labels_and_features.md)
+- [docs/04_modeling_and_evaluation.md](docs/04_modeling_and_evaluation.md)
+- [docs/05_artifacts_and_outputs.md](docs/05_artifacts_and_outputs.md)
+- [docs/06_notebook_index.md](docs/06_notebook_index.md)
+- [docs/07_manuscript_alignment.md](docs/07_manuscript_alignment.md)
+- [docs/08_reproducibility_and_known_gaps.md](docs/08_reproducibility_and_known_gaps.md)
+- [docs/09_codex_workflow.md](docs/09_codex_workflow.md)
 
- ***Results***
- - "/home/server/Projects/data/AKI/results/tabular_hpo_results.txt" (HPO results for Tabular Models - feed into tabular_model_creation.py)
- - "/home/server/Projects/data/AKI/results/hybrid_hpo_results.txt" (HPO results for LSTM & Hybrid Model - feed into LSTM_model_creation.py)
- - /home/server/Projects/data/AKI/results/tabular_{dataset type}_test.pkl (Split into preop, intraop, and combined. Outputs for bootstrapped models. Preop contains ASA, Intraop contains LSTM, Combined contains hybrid)
+## Important Caveats
+
+- Do not assume the current repo can be executed end-to-end as-is on a fresh machine.
+- Do not assume every notebook is canonical; many are exploratory or legacy.
+- Do not assume manuscript counts and current code outputs are fully aligned.
+- Use `environment.yml` as the main setup file; `requirements.txt` mirrors its pip-managed dependencies.
+
+## Recommended Reading Order
+
+1. [README.md](README.md)
+2. [AGENTS.md](AGENTS.md)
+3. [docs/README.md](docs/README.md)
+4. [docs/02_data_pipeline.md](docs/02_data_pipeline.md)
+5. [docs/04_modeling_and_evaluation.md](docs/04_modeling_and_evaluation.md)
+6. [docs/07_manuscript_alignment.md](docs/07_manuscript_alignment.md)
+7. [docs/08_reproducibility_and_known_gaps.md](docs/08_reproducibility_and_known_gaps.md)

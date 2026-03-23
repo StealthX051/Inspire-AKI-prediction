@@ -1,0 +1,83 @@
+# Codex Workflow
+
+This is the repo-specific workflow guide for Codex or any similar coding agent.
+
+## First Principles
+
+- Prefer code over prose when they disagree.
+- Prefer numbered scripts over exploratory notebooks when both touch the same behavior.
+- Prefer checked-in markdown/html result outputs over memory or guesswork when summarizing findings.
+- Never pretend the repo is turnkey.
+
+## Recommended Order Of Work
+
+1. Read `README.md`.
+2. Read `AGENTS.md`.
+3. Read `docs/README.md`.
+4. For data questions, read `docs/02_data_pipeline.md` and `docs/03_labels_and_features.md`.
+5. For model/evaluation questions, read `docs/04_modeling_and_evaluation.md`.
+6. For manuscript claims or disagreements, read `docs/07_manuscript_alignment.md`.
+7. For execution feasibility, read `docs/08_reproducibility_and_known_gaps.md`.
+
+## Preferred Sources By Question Type
+
+| Question type | Preferred source |
+| --- | --- |
+| “What is the current pipeline?” | numbered scripts `01`-`10` |
+| “How is AKI defined right now?” | `data_preprocessing/04_AKI_data_selection.py` |
+| “What features exist?” | `01_extract_preop.py`, `02_extract_intraop.py`, `03_create_base.py`, `05_time_series_cleaner.py`, `06_create_lstm_trainable.py` |
+| “How are models trained?” | `07_tabular_hpo.py`, `08_tabular_model_creation.py`, `09_lstm_hpo.py`, `10_lstm_model_creation.py` |
+| “How are calibration / DCA / DeLong / SHAP done?” | `create_results/13`-`16`, `bootstrap_metrics.py`, `decision_curve.py` |
+| “What did a previous run report?” | checked-in `create_results/*.md` and `*.html` outputs |
+
+## Command Preferences
+
+- Use `rg` / `rg --files` for search and inventory.
+- Use targeted file reads, not whole-repo dumps.
+- Treat notebooks as structured data:
+  - inspect with `jq` or targeted text extraction
+  - avoid editing them unless explicitly asked
+
+## Things To Be Skeptical Of
+
+- any assumption that later scripts consume earlier outputs without path drift
+- any count mentioned only once in a notebook comment
+- any package/setup instructions that ignore `environment.yml` or the saved `1.2` versus `1.3.1` environment drift
+- any result that requires trusting checked-in model directories without corresponding code evidence
+
+## When To Update Docs
+
+Update docs whenever:
+
+- label logic changes
+- feature derivation changes
+- canonical script order changes
+- model toggles or supported model families change
+- portability improves or worsens
+- manuscript-facing outputs materially change
+
+Minimum doc update set after a behavior change:
+
+- `README.md`
+- the relevant `docs/*.md`
+- `docs/07_manuscript_alignment.md` if the change affects a manuscript-facing claim
+
+## When Not To Edit
+
+- Do not edit checked-in model artifact directories unless explicitly asked.
+- Do not bulk-clean exploratory notebooks as a side quest.
+- Do not rewrite code for portability when the task is only documentation.
+- Do not treat zero-byte or obviously stray files as active sources.
+
+## Verification Loop For Future Changes
+
+After any meaningful code change:
+
+1. confirm the changed behavior in the relevant script/notebook
+2. update the matching docs
+3. re-check file links and command references
+4. record any new drift or caveat instead of hiding it
+
+## Why This Doc Exists
+
+This repo fits the pattern where a short `AGENTS.md` is useful, but deeper task-specific docs are necessary because the research surface is too large and too messy to encode safely in one agent file. That structure matches current OpenAI/Codex guidance more closely than a single giant instruction file would.
