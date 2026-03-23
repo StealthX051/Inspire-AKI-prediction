@@ -11,6 +11,7 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 - The refactored training defaults to `available CPU workers - 2` through a shared runtime policy.
 - Raw refactor predictions are now written as stage partitions plus a deterministic combined `raw_predictions.parquet` view.
 - `inspire-aki report manuscript` is now the report-level command that includes SHAP, rather than requiring a separate SHAP call.
+- The refactor defaults now point at the mounted volume path `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` for raw INSPIRE inputs.
 
 ## What This Repo Is
 
@@ -179,13 +180,18 @@ Legacy alias exports remain explicit through `inspire-aki compat export-legacy`;
 
 ## Data and Portability
 
-### Private inputs expected by the code
+### Private inputs expected by the refactored path
 
-- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/operations.csv`
-- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/labs.csv`
-- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/vitals.csv`
-- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/diagnosis.csv`
-- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/ward_vitals.csv`
+- `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/operations.csv`
+- `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/labs.csv`
+- `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/vitals.csv`
+- `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/diagnosis.csv`
+- `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/ward_vitals.csv`
+
+Historical note:
+
+- the legacy numbered scripts and notebooks were originally developed against a different server layout under `/home/server/Projects/data/...`
+- the refactor config now defaults to the mounted replacement volume on this instance
 
 ### What is actually checked in
 
@@ -204,10 +210,10 @@ Legacy alias exports remain explicit through `inspire-aki compat export-legacy`;
 | Task | Main entrypoint | Status |
 | --- | --- | --- |
 | Read repo structure and checked-in findings | this README + `docs/` | runnable from repo only |
-| Rebuild cohort/features from raw INSPIRE data | `data_preprocessing/01`-`06` | requires private data and matching `/home/server/...` layout |
+| Rebuild cohort/features from raw INSPIRE data | `inspire-aki preprocess ...` | requires private data; refactor defaults now target `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` |
 | Re-run model training | `create_results/07`-`10` | requires private data plus the pinned environment in `environment.yml` |
 | Re-read checked-in performance results | `create_results/performance_table*.md` | runnable from repo only |
-| Re-run figure notebooks | `create_results/*.ipynb` | depends on prior outputs and server path layout |
+| Re-run figure notebooks | `create_results/*.ipynb` | depends on prior outputs and still reflects the older server-era workflow |
 
 ## Main Outputs and Findings
 

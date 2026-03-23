@@ -29,15 +29,20 @@ This document describes the current code-defined data flow. It intentionally pre
 - `create_results/15_shap.ipynb`
 - `create_results/16_shap_batch.ipynb`
 
-## Source Tables Expected by the Canonical Pipeline
+## Source Tables Expected by the Current Environment
 
-The numbered preprocessing scripts expect private INSPIRE tables under:
+The refactored package now defaults to the mounted INSPIRE volume under:
 
-- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/operations.csv`
-- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/labs.csv`
-- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/vitals.csv`
-- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/diagnosis.csv`
-- `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/ward_vitals.csv`
+- `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/operations.csv`
+- `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/labs.csv`
+- `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/vitals.csv`
+- `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/diagnosis.csv`
+- `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/ward_vitals.csv`
+
+Historical note:
+
+- the legacy numbered scripts were originally written against `/home/server/Projects/data/...`
+- many stage-specific output paths below still reflect that older server-era workflow because those scripts have not all been refactored yet
 
 ## Stage-by-Stage Behavior
 

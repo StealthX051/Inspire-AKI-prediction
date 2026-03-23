@@ -115,15 +115,20 @@ The combined raw prediction view is deduplicated and sorted so stage reruns are 
 
 The refactor does **not** export legacy aliases automatically during `run all`.
 
-## Private raw inputs expected by the code
+## Private raw inputs expected by the current refactor defaults
 
 | Artifact | Typical path | Produced outside repo | Notes |
 | --- | --- | --- | --- |
-| INSPIRE operations table | `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/operations.csv` | yes | Required for cohort construction |
-| INSPIRE labs table | `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/labs.csv` | yes | Required for creatinine and preop lab extraction |
-| INSPIRE vitals table | `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/vitals.csv` | yes | Required for intraop features and sequence path |
-| INSPIRE diagnosis table | `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/diagnosis.csv` | yes | Used for cardiovascular history and outcome derivation |
-| INSPIRE ward vitals table | `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/ward_vitals.csv` | yes | Used for ward vitals and dialysis flag |
+| INSPIRE operations table | `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/operations.csv` | yes | Required for cohort construction |
+| INSPIRE labs table | `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/labs.csv` | yes | Required for creatinine and preop lab extraction |
+| INSPIRE vitals table | `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/vitals.csv` | yes | Required for intraop features and sequence path |
+| INSPIRE diagnosis table | `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/diagnosis.csv` | yes | Used for cardiovascular history and outcome derivation |
+| INSPIRE ward vitals table | `/media/volume/ncs_inspire_data/ncs_aki/data/inspire/ward_vitals.csv` | yes | Used for ward vitals and dialysis flag |
+
+Historical note:
+
+- the original numbered-script workflow was developed against a different server under `/home/server/Projects/data/...`
+- the refactor defaults now point at the mounted replacement volume on this instance
 
 ## Legacy numbered-script artifacts
 

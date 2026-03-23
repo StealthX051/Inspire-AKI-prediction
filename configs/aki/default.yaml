@@ -1,9 +1,9 @@
 paths:
   artifacts_dir: artifacts
-  raw_inspire_dir: /home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3
-  compat_aki_dir: /home/server/Projects/data/AKI
-  compat_base_dir: /home/server/Projects/data/base
-  compat_results_dir: /home/server/Projects/data/AKI/results
+  raw_inspire_dir: /media/volume/ncs_inspire_data/ncs_aki/data/inspire
+  compat_aki_dir: /media/volume/ncs_inspire_data/ncs_aki/data/AKI
+  compat_base_dir: /media/volume/ncs_inspire_data/ncs_aki/data/base
+  compat_results_dir: /media/volume/ncs_inspire_data/ncs_aki/data/AKI/results
 cohort:
   preop_window_days: 90
   postop_windows_days: [2, 7]

@@ -39,6 +39,7 @@ This is the repo-specific workflow guide for Codex or any similar coding agent.
 - Worker allocation in the refactor is centralized in `src/inspire_aki/runtime.py` and defaults to `cpu_count() - 2`.
 - Treat `artifacts/predictions/raw/*.parquet` as the stage-owned prediction partitions and `artifacts/predictions/raw_predictions.parquet` as the combined evaluation view.
 - Treat `reports.manuscript_sections` and `reports.shap_jobs` in `configs/aki/default.yaml` as the source of truth for report composition.
+- Treat `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` as the current default raw INSPIRE mount for the refactor.
 - Treat notebooks as structured data:
   - inspect with `jq` or targeted text extraction
   - avoid editing them unless explicitly asked
@@ -50,6 +51,7 @@ This is the repo-specific workflow guide for Codex or any similar coding agent.
 - any package/setup instructions that ignore `environment.yml` or the saved `1.2` versus `1.3.1` environment drift
 - any result that requires trusting checked-in model directories without corresponding code evidence
 - any assumption that `run all` exports legacy aliases automatically; it does not
+- any assumption that legacy `/home/server/...` paths are still the right default for this instance
 
 ## When To Update Docs
 

@@ -31,7 +31,9 @@ This file is the short agent-facing operating contract for `Inspire-AKI-predicti
 
 - A research codebase for postoperative AKI prediction using INSPIRE data.
 - Not turnkey.
-- Strongly tied to private data and `/home/server/Projects/data/...` absolute paths.
+- Strongly tied to private data.
+- The legacy numbered scripts still reflect the older `/home/server/Projects/data/...` server layout in places.
+- The refactor defaults now target the mounted volume path `/media/volume/ncs_inspire_data/ncs_aki/data/inspire`.
 - Mid-refactor: the new package path is `src/inspire_aki/` with CLI entrypoint `inspire-aki`.
 
 ## Safe Working Rules
