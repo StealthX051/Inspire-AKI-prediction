@@ -2,6 +2,20 @@
 
 This document captures the current model-training and evaluation logic from code. It is code-first and intentionally calls out when the current implementation looks incomplete or drifted.
 
+## Current Refactor Contract
+
+The `src/inspire_aki/` refactor now has these package-level guarantees:
+
+- raw training predictions are partitioned by stage under `artifacts/predictions/raw/`
+- `artifacts/predictions/raw_predictions.parquet` is rebuilt deterministically from those partitions
+- sequence checkpoints now carry enough metadata to be reloaded through `load_sequence_bundle(...)`
+- SHAP jobs are validated against the currently supported explainers:
+  - `xgb`
+  - `rf`
+  - `log_reg`
+- `report manuscript` is the top-level report command and includes SHAP when `reports.manuscript_sections` contains `shap`
+- HPO manifests are authored in pipeline code and passed into the model/HPO layer rather than being rebuilt there
+
 ## Main Training Surface
 
 ## Tabular HPO

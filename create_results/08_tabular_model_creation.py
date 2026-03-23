@@ -81,9 +81,18 @@ hpo_params_combined = {
 }
 all_hpo_params = {'preop': hpo_params_preop, 'intraop': hpo_params_intraop, 'combined': hpo_params_combined}
 
+
+def get_worker_count():
+    detected = os.cpu_count() or 1
+    return max(1, detected - 2)
+
+
+WORKER_COUNT = get_worker_count()
+
 # Set seed for reproducibility
 torch.manual_seed(RANDOM_STATE)
 np.random.seed(RANDOM_STATE)
+torch.set_num_threads(WORKER_COUNT)
 
 
 # =============================================================================
@@ -287,7 +296,7 @@ def main():
                             train_data=train_df,
                             time_limit=600,
                             presets='best_quality',
-                            num_cpus=8
+                            num_cpus=WORKER_COUNT
                         )
                         y_prob = predictor.predict_proba(test_df, as_pandas=False)[:, 1]
                         y_pred = predictor.predict(test_df).values
@@ -298,7 +307,7 @@ def main():
                 elif model_key == 'rf':
                     params = current_hpo_params.get('rf', {})
                     model = RandomForestClassifier(
-                        **params, class_weight='balanced', n_jobs=-1, random_state=RANDOM_STATE + i
+                        **params, class_weight='balanced', n_jobs=WORKER_COUNT, random_state=RANDOM_STATE + i
                     )
                     model.fit(X_train_scaled, y_train)
                     y_pred = model.predict(X_test_scaled)
@@ -307,7 +316,9 @@ def main():
                 elif model_key == 'xgb':
                     params = current_hpo_params.get('xgb', {})
                     scale_pos_weight = np.sum(y_train == 0) / np.sum(y_train == 1) if np.sum(y_train == 1) > 0 else 1
-                    model = xgb.XGBClassifier(**params, scale_pos_weight=scale_pos_weight, random_state=RANDOM_STATE + i)
+                    xgb_params = dict(params)
+                    xgb_params.setdefault('n_jobs', WORKER_COUNT)
+                    model = xgb.XGBClassifier(**xgb_params, scale_pos_weight=scale_pos_weight, random_state=RANDOM_STATE + i)
                     model.fit(X_train_scaled, y_train)
                     y_pred = model.predict(X_test_scaled)
                     y_prob = model.predict_proba(X_test_scaled)[:, 1]
@@ -324,7 +335,7 @@ def main():
 
                 elif model_key == 'knn':
                     params = current_hpo_params.get('knn', {})
-                    model = KNeighborsClassifier(**params, weights='distance', n_jobs=-1)
+                    model = KNeighborsClassifier(**params, weights='distance', n_jobs=WORKER_COUNT)
                     model.fit(X_train_scaled, y_train)
                     y_pred = model.predict(X_test_scaled)
                     y_prob = model.predict_proba(X_test_scaled)[:, 1]

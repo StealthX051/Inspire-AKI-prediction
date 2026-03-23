@@ -8,9 +8,11 @@ This repository is readable and partially runnable, but it is not fully portable
 | --- | --- | --- | --- |
 | Private raw data dependency | numbered scripts read `/home/server/Projects/data/INSPIRE/...` | End-to-end reruns are impossible without private INSPIRE tables | Treat docs and checked-in outputs as the primary accessible artifact for external readers |
 | Hard-coded absolute paths | throughout `01`-`10`, notebooks, and helper scripts | Fresh-machine execution will fail even with the right data if the path layout differs | Any future portability work should centralize paths into config/env vars |
+| Refactor uses config, but defaults still point at the server | `configs/aki/default.yaml` centralizes the paths, yet still defaults to `/home/server/...` | New CLI is more portable, but not self-contained unless config is overridden | Use a local override config for any non-server execution |
 | Multiple historical environments | checked-in AutoGluon metadata spans at least `autogluon.tabular==1.2` and `1.3.1`; the repo now pins a baseline in `environment.yml` and `requirements.txt` | Fresh installs are easier, but exact historical artifact recreation is still not guaranteed | Use `environment.yml` as the baseline setup, and treat old artifacts as descriptive evidence rather than exact rerun targets |
 | Filename drift between stages | `01_extract_preop.py` writes `preop_data_test.csv`; later stages reference `preop_data.csv`; `05_time_series_cleaner.py` expects `preop_cleaned.csv` | The canonical pipeline does not connect perfectly as written | Document the drift explicitly and do not claim turnkey execution |
 | Multiple cohort counts | manuscript brief, consort notebook, and performance notebook comments disagree | Easy to misstate study size or split sizes | Use a divergence table rather than forcing a single count |
+| Synthetic tests are broad, real-data validation is still absent | `pytest` now exercises the refactor package on synthetic data only | The new package surface is safer, but scientific reruns on INSPIRE are still unproven here | Treat synthetic passing tests as contract checks, not clinical reproduction |
 
 ## Medium-Impact Code Gaps
 
@@ -37,6 +39,7 @@ This repository is readable and partially runnable, but it is not fully portable
 - inspect checked-in performance and HTML outputs
 - audit notebook inventory and artifact layout
 - understand the current code-defined label and feature logic
+- run the refactored synthetic pytest suite
 
 ## What Cannot Be Reliably Reproduced From the Repo Alone
 
@@ -45,6 +48,7 @@ This repository is readable and partially runnable, but it is not fully portable
 - clean reruns of the figure notebooks
 - exact manuscript cohort counts
 - exact original environment used for the strongest checked-in results
+- proof that the refactored CLI reproduces legacy real-data results exactly
 
 ## Safe Claims vs Unsafe Claims
 

@@ -1,8 +1,119 @@
 # Artifacts and Outputs
 
-This document separates source code, expected external artifacts, and checked-in outputs.
+This document separates:
 
-## Core Input Layers
+- private raw inputs
+- legacy numbered-script outputs
+- refactor package artifacts under `artifacts/`
+- checked-in outputs already present in the repo
+
+The important distinction is that the legacy pipeline writes into `/home/server/...`, while the refactor writes into the configured `artifacts/` root and keeps stage ownership explicit.
+
+## Refactor Artifact Contract
+
+The current `src/inspire_aki/` package is designed around staged artifacts plus manifests.
+
+### Refactor artifact root
+
+- default root: `artifacts/`
+- every stage may also write a manifest under:
+  - `artifacts/manifests/`
+
+### Refactor preprocessing artifacts
+
+| Artifact | Typical path under `artifacts/` | Produced by | Notes |
+| --- | --- | --- | --- |
+| Preop features | `features/preop/preop_features.csv` | `inspire-aki preprocess preop` | Refactor-owned preop feature table |
+| Intraop tabular features | `features/intraop/feature_engineered.csv` | `inspire-aki preprocess intraop` | Refactor-owned intraop feature matrix |
+| Cleaned time series | `features/timeseries/time_series_cleaned.csv` | `inspire-aki preprocess timeseries` | Refactor-owned long-format cleaned sequence table |
+| Combined tabular dataset | `datasets/tabular/tabular_combined.csv` | `inspire-aki preprocess tabular` | Unlabeled combined base |
+| Preop tabular dataset | `datasets/tabular/tabular_preop.csv` | `inspire-aki preprocess tabular` | Unlabeled preop base |
+| Intraop tabular dataset | `datasets/tabular/tabular_intraop.csv` | `inspire-aki preprocess tabular` | Unlabeled intraop base |
+| Unnormalized combined table | `datasets/tabular/tabular_combined_unnormalized.csv` | `inspire-aki preprocess tabular` | Preserved for inspection/export |
+| Normalization stats | `datasets/tabular/normalization_stats.csv` | `inspire-aki preprocess tabular` | Saved scaling statistics |
+| Fill-rate table | `datasets/tabular/fill_rates.csv` | `inspire-aki preprocess tabular` | Missingness/imputation summary |
+| Labeled combined table | `datasets/tabular/tabular_combined_labeled.csv` | `inspire-aki preprocess labels` | Main combined modeling dataset |
+| Labeled preop table | `datasets/tabular/tabular_preop_labeled.csv` | `inspire-aki preprocess labels` | Main preop modeling dataset |
+| Labeled intraop table | `datasets/tabular/tabular_intraop_labeled.csv` | `inspire-aki preprocess labels` | Main intraop modeling dataset |
+| Sequence-ready dataset | `datasets/sequence/lstm_trainable.pkl` | `inspire-aki preprocess sequence` | Padded sequence plus static features |
+
+### Refactor split artifacts
+
+| Artifact | Typical path under `artifacts/` | Produced by | Notes |
+| --- | --- | --- | --- |
+| Tabular bootstrap splits | `datasets/splits/bootstrap_preop.parquet`, `bootstrap_intraop.parquet`, `bootstrap_combined.parquet` | `inspire-aki train tabular` | Repeated fold-style train/test manifests |
+| Sequence bootstrap splits | `datasets/splits/bootstrap_sequence.parquet` | `inspire-aki train sequence` | Sequence train/test manifest |
+| Tabular HPO splits | `datasets/splits/hpo_preop.parquet`, `hpo_intraop.parquet`, `hpo_combined.parquet` | `inspire-aki tune tabular` | Single source of truth for tabular HPO splits |
+| Sequence HPO split | `datasets/splits/hpo_sequence.parquet` | `inspire-aki tune sequence` | Single source of truth for sequence HPO |
+
+### Refactor model artifacts
+
+| Artifact | Typical path under `artifacts/` | Produced by | Notes |
+| --- | --- | --- | --- |
+| Tabular model bundle | `models/tabular/<dataset>/<model>/repeat_<r>/fold_<f>/bundle.joblib` | `inspire-aki train tabular` | Canonical saved sklearn/AutoGluon bundle |
+| Sequence model bundle | `models/sequence/<model>/repeat_<r>/fold_<f>/bundle.pt` | `inspire-aki train sequence` | Canonical saved Torch bundle |
+
+### Sequence checkpoint contract
+
+Refactor sequence bundles now persist enough metadata to be reloaded through `load_sequence_bundle(...)`, including:
+
+- `model_key`
+- `feature_names`
+- `time_input_size`
+- `lstm_hidden_size`
+- `lstm_num_layers`
+- `dropout_rate`
+- `mlp_dims`
+- `mode`
+- `scaler`
+- `state_dict`
+- `metadata`
+- `format_version`
+
+### Refactor prediction artifacts
+
+The refactor now treats prediction artifacts as stage-owned partitions plus one combined evaluation view.
+
+| Artifact | Typical path under `artifacts/` | Produced by | Notes |
+| --- | --- | --- | --- |
+| Tabular raw prediction partition | `predictions/raw/tabular.parquet` | `inspire-aki train tabular` | Replaced on rerun, not appended |
+| Sequence raw prediction partition | `predictions/raw/sequence.parquet` | `inspire-aki train sequence` | Replaced on rerun, not appended |
+| Combined raw predictions | `predictions/raw_predictions.parquet` | materialized after each training stage | Deterministic union of the raw partitions |
+| Calibrated predictions | `predictions/calibrated_predictions.parquet` | `inspire-aki evaluate calibrate` | Derived from the combined raw prediction view |
+
+The combined raw prediction view is deduplicated and sorted so stage reruns are idempotent.
+
+### Refactor tuning, evaluation, and reporting artifacts
+
+| Artifact | Typical path under `artifacts/` | Produced by | Notes |
+| --- | --- | --- | --- |
+| Tabular best params | `tuning/tabular_best_params.json` | `inspire-aki tune tabular` | Machine-readable best params |
+| Sequence best params | `tuning/sequence_best_params.json` | `inspire-aki tune sequence` | Machine-readable best params |
+| Tabular trials | `tuning/tabular_trials.parquet` | `inspire-aki tune tabular` | Optional if trials exist |
+| Sequence trials | `tuning/sequence_trials.parquet` | `inspire-aki tune sequence` | Optional if trials exist |
+| Calibration thresholds | `evaluation/thresholds.csv` | `inspire-aki evaluate calibrate` | One threshold per model/regime/population |
+| Metrics by fold | `evaluation/metrics_by_fold.csv` | `inspire-aki evaluate metrics` | Fold-level metric rows |
+| Metrics summary | `evaluation/metrics_summary.csv` | `inspire-aki evaluate metrics` | Aggregated metrics |
+| Bootstrap CI metrics | `evaluation/metrics_bootstrap_ci.csv` | `inspire-aki evaluate metrics` | Bootstrap summaries when configured |
+| DeLong matrix | `evaluation/delong_matrix.csv` | `inspire-aki evaluate delong` | Pairwise AUROC comparison matrix |
+| DeLong long table | `evaluation/delong_long.csv` | `inspire-aki evaluate delong` | Long-form pairwise results |
+| DCA curves | `evaluation/dca_curves.csv` | `inspire-aki evaluate dca` | Decision-curve analysis rows |
+| SHAP importance CSVs | `explainability/shap_importance_<dataset>_<model>.csv` | `inspire-aki explain shap` or `report manuscript` | Only for supported SHAP models |
+| Report figures | `reports/figures/*` | `inspire-aki report ...` | ROC, PR, calibration, DCA, SHAP, consort outputs |
+| Report tables | `reports/tables/*` | `inspire-aki report ...` | Markdown, CSV, HTML manuscript-facing tables |
+
+### Refactor report contract
+
+- `inspire-aki explain shap` is the SHAP-only path
+- `inspire-aki report manuscript` is the top-level manuscript report path
+- manuscript section composition is controlled by:
+  - `reports.manuscript_sections`
+- SHAP batch composition is controlled by:
+  - `reports.shap_jobs`
+- legacy alias exports are explicit through:
+  - `inspire-aki compat export-legacy`
+
+The refactor does **not** export legacy aliases automatically during `run all`.
 
 ## Private raw inputs expected by the code
 
@@ -14,7 +125,11 @@ This document separates source code, expected external artifacts, and checked-in
 | INSPIRE diagnosis table | `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/diagnosis.csv` | yes | Used for cardiovascular history and outcome derivation |
 | INSPIRE ward vitals table | `/home/server/Projects/data/INSPIRE/physionet.org/files/inspire/1.3/ward_vitals.csv` | yes | Used for ward vitals and dialysis flag |
 
-## Intermediate tabular artifacts
+## Legacy numbered-script artifacts
+
+These are the main outputs expected by the numbered legacy scripts.
+
+### Intermediate tabular artifacts
 
 | Artifact | Produced by | Expected path | Notes |
 | --- | --- | --- | --- |
@@ -28,14 +143,14 @@ This document separates source code, expected external artifacts, and checked-in
 | Labeled preop table | `data_preprocessing/04_AKI_data_selection.py` | `/home/server/Projects/data/AKI/tabular_preop.csv` | Main preop training table |
 | Labeled intraop table | `data_preprocessing/04_AKI_data_selection.py` | `/home/server/Projects/data/AKI/tabular_intraop.csv` | Main intraop training table |
 
-## Sequence artifacts
+### Legacy sequence artifacts
 
 | Artifact | Produced by | Expected path | Notes |
 | --- | --- | --- | --- |
 | Cleaned intraop time series | `data_preprocessing/05_time_series_cleaner.py` | `/home/server/Projects/data/AKI/time_series_cleaned.csv` | 24-signal cleaned/interpolated sequence table |
 | LSTM trainable dataset | `data_preprocessing/06_create_lstm_trainable.py` | `/home/server/Projects/data/AKI/lstm_trainable.pkl` | Merged padded sequence + static feature dataset |
 
-## Training outputs expected by the modeling scripts
+### Legacy training outputs
 
 | Artifact | Produced by | Expected path | Notes |
 | --- | --- | --- | --- |
@@ -46,7 +161,7 @@ This document separates source code, expected external artifacts, and checked-in
 | Combined test results pickle | `create_results/08_tabular_model_creation.py` and `10_lstm_model_creation.py` | `/home/server/Projects/data/AKI/results/tabular_combined_test.pkl` | May contain tabular and hybrid rows |
 | Consolidated LSTM/hybrid pickle | `create_results/10_lstm_model_creation.py` | `/home/server/Projects/data/AKI/results/lstm_hybrid_test_optimized.pkl` | Deep-model specific output |
 
-## Checked-In outputs already in the repo
+## Checked-in outputs already in the repo
 
 These are present in version control and can be read without private data.
 
@@ -60,7 +175,7 @@ These are present in version control and can be read without private data.
 | AutoGluon model dirs | `AutogluonModels/` | checked-in artifact | Saved predictor folders |
 | MLJAR output tree | `notebooks/mljar_results_improved/` | checked-in artifact | Saved AutoML runs and reports |
 
-## Figure/Table-Producing Notebooks
+## Figure/table-producing notebooks
 
 | Notebook | Main outputs |
 | --- | --- |
@@ -71,16 +186,19 @@ These are present in version control and can be read without private data.
 | `create_results/15_shap.ipynb` | SHAP explanation pickles and figure files |
 | `create_results/16_shap_batch.ipynb` | batch SHAP outputs across model/dataset combinations |
 
-## Source vs Artifact Guidance
+## Source vs artifact guidance
 
 When reading the repo:
 
 - treat `*.py` and curated notebooks as source
 - treat `AutogluonModels/` and `notebooks/mljar_results_improved/` as artifacts
 - treat checked-in markdown/html tables as evidence of prior runs, not guarantees of fresh reproducibility
+- treat `artifacts/` as the refactor-owned runtime surface
+- treat `/home/server/...` outputs as the legacy numbered-script runtime surface
 
-## Notable Output Drift
+## Notable output drift
 
 - Some scripts write to `/home/server/Projects/data/base/` while later steps read from `/home/server/Projects/data/AKI/`.
 - Some notebooks expect files like `tabular_combined_unnormalized.csv` that are not generated by the canonical numbered path.
 - The current repo therefore exposes multiple output layers, not one perfectly linear artifact chain.
+- The refactor is cleaner than the legacy chain, but it is still not proof of exact real-data parity with the checked-in historical outputs.

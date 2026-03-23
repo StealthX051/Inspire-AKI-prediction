@@ -30,6 +30,15 @@ RANDOM_STATE = 42
 N_TRIALS = 50 # Number of HPO trials to run for each model
 RESULTS_FILE_PATH = '/home/server/Projects/data/AKI/results/tabular_hpo_results.txt'
 
+
+def get_worker_count():
+    detected = os.cpu_count() or 1
+    return max(1, detected - 2)
+
+
+WORKER_COUNT = get_worker_count()
+torch.set_num_threads(WORKER_COUNT)
+
 # --- Dataset Configurations ---
 datasets_to_run = [
     {'name': 'preop', 'path': '/home/server/Projects/data/AKI/tabular_preop.csv'},
@@ -176,7 +185,7 @@ def main():
 
             def objective_xgb(trial):
                 params = {
-                    'objective': 'binary:logistic', 'eval_metric': 'logloss', 'device': 'cuda', 'random_state': RANDOM_STATE,
+                    'objective': 'binary:logistic', 'eval_metric': 'logloss', 'device': 'cuda', 'random_state': RANDOM_STATE, 'n_jobs': WORKER_COUNT,
                     'n_estimators': trial.suggest_int('n_estimators', *search_spaces['xgb']['n_estimators']),
                     'learning_rate': trial.suggest_float('learning_rate', *search_spaces['xgb']['learning_rate']),
                     'max_depth': trial.suggest_int('max_depth', *search_spaces['xgb']['max_depth']),
@@ -191,7 +200,7 @@ def main():
             
             def objective_rf(trial):
                 params = {
-                    'n_jobs': -1, 'random_state': RANDOM_STATE, 'class_weight': 'balanced',
+                    'n_jobs': WORKER_COUNT, 'random_state': RANDOM_STATE, 'class_weight': 'balanced',
                     'n_estimators': trial.suggest_int('n_estimators', *search_spaces['rf']['n_estimators']),
                     'max_depth': trial.suggest_int('max_depth', *search_spaces['rf']['max_depth'], log=True),
                     'min_samples_split': trial.suggest_int('min_samples_split', *search_spaces['rf']['min_samples_split']),
@@ -210,7 +219,7 @@ def main():
 
             def objective_knn(trial):
                 n_neighbors = trial.suggest_int('n_neighbors', *search_spaces['knn']['n_neighbors'])
-                model = KNeighborsClassifier(n_neighbors=n_neighbors, weights='distance', n_jobs=-1)
+                model = KNeighborsClassifier(n_neighbors=n_neighbors, weights='distance', n_jobs=WORKER_COUNT)
                 model.fit(X_train_scaled, y_train)
                 return roc_auc_score(y_val, model.predict_proba(X_val_scaled)[:, 1])
 

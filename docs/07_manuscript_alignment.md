@@ -30,3 +30,5 @@ The manuscript brief is directionally accurate, but the repo must be documented 
 - the sequence path uses a hard length cap and loses some long cases
 - the current maintained SVM path is linear
 - the current checked-in combined tabular result is stronger than the hybrid deep result
+
+For refactor-specific portability fixes that do not intentionally change the manuscript-facing scientific logic, see [refactor/behavior_drift.md](refactor/behavior_drift.md).

@@ -6,12 +6,14 @@ This directory is the deeper code-first knowledge base for `Inspire-AKI-predicti
 
 1. [../README.md](../README.md)
 2. [../AGENTS.md](../AGENTS.md)
-3. [01_repo_map.md](01_repo_map.md)
-4. [02_data_pipeline.md](02_data_pipeline.md)
-5. [03_labels_and_features.md](03_labels_and_features.md)
-6. [04_modeling_and_evaluation.md](04_modeling_and_evaluation.md)
-7. [07_manuscript_alignment.md](07_manuscript_alignment.md)
-8. [08_reproducibility_and_known_gaps.md](08_reproducibility_and_known_gaps.md)
+3. `src/inspire_aki/`
+4. [01_repo_map.md](01_repo_map.md)
+5. [02_data_pipeline.md](02_data_pipeline.md)
+6. [03_labels_and_features.md](03_labels_and_features.md)
+7. [04_modeling_and_evaluation.md](04_modeling_and_evaluation.md)
+8. [05_artifacts_and_outputs.md](05_artifacts_and_outputs.md)
+9. [07_manuscript_alignment.md](07_manuscript_alignment.md)
+10. [08_reproducibility_and_known_gaps.md](08_reproducibility_and_known_gaps.md)
 
 ## By Task
 
@@ -41,6 +43,12 @@ This directory is the deeper code-first knowledge base for `Inspire-AKI-predicti
 
 - [08_reproducibility_and_known_gaps.md](08_reproducibility_and_known_gaps.md)
 
+### Understand runtime artifacts
+
+- [05_artifacts_and_outputs.md](05_artifacts_and_outputs.md)
+- [refactor/behavior_drift.md](refactor/behavior_drift.md)
+
 ### Work on the repo with Codex or another agent
 
 - [09_codex_workflow.md](09_codex_workflow.md)
+- [refactor/behavior_drift.md](refactor/behavior_drift.md)

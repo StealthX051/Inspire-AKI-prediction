@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+import pandas as pd
+from sklearn.calibration import IsotonicRegression
+from sklearn.model_selection import KFold
+
+from inspire_aki.evaluation.thresholds import find_optimal_fbeta_threshold
+
+
+@dataclass
+class CalibrationResult:
+    predictions: pd.DataFrame
+    thresholds: pd.DataFrame
+
+
+def _calibrate_group(group_df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame, dict[str, object]]:
+    calibration_cfg = config["calibration"]
+    group_df = group_df.sort_values(["repeat_id", "fold_id", "op_id"]).reset_index(drop=True).copy()
+    y_true = group_df["y_true"].astype(int).to_numpy()
+    y_prob_raw = group_df["y_prob_raw"].astype(float).to_numpy()
+
+    method = calibration_cfg["method"]
+    if method != "isotonic":
+        raise ValueError(f"Unsupported calibration method: {method}")
+
+    unique_classes = np.unique(y_true)
+    n_splits = min(calibration_cfg["cv_folds"], len(group_df))
+    if len(unique_classes) < 2 or n_splits < 2:
+        y_prob_calibrated = y_prob_raw.copy()
+        threshold = 0.5
+        method_used = "identity"
+    else:
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=config["splits"]["random_state"])
+        y_prob_calibrated = np.zeros_like(y_prob_raw, dtype=float)
+        for train_idx, test_idx in kf.split(y_prob_raw):
+            calibrator = IsotonicRegression(out_of_bounds="clip")
+            calibrator.fit(y_prob_raw[train_idx], y_true[train_idx])
+            y_prob_calibrated[test_idx] = calibrator.predict(y_prob_raw[test_idx])
+        threshold = find_optimal_fbeta_threshold(
+            y_true,
+            y_prob_calibrated,
+            beta=2.0,
+            threshold_min=calibration_cfg["threshold_min"],
+            threshold_max=calibration_cfg["threshold_max"],
+            steps=calibration_cfg["threshold_steps"],
+        )
+        method_used = "isotonic_cv"
+
+    group_df["y_prob_calibrated"] = y_prob_calibrated
+    group_df["threshold"] = threshold
+    group_df["y_pred"] = (group_df["y_prob_calibrated"] >= threshold).astype(int)
+    group_df["calibration_method"] = method_used
+
+    summary = {
+        "dataset_regime": group_df["dataset_regime"].iat[0],
+        "population_id": group_df["population_id"].iat[0],
+        "model_key": group_df["model_key"].iat[0],
+        "calibration_method": method_used,
+        "threshold": float(threshold),
+        "n_rows": int(len(group_df)),
+        "n_positive": int(y_true.sum()),
+    }
+    return group_df, summary
+
+
+def calibrate_prediction_groups(predictions_df: pd.DataFrame, config: dict) -> CalibrationResult:
+    if predictions_df.empty:
+        return CalibrationResult(predictions=predictions_df.copy(), thresholds=pd.DataFrame())
+
+    calibrated_groups: list[pd.DataFrame] = []
+    threshold_rows: list[dict[str, object]] = []
+    group_cols = ["dataset_regime", "population_id", "model_key"]
+    for _, group_df in predictions_df.groupby(group_cols, sort=False):
+        calibrated_df, summary = _calibrate_group(group_df, config)
+        calibrated_groups.append(calibrated_df)
+        threshold_rows.append(summary)
+
+    return CalibrationResult(
+        predictions=pd.concat(calibrated_groups, ignore_index=True),
+        thresholds=pd.DataFrame(threshold_rows),
+    )
+

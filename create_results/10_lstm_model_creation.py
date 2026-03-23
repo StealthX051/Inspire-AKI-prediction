@@ -26,6 +26,14 @@ RANDOM_STATE = 42
 USE_BOOTSTRAPPING = True # Set to True to run the full 25-iteration cross-validation
 N_BOOTSTRAP_ITERATIONS = 25
 
+
+def get_worker_count():
+    detected = os.cpu_count() or 1
+    return max(1, detected - 2)
+
+
+WORKER_COUNT = get_worker_count()
+
 # --- I/O Configuration ---
 BASE_DATA_DIR = '/home/server/Projects/data/AKI/'
 LSTM_INPUT_PKL = os.path.join(BASE_DATA_DIR, 'lstm_trainable.pkl')
@@ -77,6 +85,8 @@ hpo_params_lstm_only = {
     'lstm_hidden_size': 50,
     'lstm_num_layers': 4,
 }
+
+torch.set_num_threads(WORKER_COUNT)
 
 hpo_params_hybrid = {
     'mlp_dims': [120, 155],
@@ -474,9 +484,9 @@ def main():
                     val_dataset = TensorDataset(*val_tensors)
                     test_dataset = TensorDataset(*test_tensors)
                     
-                    train_loader = DataLoader(train_dataset, batch_size=h_params['batch_size'], shuffle=True, pin_memory=True, num_workers=4)
-                    val_loader = DataLoader(val_dataset, batch_size=h_params['batch_size'], shuffle=False, pin_memory=True, num_workers=4)
-                    test_loader = DataLoader(test_dataset, batch_size=h_params['batch_size'], shuffle=False, pin_memory=True, num_workers=4)
+                    train_loader = DataLoader(train_dataset, batch_size=h_params['batch_size'], shuffle=True, pin_memory=True, num_workers=WORKER_COUNT)
+                    val_loader = DataLoader(val_dataset, batch_size=h_params['batch_size'], shuffle=False, pin_memory=True, num_workers=WORKER_COUNT)
+                    test_loader = DataLoader(test_dataset, batch_size=h_params['batch_size'], shuffle=False, pin_memory=True, num_workers=WORKER_COUNT)
                     
                     perf = train_evaluate_lstm_hybrid(model, train_loader, val_loader, test_loader, h_params, device)
 

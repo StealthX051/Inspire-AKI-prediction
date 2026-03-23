@@ -23,6 +23,7 @@ This is the repo-specific workflow guide for Codex or any similar coding agent.
 
 | Question type | Preferred source |
 | --- | --- |
+| “How should I run the refactored pipeline?” | `src/inspire_aki/`, `configs/aki/default.yaml`, and `inspire-aki --help` |
 | “What is the current pipeline?” | numbered scripts `01`-`10` |
 | “How is AKI defined right now?” | `data_preprocessing/04_AKI_data_selection.py` |
 | “What features exist?” | `01_extract_preop.py`, `02_extract_intraop.py`, `03_create_base.py`, `05_time_series_cleaner.py`, `06_create_lstm_trainable.py` |
@@ -34,6 +35,10 @@ This is the repo-specific workflow guide for Codex or any similar coding agent.
 
 - Use `rg` / `rg --files` for search and inventory.
 - Use targeted file reads, not whole-repo dumps.
+- Prefer `inspire-aki ...` over directly reassembling legacy script chains when the task is forward-looking refactor work.
+- Worker allocation in the refactor is centralized in `src/inspire_aki/runtime.py` and defaults to `cpu_count() - 2`.
+- Treat `artifacts/predictions/raw/*.parquet` as the stage-owned prediction partitions and `artifacts/predictions/raw_predictions.parquet` as the combined evaluation view.
+- Treat `reports.manuscript_sections` and `reports.shap_jobs` in `configs/aki/default.yaml` as the source of truth for report composition.
 - Treat notebooks as structured data:
   - inspect with `jq` or targeted text extraction
   - avoid editing them unless explicitly asked
@@ -44,6 +49,7 @@ This is the repo-specific workflow guide for Codex or any similar coding agent.
 - any count mentioned only once in a notebook comment
 - any package/setup instructions that ignore `environment.yml` or the saved `1.2` versus `1.3.1` environment drift
 - any result that requires trusting checked-in model directories without corresponding code evidence
+- any assumption that `run all` exports legacy aliases automatically; it does not
 
 ## When To Update Docs
 
@@ -61,6 +67,7 @@ Minimum doc update set after a behavior change:
 - `README.md`
 - the relevant `docs/*.md`
 - `docs/07_manuscript_alignment.md` if the change affects a manuscript-facing claim
+- `docs/refactor/behavior_drift.md` if the refactor intentionally deviates from the brittle legacy path
 
 ## When Not To Edit
 

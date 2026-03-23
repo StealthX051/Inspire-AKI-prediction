@@ -137,7 +137,10 @@ The numbered preprocessing scripts expect private INSPIRE tables under:
 ### Merge behavior
 
 - Preferred merge key is `op_id`.
-- There is fallback code that merges on `subject_id` vs `op_id` if `op_id` is absent in the preop table, but the main expected path is `op_id`.
+- The legacy numbered script path was permissive about merge wiring.
+- The refactored package path is stricter:
+  - `src/inspire_aki/datasets/tabular.py` now requires `op_id` in both upstream frames
+  - it fails fast instead of falling back to a `subject_id` to `op_id` join
 
 ### Core preprocessing
 

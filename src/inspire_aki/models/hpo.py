@@ -1,0 +1,294 @@
+from __future__ import annotations
+
+import copy
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+from sklearn.metrics import balanced_accuracy_score, roc_auc_score
+from sklearn.preprocessing import StandardScaler
+
+from inspire_aki.datasets.splits import subset_from_manifest
+from inspire_aki.models.sequence import HybridModel
+from inspire_aki.models.tabular import PyTorchMLP, fit_tabular_model, tabular_feature_columns
+from inspire_aki.runtime import configure_torch_threads, worker_count
+
+
+def tune_tabular_dataset(
+    df: pd.DataFrame,
+    dataset_regime: str,
+    manifest: pd.DataFrame,
+    config: dict,
+) -> tuple[dict[str, dict[str, Any]], pd.DataFrame]:
+    target = config["models"]["target"]
+    enabled = config["models"]["tabular_hpo_enabled"]
+    if not enabled:
+        return {}, pd.DataFrame()
+
+    import optuna
+
+    train_df = subset_from_manifest(df, manifest, repeat_id=0, fold_id=0, split_name="train")
+    val_df = subset_from_manifest(df, manifest, repeat_id=0, fold_id=0, split_name="val")
+    feature_cols = tabular_feature_columns(df, target)
+    x_train = train_df[feature_cols].values
+    y_train = train_df[target].values
+    x_val = val_df[feature_cols].values
+    y_val = val_df[target].values
+    scaler = StandardScaler()
+    x_train_scaled = scaler.fit_transform(x_train)
+    x_val_scaled = scaler.transform(x_val)
+    training_workers = worker_count(config)
+
+    search_spaces = config["models"]["tabular_hpo_search_spaces"]
+    results: dict[str, dict[str, Any]] = {}
+    trials: list[dict[str, Any]] = []
+
+    def objective_factory(model_key: str):
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.neighbors import KNeighborsClassifier
+        from sklearn.svm import LinearSVC
+        import xgboost as xgb
+
+        try:
+            import torch
+            import torch.nn as nn
+            import torch.optim as optim
+        except ImportError:  # pragma: no cover - optional dependency guard
+            torch = None
+            nn = None
+            optim = None
+
+        def objective(trial: optuna.Trial) -> float:
+            if model_key == "log_reg":
+                model = LogisticRegression(
+                    C=trial.suggest_float("C", *search_spaces["log_reg"]["C"], log=True),
+                    penalty="l2",
+                    solver="lbfgs",
+                    tol=0.001,
+                    max_iter=1000,
+                    random_state=config["splits"]["random_state"],
+                    class_weight="balanced",
+                )
+                model.fit(x_train_scaled, y_train)
+                return roc_auc_score(y_val, model.predict_proba(x_val_scaled)[:, 1])
+            if model_key == "xgb":
+                params = {
+                    "objective": "binary:logistic",
+                    "eval_metric": "logloss",
+                    "random_state": config["splits"]["random_state"],
+                    "n_jobs": training_workers,
+                    "n_estimators": trial.suggest_int("n_estimators", *search_spaces["xgb"]["n_estimators"]),
+                    "learning_rate": trial.suggest_float("learning_rate", *search_spaces["xgb"]["learning_rate"]),
+                    "max_depth": trial.suggest_int("max_depth", *search_spaces["xgb"]["max_depth"]),
+                    "subsample": trial.suggest_float("subsample", *search_spaces["xgb"]["subsample"]),
+                    "colsample_bytree": trial.suggest_float("colsample_bytree", *search_spaces["xgb"]["colsample_bytree"]),
+                    "gamma": trial.suggest_float("gamma", *search_spaces["xgb"]["gamma"]),
+                    "scale_pos_weight": np.sum(y_train == 0) / np.sum(y_train == 1) if np.sum(y_train == 1) > 0 else 1,
+                }
+                if torch is not None and torch.cuda.is_available():
+                    params["device"] = "cuda"
+                model = xgb.XGBClassifier(**params)
+                model.fit(x_train_scaled, y_train, verbose=False)
+                return roc_auc_score(y_val, model.predict_proba(x_val_scaled)[:, 1])
+            if model_key == "rf":
+                model = RandomForestClassifier(
+                    n_jobs=training_workers,
+                    random_state=config["splits"]["random_state"],
+                    class_weight="balanced",
+                    n_estimators=trial.suggest_int("n_estimators", *search_spaces["rf"]["n_estimators"]),
+                    max_depth=trial.suggest_int("max_depth", *search_spaces["rf"]["max_depth"], log=True),
+                    min_samples_split=trial.suggest_int("min_samples_split", *search_spaces["rf"]["min_samples_split"]),
+                    min_samples_leaf=trial.suggest_int("min_samples_leaf", *search_spaces["rf"]["min_samples_leaf"]),
+                    max_features=trial.suggest_categorical("max_features", ["sqrt", "log2"]),
+                )
+                model.fit(x_train_scaled, y_train)
+                return roc_auc_score(y_val, model.predict_proba(x_val_scaled)[:, 1])
+            if model_key == "svm":
+                model = LinearSVC(
+                    C=trial.suggest_float("C", *search_spaces["svm"]["C"], log=True),
+                    class_weight="balanced",
+                    random_state=config["splits"]["random_state"],
+                    dual="auto",
+                    max_iter=5000,
+                )
+                model.fit(x_train_scaled, y_train)
+                return roc_auc_score(y_val, model.decision_function(x_val_scaled))
+            if model_key == "knn":
+                model = KNeighborsClassifier(
+                    n_neighbors=trial.suggest_int("n_neighbors", *search_spaces["knn"]["n_neighbors"]),
+                    weights="distance",
+                    n_jobs=training_workers,
+                )
+                model.fit(x_train_scaled, y_train)
+                return roc_auc_score(y_val, model.predict_proba(x_val_scaled)[:, 1])
+            if model_key == "mlp":
+                if torch is None or nn is None or optim is None:
+                    raise ImportError("torch is required for MLP HPO.")
+                configure_torch_threads(config)
+                lr = trial.suggest_float("lr", *search_spaces["mlp"]["lr"], log=True)
+                n_layers = trial.suggest_int("n_layers", *search_spaces["mlp"]["n_layers"])
+                n_units = trial.suggest_int("n_units", *search_spaces["mlp"]["n_units"])
+                dropout_rate = trial.suggest_float("dropout_rate", *search_spaces["mlp"]["dropout_rate"])
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                x_train_tensor = torch.FloatTensor(x_train_scaled).to(device)
+                y_train_tensor = torch.FloatTensor(y_train).reshape(-1, 1).to(device)
+                x_val_tensor = torch.FloatTensor(x_val_scaled).to(device)
+                model = PyTorchMLP(x_train_scaled.shape[1], n_layers, n_units, dropout_rate).to(device)
+                optimizer = optim.Adam(model.parameters(), lr=lr)
+                pos_weight = torch.tensor([np.sum(y_train == 0) / np.sum(y_train == 1)], device=device)
+                criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+                for _ in range(100):
+                    model.train()
+                    outputs = model(x_train_tensor)
+                    loss = criterion(outputs, y_train_tensor)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                model.eval()
+                with torch.no_grad():
+                    val_outputs = model(x_val_tensor)
+                    val_probs = torch.sigmoid(val_outputs).cpu().numpy().flatten()
+                return roc_auc_score(y_val, val_probs)
+            raise ValueError(model_key)
+
+        return objective
+
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    for model_key in enabled:
+        study = optuna.create_study(direction="maximize", study_name=f"{dataset_regime}_{model_key}")
+        study.optimize(objective_factory(model_key), n_trials=50, show_progress_bar=False)
+        results[model_key] = study.best_params
+        for trial in study.trials:
+            trials.append(
+                {
+                    "dataset_regime": dataset_regime,
+                    "model_key": model_key,
+                    "trial_number": trial.number,
+                    "value": trial.value,
+                    "params": trial.params,
+                    "state": str(trial.state),
+                }
+            )
+    return results, pd.DataFrame(trials)
+
+
+def tune_sequence_dataset(df_sequence: pd.DataFrame, manifest: pd.DataFrame, config: dict) -> tuple[dict[str, dict[str, Any]], pd.DataFrame]:
+    target = config["models"]["target"]
+    results: dict[str, dict[str, Any]] = {}
+    trials_out: list[dict[str, Any]] = []
+    enabled = config["models"]["sequence_hpo_enabled"]
+    if not enabled:
+        return {}, pd.DataFrame()
+
+    import optuna
+
+    try:
+        import torch
+        from torch.utils.data import DataLoader, TensorDataset
+    except ImportError as exc:  # pragma: no cover - optional dependency guard
+        raise ImportError("torch is required for sequence HPO.") from exc
+
+    search_spaces = config["models"]["sequence_hpo_search_spaces"]
+    feature_cols_tab = [col for col in df_sequence.columns if col not in ["op_id", "time_tensors", "seq_len", target]]
+    train_df = subset_from_manifest(df_sequence, manifest, repeat_id=0, fold_id=0, split_name="train")
+    val_df = subset_from_manifest(df_sequence, manifest, repeat_id=0, fold_id=0, split_name="val")
+    scaler = StandardScaler()
+    train_df.loc[:, feature_cols_tab] = scaler.fit_transform(train_df[feature_cols_tab])
+    val_df.loc[:, feature_cols_tab] = scaler.transform(val_df[feature_cols_tab])
+
+    def df_to_tensors(sub_df: pd.DataFrame):
+        x_tab = torch.tensor(sub_df[feature_cols_tab].values, dtype=torch.float32)
+        x_time = torch.stack([tensor.clone().detach() for tensor in sub_df["time_tensors"]]).to(torch.float32)
+        seq_len = torch.tensor(sub_df["seq_len"].tolist(), dtype=torch.long)
+        y = torch.tensor(sub_df[target].values, dtype=torch.float32)
+        return x_tab, x_time, seq_len, y
+
+    train_dataset = TensorDataset(*df_to_tensors(train_df))
+    val_dataset = TensorDataset(*df_to_tensors(val_df))
+    configure_torch_threads(config)
+    loader_workers = worker_count(config)
+    train_loader = DataLoader(train_dataset, batch_size=512, shuffle=True, num_workers=loader_workers)
+    val_loader = DataLoader(val_dataset, batch_size=512, num_workers=loader_workers)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+    def objective_builder(model_key: str):
+        def objective(trial: optuna.Trial) -> float:
+            lr = trial.suggest_float("lr", *search_spaces[model_key]["lr"], log=True)
+            dropout_rate = trial.suggest_float("dropout_rate", *search_spaces[model_key]["dropout_rate"])
+            if model_key == "lstm_only":
+                lstm_hidden_size = trial.suggest_int("lstm_hidden_size", *search_spaces[model_key]["lstm_hidden_size"])
+                lstm_num_layers = trial.suggest_int("lstm_num_layers", *search_spaces[model_key]["lstm_num_layers"])
+                mlp_dims: list[int] = []
+            else:
+                lstm_hidden_size = trial.suggest_int("lstm_hidden_size", *search_spaces[model_key]["lstm_hidden_size"])
+                lstm_num_layers = trial.suggest_int("lstm_num_layers", *search_spaces[model_key]["lstm_num_layers"])
+                n_mlp_layers = trial.suggest_int("n_mlp_layers", *search_spaces[model_key]["n_mlp_layers"])
+                mlp_dims = [trial.suggest_int(f"mlp_layer_{i}_size", *search_spaces[model_key]["mlp_layer_size"]) for i in range(n_mlp_layers)]
+
+            model = HybridModel(
+                tabular_input_size=len(feature_cols_tab),
+                lstm_input_size=train_dataset.tensors[1].shape[2],
+                lstm_hidden_size=lstm_hidden_size,
+                lstm_num_layers=lstm_num_layers,
+                mlp_dims=mlp_dims,
+                dropout_rate=dropout_rate,
+                mode=model_key,
+            ).to(device)
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+            y_train_numpy = train_loader.dataset.tensors[3].numpy()
+            pos_weight_val = np.sum(y_train_numpy == 0) / np.sum(y_train_numpy == 1) if np.sum(y_train_numpy == 1) > 0 else 1.0
+            criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight_val], device=device))
+
+            best_val_metric = 0.0
+            patience_counter = 0
+            for epoch in range(150):
+                model.train()
+                for batch in train_loader:
+                    x_tab_batch, x_time_batch, seq_len_batch, y_batch = [tensor.to(device) for tensor in batch]
+                    optimizer.zero_grad()
+                    outputs = model(x_tab_batch, x_time_batch, seq_len_batch)
+                    loss = criterion(outputs, y_batch.unsqueeze(1))
+                    loss.backward()
+                    optimizer.step()
+
+                model.eval()
+                all_val_probs = []
+                with torch.no_grad():
+                    for batch in val_loader:
+                        x_tab_batch, x_time_batch, seq_len_batch, _ = [tensor.to(device) for tensor in batch]
+                        val_outputs = model(x_tab_batch, x_time_batch, seq_len_batch)
+                        all_val_probs.append(torch.sigmoid(val_outputs).cpu())
+                val_probs = torch.cat(all_val_probs).numpy().flatten()
+                val_pred_binary = (val_probs >= 0.5).astype(int)
+                current_val_metric = balanced_accuracy_score(val_loader.dataset.tensors[3].numpy(), val_pred_binary)
+                if current_val_metric > best_val_metric:
+                    best_val_metric = current_val_metric
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                trial.report(best_val_metric, epoch)
+                if trial.should_prune() or patience_counter >= 15:
+                    raise optuna.exceptions.TrialPruned()
+            return best_val_metric
+
+        return objective
+
+    for model_key in enabled:
+        study = optuna.create_study(direction="maximize", study_name=f"{model_key}_hpo")
+        study.optimize(objective_builder(model_key), n_trials=50, show_progress_bar=False)
+        best_params = study.best_params
+        if "n_mlp_layers" in best_params:
+            mlp_dims = [best_params[f"mlp_layer_{i}_size"] for i in range(best_params["n_mlp_layers"])]
+            final_params = {"mlp_dims": mlp_dims}
+            for key, val in best_params.items():
+                if not key.startswith("mlp_layer_") and key != "n_mlp_layers":
+                    final_params[key] = val
+            results[model_key] = final_params
+        else:
+            results[model_key] = best_params
+        for trial in study.trials:
+            trials_out.append({"dataset_regime": "sequence_common", "model_key": model_key, "trial_number": trial.number, "value": trial.value, "params": trial.params, "state": str(trial.state)})
+    return results, pd.DataFrame(trials_out)

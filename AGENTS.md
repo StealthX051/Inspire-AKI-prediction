@@ -32,6 +32,7 @@ This file is the short agent-facing operating contract for `Inspire-AKI-predicti
 - A research codebase for postoperative AKI prediction using INSPIRE data.
 - Not turnkey.
 - Strongly tied to private data and `/home/server/Projects/data/...` absolute paths.
+- Mid-refactor: the new package path is `src/inspire_aki/` with CLI entrypoint `inspire-aki`.
 
 ## Safe Working Rules
 
@@ -45,6 +46,14 @@ This file is the short agent-facing operating contract for `Inspire-AKI-predicti
   - `docs/07_manuscript_alignment.md` if manuscript-facing behavior changed
 
 ## Canonical Script Order
+
+- Refactored CLI:
+  - `inspire-aki run all --config configs/aki/default.yaml`
+  - `inspire-aki preprocess ...`
+  - `inspire-aki train ...`
+  - `inspire-aki evaluate ...`
+  - `inspire-aki report ...`
+- Legacy audit/parity order:
 
 - Tabular path:
   - `data_preprocessing/01_extract_preop.py`
@@ -72,6 +81,11 @@ This file is the short agent-facing operating contract for `Inspire-AKI-predicti
 - Base preprocessing normalizes before imputation.
 - Sequence preparation pads to `200` steps and drops longer cases.
 - Current training toggles do not enable every model or every dataset.
+- `asa_rule` only applies to datasets that still contain `asa`.
+- The refactor writes manifests and stage outputs under `artifacts/`.
+- Refactor raw predictions are stage-owned partitions under `artifacts/predictions/raw/`, plus a rebuilt combined `raw_predictions.parquet`.
+- `inspire-aki report manuscript` now includes SHAP when configured in `reports.manuscript_sections`.
+- Legacy alias export is explicit through `inspire-aki compat export-legacy`; `run all` does not export aliases automatically.
 
 ## Done Criteria
 
@@ -89,3 +103,4 @@ This file is the short agent-facing operating contract for `Inspire-AKI-predicti
 - [docs/07_manuscript_alignment.md](docs/07_manuscript_alignment.md)
 - [docs/08_reproducibility_and_known_gaps.md](docs/08_reproducibility_and_known_gaps.md)
 - [docs/09_codex_workflow.md](docs/09_codex_workflow.md)
+- [docs/refactor/behavior_drift.md](docs/refactor/behavior_drift.md)

@@ -2,6 +2,16 @@
 
 Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. This repository is best understood as a codebase for studying postoperative acute kidney injury (AKI) prediction in noncardiac surgery patients using the INSPIRE dataset.
 
+## Current Refactor Status
+
+- A refactored package-first execution path now exists under `src/inspire_aki/`.
+- The new canonical entrypoint is the Typer CLI `inspire-aki`.
+- The legacy numbered scripts and notebooks still matter for audit/parity, but they are no longer the only execution surface.
+- The repo is still not turnkey: private INSPIRE data and explicit path configuration are still required.
+- The refactored training defaults to `available CPU workers - 2` through a shared runtime policy.
+- Raw refactor predictions are now written as stage partitions plus a deterministic combined `raw_predictions.parquet` view.
+- `inspire-aki report manuscript` is now the report-level command that includes SHAP, rather than requiring a separate SHAP call.
+
 ## What This Repo Is
 
 - A mixed Python + notebook pipeline for:
@@ -54,6 +64,30 @@ Treat this repository as a research archive with a partially modernized pipeline
   - comments in `create_results/13_performance_metrics.ipynb` refer to roughly `67k` tabular patients and `54k` LSTM/hybrid patients
 
 ## Canonical Pipeline Map
+
+### Refactored CLI path
+
+1. `inspire-aki preprocess preop`
+2. `inspire-aki preprocess intraop`
+3. `inspire-aki preprocess tabular`
+4. `inspire-aki preprocess labels`
+5. `inspire-aki preprocess timeseries`
+6. `inspire-aki preprocess sequence`
+7. `inspire-aki tune tabular|sequence`
+8. `inspire-aki train tabular|sequence`
+9. `inspire-aki evaluate calibrate|metrics|delong|dca`
+10. `inspire-aki explain shap`
+11. `inspire-aki report consort|tables|curves|manuscript`
+12. `inspire-aki compat export-legacy`
+
+The refactor writes stage outputs and manifests under `artifacts/` instead of relying on implicit handoffs through `/home/server/...`.
+The training path is idempotent at the artifact level:
+
+- `train tabular` refreshes `artifacts/predictions/raw/tabular.parquet`
+- `train sequence` refreshes `artifacts/predictions/raw/sequence.parquet`
+- both rebuild `artifacts/predictions/raw_predictions.parquet`
+
+Legacy alias exports remain explicit through `inspire-aki compat export-legacy`; they are not emitted automatically during `run all`.
 
 ### 1. Preoperative extraction
 
@@ -217,6 +251,7 @@ Deep dives:
 - [docs/07_manuscript_alignment.md](docs/07_manuscript_alignment.md)
 - [docs/08_reproducibility_and_known_gaps.md](docs/08_reproducibility_and_known_gaps.md)
 - [docs/09_codex_workflow.md](docs/09_codex_workflow.md)
+- [docs/refactor/behavior_drift.md](docs/refactor/behavior_drift.md)
 
 ## Important Caveats
 
@@ -224,6 +259,7 @@ Deep dives:
 - Do not assume every notebook is canonical; many are exploratory or legacy.
 - Do not assume manuscript counts and current code outputs are fully aligned.
 - Use `environment.yml` as the main setup file; `requirements.txt` mirrors its pip-managed dependencies.
+- Some portability fixes in the refactor intentionally differ from brittle legacy behavior; see [docs/refactor/behavior_drift.md](docs/refactor/behavior_drift.md).
 
 ## Recommended Reading Order
 

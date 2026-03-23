@@ -25,6 +25,15 @@ TARGET = 'aki_boolean'
 RANDOM_STATE = 42
 N_TRIALS = 50  # Number of HPO trials to run for each model
 
+
+def get_worker_count():
+    detected = os.cpu_count() or 1
+    return max(1, detected - 2)
+
+
+WORKER_COUNT = get_worker_count()
+torch.set_num_threads(WORKER_COUNT)
+
 # --- I/O Configuration ---
 BASE_DATA_DIR = '/home/server/Projects/data/AKI/'
 LSTM_INPUT_PKL = os.path.join(BASE_DATA_DIR, 'lstm_trainable.pkl')
@@ -323,8 +332,8 @@ def main():
         val_dataset = TensorDataset(*df_to_tensors(val_df))
         
         # MODIFIED: Batch size reduced to 1024 to prevent OOM errors
-        train_loader = DataLoader(train_dataset, batch_size=512, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=512)
+        train_loader = DataLoader(train_dataset, batch_size=512, shuffle=True, num_workers=WORKER_COUNT)
+        val_loader = DataLoader(val_dataset, batch_size=512, num_workers=WORKER_COUNT)
 
         # --- Run Optuna Study ---
         study = optuna.create_study(direction='maximize', study_name=f"{model_name}_hpo")
