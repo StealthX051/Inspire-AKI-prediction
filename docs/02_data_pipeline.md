@@ -69,6 +69,7 @@ Historical note:
   - `asa < 6`
   - `age >= 18`
   - non-null `opstart_time` and `opend_time`
+  - refactor path now additionally excludes `op_len <= 0`
   - non-null and non-zero `height` and `weight`
   - excludes `antype == 'Regional'`
   - excludes `department == 'PED'`
@@ -89,6 +90,7 @@ Historical note:
 
 - The output filename here does not match some later scripts and the old README, which expect `preop_data.csv`.
 - This file is the main source of preop cohort variables for the newer pipeline.
+- The legacy script allowed `op_len == 0` rows through; the refactor now drops them intentionally because they create invalid duration-normalized intraop features.
 
 ## Stage 2: Intraoperative tabular feature engineering
 
@@ -129,6 +131,7 @@ Historical note:
 
 - The script uses `preop_data.csv`, while `01_extract_preop.py` writes `preop_data_test.csv`.
 - `equiv_MAC_totals` is named as a total but the code computes the mean MAC-equivalent value over the interpolated operation window.
+- The refactor now guards summary-stat and duration-normalized intraop features so the raw artifact does not contain `inf` values.
 
 ## Stage 3: Base dataset creation
 

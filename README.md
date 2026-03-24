@@ -8,10 +8,159 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 - The new canonical entrypoint is the Typer CLI `inspire-aki`.
 - The legacy numbered scripts and notebooks still matter for audit/parity, but they are no longer the only execution surface.
 - The repo is still not turnkey: private INSPIRE data and explicit path configuration are still required.
-- The refactored training defaults to `available CPU workers - 2` through a shared runtime policy.
+- The refactor now uses a centralized runtime planner in `src/inspire_aki/runtime.py` instead of ad hoc worker counts.
 - Raw refactor predictions are now written as stage partitions plus a deterministic combined `raw_predictions.parquet` view.
 - `inspire-aki report manuscript` is now the report-level command that includes SHAP, rather than requiring a separate SHAP call.
 - The refactor defaults now point at the mounted volume path `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` for raw INSPIRE inputs.
+- On the current 32-CPU node, the default `balanced` runtime profile resolves to a usable CPU budget of `28`, with stage-specific worker caps for timeseries cleaning, evaluation, reporting, and model training.
+- The refactor now excludes operations with `op_len <= 0` upstream, which is an intentional cleanup relative to the legacy scripts.
+- The refactor now treats infinite intraop feature values as invalid and fails the stage instead of silently carrying them forward.
+
+## Current Validation Status
+
+As of March 24, 2026, the refactor is in a strong but not fully validated state.
+
+- The synthetic refactor test suite is green:
+  - `pytest -q` currently passes with `46` tests.
+- The real-data refactor preprocessing path has been exercised on the mounted INSPIRE volume through:
+  - `preprocess preop`
+  - `preprocess intraop`
+  - `preprocess tabular`
+  - `preprocess labels`
+  - `preprocess timeseries`
+  - `preprocess sequence`
+- The real-data HPO smoke path has also now completed both tuning stages after fixing Optuna `4.x` trial-state handling:
+  - `tune tabular`
+  - `tune sequence`
+- The full real-data `configs/aki/smoke_hpo.yaml` run has **not** yet been validated end to end in one uninterrupted pass through:
+  - training
+  - calibration
+  - metrics
+  - DeLong
+  - DCA
+  - manuscript reporting
+- Treat the current refactor as:
+  - contract-tested on synthetic data
+  - partially validated on real INSPIRE data
+  - still awaiting one clean end-to-end HPO smoke run
+
+If another coder is resuming this work, the current recommended continuation point is:
+
+```bash
+source .venv/bin/activate
+
+inspire-aki train tabular --config configs/aki/smoke_hpo.yaml
+inspire-aki train sequence --config configs/aki/smoke_hpo.yaml
+inspire-aki evaluate calibrate --config configs/aki/smoke_hpo.yaml
+inspire-aki evaluate metrics --config configs/aki/smoke_hpo.yaml
+inspire-aki evaluate delong --config configs/aki/smoke_hpo.yaml
+inspire-aki evaluate dca --config configs/aki/smoke_hpo.yaml
+inspire-aki report manuscript --config configs/aki/smoke_hpo.yaml
+```
+
+## Environment Setup
+
+Preferred reproducible path:
+
+```bash
+conda env create -f environment.yml
+conda activate inspire-aki
+```
+
+`environment.yml` now installs the pinned dependencies from `requirements.txt` and installs the local package in editable mode, so the `inspire-aki` CLI is available after activation.
+
+Current-machine note:
+
+- this Ubuntu environment does not currently have `conda`, `mamba`, or `micromamba` on `PATH`
+- if you want the fastest setup here without installing Conda first, use:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3-venv graphviz
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt
+pip install -e .
+```
+
+## End-to-End Smoke Test
+
+The fastest real-data smoke test for the refactored CLI is a lightweight profile that:
+
+- uses the mounted INSPIRE source tables at `/media/volume/ncs_inspire_data/ncs_aki/data/inspire`
+- runs the full preprocessing, training, evaluation, and report path
+- disables HPO entirely
+- trains only one cheap tabular model (`log_reg`) and one cheap sequence model (`lstm_only`)
+- writes outputs to `artifacts/smoke/`
+
+Run it with:
+
+```bash
+bash scripts/run_smoke_test.sh
+```
+
+Or, if you want to invoke the CLI directly:
+
+```bash
+inspire-aki preprocess preop --config configs/aki/smoke.yaml
+inspire-aki preprocess intraop --config configs/aki/smoke.yaml
+inspire-aki preprocess tabular --config configs/aki/smoke.yaml
+inspire-aki preprocess labels --config configs/aki/smoke.yaml
+inspire-aki preprocess timeseries --config configs/aki/smoke.yaml
+inspire-aki preprocess sequence --config configs/aki/smoke.yaml
+inspire-aki train tabular --config configs/aki/smoke.yaml
+inspire-aki train sequence --config configs/aki/smoke.yaml
+inspire-aki evaluate calibrate --config configs/aki/smoke.yaml
+inspire-aki evaluate metrics --config configs/aki/smoke.yaml
+inspire-aki evaluate delong --config configs/aki/smoke.yaml
+inspire-aki evaluate dca --config configs/aki/smoke.yaml
+inspire-aki report manuscript --config configs/aki/smoke.yaml
+```
+
+To inspect the resolved runtime plan before launching a run:
+
+```bash
+inspire-aki runtime inspect --config configs/aki/smoke.yaml
+```
+
+To benchmark the adaptive runtime profiles on the smoke pipeline:
+
+```bash
+bash scripts/benchmark_runtime_profiles.sh
+```
+
+Important:
+
+- the wrapper now always calls `tune tabular` and `tune sequence`, but under `configs/aki/smoke.yaml` those stages are lightweight because the HPO model lists are empty
+- the smoke profile still exercises SHAP and manuscript report rendering, so it will fail if those dependencies or upstream artifacts are missing
+- cohort counts may differ slightly from earlier smoke runs because zero-duration operations are now excluded during preop filtering
+
+If you also want to smoke-test HPO itself, use the dedicated HPO profile:
+
+```bash
+bash scripts/run_smoke_test.sh configs/aki/smoke_hpo.yaml
+```
+
+That profile:
+
+- runs one Optuna trial per implemented HPO model
+- narrows search spaces to cheap ranges
+- shortens tabular-MLP and sequence HPO training loops
+- writes outputs to `artifacts/smoke_hpo/`
+
+Current implemented HPO models are:
+
+- tabular: `log_reg`, `xgb`, `rf`, `svm`, `mlp`, `knn`
+- sequence: `lstm_only`, `hybrid`
+
+`autogluon` and `asa_rule` are not part of the Optuna HPO path.
+
+Current HPO smoke note:
+
+- the preprocessing stages for `configs/aki/smoke_hpo.yaml` have already run successfully on the current INSPIRE mount
+- the tuning stages have also now completed after patching Optuna state detection
+- the remaining unvalidated portion is the downstream `train -> evaluate -> report` chain on the HPO smoke profile
 
 ## What This Repo Is
 
@@ -87,6 +236,12 @@ The training path is idempotent at the artifact level:
 - `train tabular` refreshes `artifacts/predictions/raw/tabular.parquet`
 - `train sequence` refreshes `artifacts/predictions/raw/sequence.parquet`
 - both rebuild `artifacts/predictions/raw_predictions.parquet`
+
+The refactor also uses internal staging artifacts for the parallel sequence path:
+
+- `artifacts/staging/timeseries_filtered/part-*.parquet`
+- `artifacts/staging/timeseries_cleaned/part-*.parquet`
+- `artifacts/staging/sequence/part-*.pkl`
 
 Legacy alias exports remain explicit through `inspire-aki compat export-legacy`; they are not emitted automatically during `run all`.
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import pandas as pd
 from sklearn.impute import KNNImputer
 
+from inspire_aki.runtime import build_stage_runtime_plan, thread_limited_context
+
 
 def impute_with_current_behavior(df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     output = df.copy()
@@ -16,5 +18,7 @@ def impute_with_current_behavior(df: pd.DataFrame, config: dict) -> tuple[pd.Dat
     low_missing_cols = nan_percentage[(nan_percentage > 0) & (nan_percentage < threshold)].index.tolist()
     if low_missing_cols:
         imputer = KNNImputer(n_neighbors=config["features"]["knn_neighbors"])
-        output[low_missing_cols] = imputer.fit_transform(output[low_missing_cols])
+        runtime_plan = build_stage_runtime_plan(config, "preprocess_tabular")
+        with thread_limited_context(runtime_plan.tabular_column_workers):
+            output[low_missing_cols] = imputer.fit_transform(output[low_missing_cols])
     return output, fill_rates

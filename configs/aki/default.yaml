@@ -171,6 +171,11 @@ models:
   sequence_hpo_enabled:
     - lstm_only
     - hybrid
+  hpo:
+    n_trials: 50
+    tabular_mlp_epochs: 100
+    sequence_epochs: 150
+    sequence_patience: 15
   autogluon:
     time_limit_seconds: 600
     presets: best_quality
@@ -274,6 +279,32 @@ reports:
     - {run_name: LogReg_Preop, model_key: log_reg, dataset_regime: preop}
     - {run_name: LogReg_Intraop, model_key: log_reg, dataset_regime: intraop}
 runtime:
-  cpu_reserve: 2
-  min_worker_count: 1
+  profile: balanced
+  cpu_reserve_fraction: 0.125
+  cpu_reserve_min: 4
+  ram_reserve_fraction: 0.15
+  ram_reserve_gb_min: 16
+  csv_engine: pyarrow
+  nested_blas_threads: 1
+  gpu:
+    enabled: auto
+    max_concurrent_jobs: 1
+    sequence_use_gpu: auto
+    xgb_use_gpu: false
+  stages:
+    csv_read_threads: auto
+    preop_feature_workers: auto
+    tabular_column_workers: auto
+    timeseries_workers: auto
+    timeseries_partitions: auto
+    sequence_workers: auto
+    sequence_partitions: auto
+    evaluation_workers: auto
+    bootstrap_workers: auto
+    report_workers: auto
+    shap_workers: auto
+    train_model_threads: auto
+    hpo_model_threads: auto
+    dataloader_workers: auto
+    torch_num_threads: auto
   log_level: INFO

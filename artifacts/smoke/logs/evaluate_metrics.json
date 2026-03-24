@@ -1,0 +1,5 @@
+{
+  "bootstrap_metrics": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke/evaluation/metrics_bootstrap_ci.csv",
+  "fold_metrics": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke/evaluation/metrics_by_fold.csv",
+  "summary_metrics": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke/evaluation/metrics_summary.csv"
+}

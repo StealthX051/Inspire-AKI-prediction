@@ -1,0 +1,4 @@
+{
+  "audit": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke_hpo/cohort/preop_audit.csv",
+  "preop": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke_hpo/features/preop/preop_features.csv"
+}

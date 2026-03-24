@@ -15,7 +15,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
 
-from inspire_aki.runtime import configure_torch_threads, worker_count
+from inspire_aki.runtime import build_stage_runtime_plan, configure_torch_threads, thread_limited_context
 
 try:
     import torch
@@ -72,12 +72,20 @@ def _scale_if_needed(
     test_df: pd.DataFrame,
     feature_cols: list[str],
     model_key: str,
-) -> tuple[np.ndarray, np.ndarray, StandardScaler | None]:
+) -> tuple[pd.DataFrame, pd.DataFrame, StandardScaler | None]:
     if model_key in {"autogluon", "asa_rule"}:
-        return train_df[feature_cols].values, test_df[feature_cols].values, None
+        return train_df[feature_cols].copy(), test_df[feature_cols].copy(), None
     scaler = StandardScaler()
-    x_train = scaler.fit_transform(train_df[feature_cols].values)
-    x_test = scaler.transform(test_df[feature_cols].values)
+    x_train = pd.DataFrame(
+        scaler.fit_transform(train_df[feature_cols]),
+        columns=feature_cols,
+        index=train_df.index,
+    )
+    x_test = pd.DataFrame(
+        scaler.transform(test_df[feature_cols]),
+        columns=feature_cols,
+        index=test_df.index,
+    )
     return x_train, x_test, scaler
 
 
@@ -92,7 +100,8 @@ def fit_tabular_model(
     model_output_dir: Path,
     seed: int,
 ) -> FittedTabularBundle:
-    training_workers = worker_count(config)
+    runtime_plan = build_stage_runtime_plan(config, "train_tabular")
+    training_workers = runtime_plan.train_model_threads
     x_train, _, scaler = _scale_if_needed(train_df, train_df, feature_cols, model_key)
     y_train = train_df[target].values
     model_output_dir.mkdir(parents=True, exist_ok=True)
@@ -105,7 +114,8 @@ def fit_tabular_model(
             tol=0.01,
             random_state=seed,
         )
-        model.fit(x_train, y_train)
+        with thread_limited_context(runtime_plan.nested_blas_threads):
+            model.fit(x_train, y_train)
     elif model_key == "rf":
         model = RandomForestClassifier(**params, class_weight="balanced", n_jobs=training_workers, random_state=seed)
         model.fit(x_train, y_train)
@@ -117,28 +127,29 @@ def fit_tabular_model(
         xgb_params.setdefault("eval_metric", "logloss")
         xgb_params.setdefault("random_state", seed)
         xgb_params.setdefault("n_jobs", training_workers)
-        if torch is not None and torch.cuda.is_available():
+        if runtime_plan.xgb_use_gpu and torch is not None and torch.cuda.is_available():
             xgb_params.setdefault("device", "cuda")
         scale_pos_weight = np.sum(y_train == 0) / np.sum(y_train == 1) if np.sum(y_train == 1) > 0 else 1
         model = xgb.XGBClassifier(**xgb_params, scale_pos_weight=scale_pos_weight)
         model.fit(x_train, y_train, verbose=False)
     elif model_key == "svm":
         model = LinearSVC(**params, class_weight="balanced", dual="auto", random_state=seed, max_iter=5000)
-        model.fit(x_train, y_train)
+        with thread_limited_context(runtime_plan.nested_blas_threads):
+            model.fit(x_train, y_train)
     elif model_key == "knn":
         model = KNeighborsClassifier(**params, weights="distance", n_jobs=training_workers)
         model.fit(x_train, y_train)
     elif model_key == "mlp":
         if torch is None or optim is None:
             raise ImportError("torch is required for the MLP tabular model.")
-        configure_torch_threads(config)
+        configure_torch_threads(config, stage="train_tabular")
         lr = params.get("lr", 0.001)
         n_layers = params.get("n_layers", 2)
         n_units = params.get("n_units", 32)
         dropout_rate = params.get("dropout_rate", 0.5)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if runtime_plan.sequence_use_gpu and torch.cuda.is_available() else "cpu")
         x_train_part, x_val_part, y_train_part, y_val_part = train_test_split(
-            x_train,
+            x_train.to_numpy(),
             y_train,
             test_size=config["splits"]["tabular_mlp_validation_fraction"],
             random_state=seed,
@@ -212,12 +223,16 @@ def fit_tabular_model(
 def predict_tabular_bundle(bundle: FittedTabularBundle, test_df: pd.DataFrame, target: str) -> tuple[np.ndarray, np.ndarray]:
     feature_cols = bundle.feature_names
     if bundle.scaler is None or bundle.model_key in {"autogluon", "asa_rule"}:
-        x_test = test_df[feature_cols].values
+        x_test = test_df[feature_cols].copy()
     else:
-        x_test = bundle.scaler.transform(test_df[feature_cols].values)
+        x_test = pd.DataFrame(
+            bundle.scaler.transform(test_df[feature_cols]),
+            columns=feature_cols,
+            index=test_df.index,
+        )
 
     if bundle.model_key == "autogluon":
-        test_frame = pd.DataFrame(test_df[feature_cols].values, columns=feature_cols)
+        test_frame = test_df[feature_cols].copy()
         y_prob = bundle.model.predict_proba(test_frame, as_pandas=False)[:, 1]
         y_pred = bundle.model.predict(test_frame).values
     elif bundle.model_key == "log_reg":
@@ -247,8 +262,9 @@ def predict_tabular_bundle(bundle: FittedTabularBundle, test_df: pd.DataFrame, t
         y_pred = (y_prob >= 0.5).astype(int)
     elif bundle.model_key == "asa_rule":
         asa_idx = feature_cols.index("asa")
-        y_prob = (test_df[feature_cols].values[:, asa_idx] / 6.0).astype(float)
-        y_pred = (test_df[feature_cols].values[:, asa_idx] >= 4).astype(int)
+        asa_values = test_df[feature_cols].iloc[:, asa_idx].to_numpy()
+        y_prob = (asa_values / 6.0).astype(float)
+        y_pred = (asa_values >= 4).astype(int)
     else:
         raise ValueError(f"Unsupported tabular model key: {bundle.model_key}")
     return y_pred, y_prob

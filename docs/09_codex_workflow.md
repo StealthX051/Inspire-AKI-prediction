@@ -2,6 +2,28 @@
 
 This is the repo-specific workflow guide for Codex or any similar coding agent.
 
+## Current Handoff State
+
+As of March 24, 2026:
+
+- the refactor test suite passes on synthetic data
+- the real-data preprocessing chain on `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` has been exercised through sequence creation
+- the real-data HPO tuning chain now completes after patching Optuna `4.x` trial-state handling and tuning manifest completeness
+- the remaining unvalidated step is a clean real-data `configs/aki/smoke_hpo.yaml` continuation from training through manuscript reporting
+
+If resuming the current work rather than restarting from scratch, the recommended command sequence is:
+
+```bash
+source .venv/bin/activate
+inspire-aki train tabular --config configs/aki/smoke_hpo.yaml
+inspire-aki train sequence --config configs/aki/smoke_hpo.yaml
+inspire-aki evaluate calibrate --config configs/aki/smoke_hpo.yaml
+inspire-aki evaluate metrics --config configs/aki/smoke_hpo.yaml
+inspire-aki evaluate delong --config configs/aki/smoke_hpo.yaml
+inspire-aki evaluate dca --config configs/aki/smoke_hpo.yaml
+inspire-aki report manuscript --config configs/aki/smoke_hpo.yaml
+```
+
 ## First Principles
 
 - Prefer code over prose when they disagree.
@@ -36,10 +58,13 @@ This is the repo-specific workflow guide for Codex or any similar coding agent.
 - Use `rg` / `rg --files` for search and inventory.
 - Use targeted file reads, not whole-repo dumps.
 - Prefer `inspire-aki ...` over directly reassembling legacy script chains when the task is forward-looking refactor work.
-- Worker allocation in the refactor is centralized in `src/inspire_aki/runtime.py` and defaults to `cpu_count() - 2`.
+- Worker allocation in the refactor is centralized in `src/inspire_aki/runtime.py` and resolved per stage from detected CPU, RAM, and GPU resources.
+- Use `inspire-aki runtime inspect --config ...` before large runs if the host class changed.
+- Use `scripts/benchmark_runtime_profiles.sh` only as a non-CI benchmarking helper; it is not part of the canonical execution path.
 - Treat `artifacts/predictions/raw/*.parquet` as the stage-owned prediction partitions and `artifacts/predictions/raw_predictions.parquet` as the combined evaluation view.
 - Treat `reports.manuscript_sections` and `reports.shap_jobs` in `configs/aki/default.yaml` as the source of truth for report composition.
 - Treat `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` as the current default raw INSPIRE mount for the refactor.
+- Treat `artifacts/staging/` as intentional refactor staging, not stray output, for the partitioned timeseries and sequence path.
 - Treat notebooks as structured data:
   - inspect with `jq` or targeted text extraction
   - avoid editing them unless explicitly asked

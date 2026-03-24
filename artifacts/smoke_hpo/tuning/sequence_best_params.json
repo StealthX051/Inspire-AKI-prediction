@@ -1,0 +1,17 @@
+{
+  "hybrid": {
+    "dropout_rate": 0.2871754177459991,
+    "lr": 0.0005209997977333362,
+    "lstm_hidden_size": 15,
+    "lstm_num_layers": 2,
+    "mlp_dims": [
+      10
+    ]
+  },
+  "lstm_only": {
+    "dropout_rate": 0.2861232901154446,
+    "lr": 0.0008853467797067641,
+    "lstm_hidden_size": 29,
+    "lstm_num_layers": 1
+  }
+}

@@ -13,6 +13,7 @@ from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop,
 from inspire_aki.pipelines.report import run_consort, run_curves, run_manuscript, run_shap, run_tables
 from inspire_aki.pipelines.train import run_train_sequence, run_train_tabular
 from inspire_aki.pipelines.tune import run_tune_sequence, run_tune_tabular
+from inspire_aki.runtime import runtime_summary
 
 
 app = typer.Typer(help="CLI entrypoint for the refactored INSPIRE AKI pipeline.")
@@ -24,6 +25,7 @@ report_app = typer.Typer(help="Report generation stages.")
 explain_app = typer.Typer(help="Interpretability stages.")
 compat_app = typer.Typer(help="Compatibility exports.")
 run_app = typer.Typer(help="Orchestrated multi-stage runs.")
+runtime_app = typer.Typer(help="Runtime inspection and resource planning.")
 
 app.add_typer(preprocess_app, name="preprocess")
 app.add_typer(tune_app, name="tune")
@@ -33,6 +35,7 @@ app.add_typer(report_app, name="report")
 app.add_typer(explain_app, name="explain")
 app.add_typer(compat_app, name="compat")
 app.add_typer(run_app, name="run")
+app.add_typer(runtime_app, name="runtime")
 
 
 def _cfg(config_path: str | None) -> dict[str, Any]:
@@ -143,6 +146,11 @@ def compat_export_legacy(config: str | None = typer.Option(None, "--config")) ->
     cfg = _cfg(config)
     artifacts = ArtifactManager(cfg)
     _echo({"outputs": [str(path) for path in export_legacy_datasets(artifacts)]})
+
+
+@runtime_app.command("inspect")
+def runtime_inspect(config: str | None = typer.Option(None, "--config")) -> None:
+    _echo(runtime_summary(_cfg(config)))
 
 
 @run_app.command("all")

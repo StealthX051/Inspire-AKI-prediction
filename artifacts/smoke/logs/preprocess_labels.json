@@ -1,0 +1,7 @@
+{
+  "audit": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke/cohort/labels_audit.csv",
+  "combined_labeled": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke/datasets/tabular/tabular_combined_labeled.csv",
+  "intraop_labeled": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke/datasets/tabular/tabular_intraop_labeled.csv",
+  "labels": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke/cohort/aki_labels.csv",
+  "preop_labeled": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke/datasets/tabular/tabular_preop_labeled.csv"
+}

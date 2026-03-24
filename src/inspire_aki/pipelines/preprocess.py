@@ -1,23 +1,35 @@
 from __future__ import annotations
 
+from time import perf_counter
+
 import pandas as pd
 
 from inspire_aki.cohort.labels import derive_aki_labels
 from inspire_aki.cohort.preop import build_preop_features
-from inspire_aki.datasets.sequence import build_sequence_dataset
+from inspire_aki.datasets.sequence import build_sequence_dataset_partitioned
 from inspire_aki.datasets.tabular import build_tabular_datasets
 from inspire_aki.io.artifacts import ArtifactManager
+from inspire_aki.io.csv import read_csv_optimized
 from inspire_aki.features.intraop_tabular import build_intraop_features
-from inspire_aki.features.timeseries import build_clean_timeseries
+from inspire_aki.features.timeseries import build_clean_timeseries_partitioned
+from inspire_aki.runtime import build_stage_runtime_plan
 
 
 def run_preop(config: dict) -> dict[str, str]:
+    stage_name = "preprocess_preop"
+    start = perf_counter()
     artifacts = ArtifactManager(config)
     preop_df, audit_df = build_preop_features(config, artifacts.paths.raw_inspire_dir)
     preop_path = artifacts.write_dataframe(preop_df, "features", "preop", "preop_features.csv")
     audit_path = artifacts.write_dataframe(audit_df, "cohort", "preop_audit.csv")
+    raw_ops = pd.read_csv(
+        artifacts.paths.raw_inspire_dir / "operations.csv",
+        usecols=["opstart_time", "opend_time"],
+    )
+    raw_ops = raw_ops.dropna(subset=["opstart_time", "opend_time"])
+    n_excluded_nonpositive_op_len = int((raw_ops["opend_time"] - raw_ops["opstart_time"] <= 0).sum())
     artifacts.write_manifest(
-        "preprocess_preop",
+        stage_name,
         ["manifests", "preprocess_preop.json"],
         inputs=[
             artifacts.relative(artifacts.paths.raw_inspire_dir / "operations.csv"),
@@ -26,31 +38,52 @@ def run_preop(config: dict) -> dict[str, str]:
             artifacts.relative(artifacts.paths.raw_inspire_dir / "ward_vitals.csv"),
         ],
         outputs=[artifacts.relative(preop_path), artifacts.relative(audit_path)],
-        metadata={"n_rows": len(preop_df)},
+        metadata={
+            "n_rows": len(preop_df),
+            "n_excluded_nonpositive_op_len": n_excluded_nonpositive_op_len,
+        },
+        stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
+        wall_time_seconds=perf_counter() - start,
     )
     return {"preop": str(preop_path), "audit": str(audit_path)}
 
 
 def run_intraop(config: dict) -> dict[str, str]:
+    stage_name = "preprocess_intraop"
+    start = perf_counter()
     artifacts = ArtifactManager(config)
     preop_df = pd.read_csv(artifacts.paths.artifact_path("features", "preop", "preop_features.csv"))
-    vitals_df = pd.read_csv(artifacts.paths.raw_inspire_dir / "vitals.csv")
+    vitals_df = read_csv_optimized(
+        artifacts.paths.raw_inspire_dir / "vitals.csv",
+        config=config,
+        usecols=["op_id", "chart_time", "item_name", "value"],
+        large=True,
+    )
     intraop_df = build_intraop_features(vitals_df, preop_df, config)
+    numeric_intraop = intraop_df.select_dtypes(include=["number"])
+    n_inf_values = int(pd.Series(numeric_intraop.to_numpy().ravel()).isin([float("inf"), float("-inf")]).sum())
+    n_nan_values = int(numeric_intraop.isna().sum().sum())
+    if n_inf_values > 0:
+        raise ValueError(f"Intraoperative feature artifact contains {n_inf_values} infinite values.")
     intraop_path = artifacts.write_dataframe(intraop_df, "features", "intraop", "feature_engineered.csv")
     artifacts.write_manifest(
-        "preprocess_intraop",
+        stage_name,
         ["manifests", "preprocess_intraop.json"],
         inputs=[
             artifacts.relative(artifacts.paths.raw_inspire_dir / "vitals.csv"),
             artifacts.relative(artifacts.paths.artifact_path("features", "preop", "preop_features.csv")),
         ],
         outputs=[artifacts.relative(intraop_path)],
-        metadata={"n_rows": len(intraop_df)},
+        metadata={"n_rows": len(intraop_df), "n_inf_values": n_inf_values, "n_nan_values": n_nan_values},
+        stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
+        wall_time_seconds=perf_counter() - start,
     )
     return {"intraop": str(intraop_path)}
 
 
 def run_tabular(config: dict) -> dict[str, str]:
+    stage_name = "preprocess_tabular"
+    start = perf_counter()
     artifacts = ArtifactManager(config)
     preop_df = pd.read_csv(artifacts.paths.artifact_path("features", "preop", "preop_features.csv"))
     intraop_df = pd.read_csv(artifacts.paths.artifact_path("features", "intraop", "feature_engineered.csv"))
@@ -71,7 +104,7 @@ def run_tabular(config: dict) -> dict[str, str]:
         path = artifacts.write_dataframe(frame, *base_parts, file_name)
         outputs[key] = str(path)
     artifacts.write_manifest(
-        "preprocess_tabular",
+        stage_name,
         ["manifests", "preprocess_tabular.json"],
         inputs=[
             artifacts.relative(artifacts.paths.artifact_path("features", "preop", "preop_features.csv")),
@@ -85,11 +118,15 @@ def run_tabular(config: dict) -> dict[str, str]:
             "normalization_stats.csv",
         ]] + [artifacts.relative(artifacts.paths.artifact_path("features", "fill_rates.csv"))],
         metadata={"n_rows_combined": len(datasets["combined"])},
+        stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
+        wall_time_seconds=perf_counter() - start,
     )
     return outputs
 
 
 def run_labels(config: dict) -> dict[str, str]:
+    stage_name = "preprocess_labels"
+    start = perf_counter()
     artifacts = ArtifactManager(config)
     preop_df = pd.read_csv(artifacts.paths.artifact_path("features", "preop", "preop_features.csv"))
     combined_df = pd.read_csv(artifacts.paths.artifact_path("datasets", "tabular", "tabular_combined.csv"))
@@ -111,7 +148,7 @@ def run_labels(config: dict) -> dict[str, str]:
         outputs[f"{dataset_name}_labeled"] = str(out_path)
 
     artifacts.write_manifest(
-        "preprocess_labels",
+        stage_name,
         ["manifests", "preprocess_labels.json"],
         inputs=[
             artifacts.relative(artifacts.paths.artifact_path("features", "preop", "preop_features.csv")),
@@ -121,44 +158,59 @@ def run_labels(config: dict) -> dict[str, str]:
         ],
         outputs=[artifacts.relative(artifacts.paths.artifact_path("cohort", "aki_labels.csv"))],
         metadata={"n_labels": len(labels_df)},
+        stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
+        wall_time_seconds=perf_counter() - start,
     )
     return outputs
 
 
 def run_timeseries(config: dict) -> dict[str, str]:
+    stage_name = "preprocess_timeseries"
+    start = perf_counter()
     artifacts = ArtifactManager(config)
     labels_df = pd.read_csv(artifacts.paths.artifact_path("cohort", "aki_labels.csv"))
-    vitals_df = pd.read_csv(artifacts.paths.raw_inspire_dir / "vitals.csv")
-    cleaned_df = build_clean_timeseries(vitals_df, labels_df["op_id"], config)
-    path = artifacts.write_dataframe(cleaned_df, "features", "timeseries", "time_series_cleaned.csv")
+    path, row_count = build_clean_timeseries_partitioned(
+        raw_vitals_path=artifacts.paths.raw_inspire_dir / "vitals.csv",
+        op_ids=labels_df["op_id"],
+        config=config,
+        artifacts=artifacts,
+    )
     artifacts.write_manifest(
-        "preprocess_timeseries",
+        stage_name,
         ["manifests", "preprocess_timeseries.json"],
         inputs=[
             artifacts.relative(artifacts.paths.raw_inspire_dir / "vitals.csv"),
             artifacts.relative(artifacts.paths.artifact_path("cohort", "aki_labels.csv")),
         ],
         outputs=[artifacts.relative(path)],
-        metadata={"n_rows": len(cleaned_df)},
+        metadata={"n_rows": row_count},
+        stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
+        wall_time_seconds=perf_counter() - start,
     )
     return {"timeseries": str(path)}
 
 
 def run_sequence(config: dict) -> dict[str, str]:
+    stage_name = "preprocess_sequence"
+    start = perf_counter()
     artifacts = ArtifactManager(config)
     tabular_df = pd.read_csv(artifacts.paths.artifact_path("datasets", "tabular", "tabular_combined_labeled.csv"))
-    timeseries_df = pd.read_csv(artifacts.paths.artifact_path("features", "timeseries", "time_series_cleaned.csv"))
-    sequence_df = build_sequence_dataset(tabular_df, timeseries_df, config)
+    sequence_df, partition_paths = build_sequence_dataset_partitioned(
+        tabular_df=tabular_df,
+        config=config,
+        artifacts=artifacts,
+    )
     path = artifacts.write_pickle(sequence_df, "datasets", "sequence", "lstm_trainable.pkl")
     artifacts.write_manifest(
-        "preprocess_sequence",
+        stage_name,
         ["manifests", "preprocess_sequence.json"],
         inputs=[
             artifacts.relative(artifacts.paths.artifact_path("datasets", "tabular", "tabular_combined_labeled.csv")),
             artifacts.relative(artifacts.paths.artifact_path("features", "timeseries", "time_series_cleaned.csv")),
         ],
         outputs=[artifacts.relative(path)],
-        metadata={"n_rows": len(sequence_df)},
+        metadata={"n_rows": len(sequence_df), "n_partitions": len(partition_paths)},
+        stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
+        wall_time_seconds=perf_counter() - start,
     )
     return {"sequence": str(path)}
-

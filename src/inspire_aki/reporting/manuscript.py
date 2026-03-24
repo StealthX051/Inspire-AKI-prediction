@@ -14,7 +14,7 @@ def generate_manuscript_outputs(artifacts: ArtifactManager, config: dict) -> lis
     generators = {
         "consort": lambda: generate_consort_outputs(artifacts),
         "tables": lambda: generate_table_outputs(artifacts),
-        "curves": lambda: generate_curve_outputs(artifacts),
+        "curves": lambda: generate_curve_outputs(artifacts, config),
         "shap": lambda: generate_shap_outputs(artifacts, config),
     }
     outputs: list[Path] = []

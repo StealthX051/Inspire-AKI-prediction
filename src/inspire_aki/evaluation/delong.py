@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from itertools import product
+
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from scipy.stats import norm
+
+from inspire_aki.runtime import build_stage_runtime_plan
 
 
 def _structural_components(y_true: np.ndarray, scores: np.ndarray) -> tuple[float, np.ndarray, np.ndarray]:
@@ -42,7 +47,7 @@ def delong_test(y_true: np.ndarray, scores1: np.ndarray, scores2: np.ndarray) ->
     return auc1, auc2, float(p_value)
 
 
-def delong_comparison_table(predictions_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def delong_comparison_table(predictions_df: pd.DataFrame, config: dict | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     group_cols = ["dataset_regime", "population_id", "model_key"]
     prepared: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     for (dataset_regime, population_id, model_key), group_df in predictions_df.groupby(group_cols, sort=False):
@@ -55,27 +60,34 @@ def delong_comparison_table(predictions_df: pd.DataFrame) -> tuple[pd.DataFrame,
 
     model_names = sorted(prepared)
     matrix = pd.DataFrame(index=model_names, columns=model_names, dtype=object)
-    long_rows: list[dict[str, object]] = []
-    for left_name in model_names:
-        for right_name in model_names:
-            if left_name == right_name:
-                matrix.loc[left_name, right_name] = np.nan
-                continue
-            y_left, p_left = prepared[left_name]
-            y_right, p_right = prepared[right_name]
-            if len(y_left) != len(y_right) or not np.array_equal(y_left, y_right):
-                matrix.loc[left_name, right_name] = "N/A"
-                continue
-            auc_left, auc_right, p_value = delong_test(y_left, p_left, p_right)
-            matrix.loc[left_name, right_name] = p_value
-            long_rows.append(
-                {
-                    "model_left": left_name,
-                    "model_right": right_name,
-                    "auc_left": auc_left,
-                    "auc_right": auc_right,
-                    "p_value": p_value,
-                }
-            )
-    return matrix, pd.DataFrame(long_rows)
 
+    def _pair_worker(left_name: str, right_name: str) -> tuple[str, str, object, dict[str, object] | None]:
+        if left_name == right_name:
+            return left_name, right_name, np.nan, None
+        y_left, p_left = prepared[left_name]
+        y_right, p_right = prepared[right_name]
+        if len(y_left) != len(y_right) or not np.array_equal(y_left, y_right):
+            return left_name, right_name, "N/A", None
+        auc_left, auc_right, p_value = delong_test(y_left, p_left, p_right)
+        return left_name, right_name, p_value, {
+            "model_left": left_name,
+            "model_right": right_name,
+            "auc_left": auc_left,
+            "auc_right": auc_right,
+            "p_value": p_value,
+        }
+
+    if isinstance(config, dict):
+        n_jobs = max(1, build_stage_runtime_plan(config, "evaluate_delong").evaluation_workers)
+    else:
+        n_jobs = 1
+    pair_results = Parallel(n_jobs=n_jobs, backend="loky")(
+        delayed(_pair_worker)(left_name, right_name)
+        for left_name, right_name in product(model_names, model_names)
+    )
+    long_rows: list[dict[str, object]] = []
+    for left_name, right_name, value, row in pair_results:
+        matrix.loc[left_name, right_name] = value
+        if row is not None:
+            long_rows.append(row)
+    return matrix, pd.DataFrame(long_rows)

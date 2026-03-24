@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from time import perf_counter
 
 import pandas as pd
 
@@ -15,6 +16,7 @@ from inspire_aki.models.tabular import (
     raw_prediction_rows as tabular_prediction_rows,
     tabular_feature_columns,
 )
+from inspire_aki.runtime import build_stage_runtime_plan
 
 
 def _tabular_params(config: dict, artifacts: ArtifactManager, dataset_regime: str, model_key: str) -> dict:
@@ -47,6 +49,8 @@ def _sequence_params(config: dict, artifacts: ArtifactManager, model_key: str) -
 
 
 def run_train_tabular(config: dict) -> dict[str, str]:
+    stage_name = "train_tabular"
+    start = perf_counter()
     artifacts = ArtifactManager(config)
     prediction_frames: list[pd.DataFrame] = []
     for dataset_regime in ["preop", "intraop", "combined"]:
@@ -104,6 +108,8 @@ def run_train_tabular(config: dict) -> dict[str, str]:
             inputs=[artifacts.relative(artifacts.paths.artifact_path("datasets", "tabular", f"tabular_{dataset_regime}_labeled.csv"))],
             outputs=[artifacts.relative(manifest_path)],
             metadata={"n_models": len(config["models"]["tabular_enabled"])},
+            stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
+            wall_time_seconds=perf_counter() - start,
         )
 
     raw_predictions = pd.concat(prediction_frames, ignore_index=True) if prediction_frames else pd.DataFrame()
@@ -113,6 +119,8 @@ def run_train_tabular(config: dict) -> dict[str, str]:
 
 
 def run_train_sequence(config: dict) -> dict[str, str]:
+    stage_name = "train_sequence"
+    start = perf_counter()
     artifacts = ArtifactManager(config)
     if not config["models"]["sequence_enabled"]:
         return {}
@@ -179,5 +187,7 @@ def run_train_sequence(config: dict) -> dict[str, str]:
         inputs=[artifacts.relative(sequence_path)],
         outputs=[artifacts.relative(manifest_path), artifacts.relative(partition_path), artifacts.relative(out_path)],
         metadata={"n_models": len(config["models"]["sequence_enabled"])},
+        stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
+        wall_time_seconds=perf_counter() - start,
     )
     return {"partition": str(partition_path), "predictions": str(out_path)}

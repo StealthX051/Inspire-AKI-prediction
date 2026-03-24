@@ -2,10 +2,21 @@
 
 This document captures the current model-training and evaluation logic from code. It is code-first and intentionally calls out when the current implementation looks incomplete or drifted.
 
+## Current Validation Snapshot
+
+As of March 24, 2026:
+
+- the refactored HPO path has been exercised on real INSPIRE artifacts through `tune tabular` and `tune sequence`
+- Optuna `4.x` numeric trial-state handling has been patched so completed trials are recognized and recorded correctly
+- the full real-data `configs/aki/smoke_hpo.yaml` path has **not** yet been validated end to end through training, calibration, metrics, DCA, DeLong, and manuscript reporting
+
+So this document describes the intended current model/evaluation contract, but not a fully completed real-data HPO smoke rerun from start to finish.
+
 ## Current Refactor Contract
 
 The `src/inspire_aki/` refactor now has these package-level guarantees:
 
+- stage resource allocation is centralized in `src/inspire_aki/runtime.py`
 - raw training predictions are partitioned by stage under `artifacts/predictions/raw/`
 - `artifacts/predictions/raw_predictions.parquet` is rebuilt deterministically from those partitions
 - sequence checkpoints now carry enough metadata to be reloaded through `load_sequence_bundle(...)`
@@ -15,6 +26,14 @@ The `src/inspire_aki/` refactor now has these package-level guarantees:
   - `log_reg`
 - `report manuscript` is the top-level report command and includes SHAP when `reports.manuscript_sections` contains `shap`
 - HPO manifests are authored in pipeline code and passed into the model/HPO layer rather than being rebuilt there
+
+The current runtime defaults are adaptive rather than fixed:
+
+- `runtime.profile: balanced` is the default
+- stage plans are resolved from detected CPU, RAM, and GPU resources
+- outer model loops stay sequential by default to avoid oversubscription
+- GPU concurrency is capped at `1`
+- evaluation, curve generation, and SHAP now parallelize only across independent groups/jobs
 
 ## Main Training Surface
 

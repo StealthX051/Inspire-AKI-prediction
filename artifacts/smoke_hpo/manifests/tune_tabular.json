@@ -1,0 +1,160 @@
+{
+  "config_hash": "62bcd2cbbf5a83f6",
+  "git_sha": "df13c6e892fd9c2e71385ee4540cd435039ea879",
+  "inputs": [
+    "artifacts/smoke_hpo/datasets/tabular/tabular_preop_labeled.csv",
+    "artifacts/smoke_hpo/datasets/tabular/tabular_intraop_labeled.csv",
+    "artifacts/smoke_hpo/datasets/tabular/tabular_combined_labeled.csv"
+  ],
+  "metadata": {
+    "dataset_regimes": [
+      "preop",
+      "intraop",
+      "combined"
+    ],
+    "models": {
+      "combined": {
+        "knn": {
+          "n_neighbors": 9
+        },
+        "log_reg": {
+          "C": 0.9105985992218563
+        },
+        "mlp": {
+          "dropout_rate": 0.15371474272773283,
+          "lr": 0.0009670029279796218,
+          "n_layers": 1,
+          "n_units": 12
+        },
+        "rf": {
+          "max_depth": 5,
+          "max_features": "log2",
+          "min_samples_leaf": 2,
+          "min_samples_split": 3,
+          "n_estimators": 30
+        },
+        "svm": {
+          "C": 0.022714591616479415
+        },
+        "xgb": {
+          "colsample_bytree": 0.8411818809256979,
+          "gamma": 0.28716331605609163,
+          "learning_rate": 0.09516620387354718,
+          "max_depth": 3,
+          "n_estimators": 44,
+          "subsample": 0.889741638561862
+        }
+      },
+      "intraop": {
+        "knn": {
+          "n_neighbors": 4
+        },
+        "log_reg": {
+          "C": 0.4050557458566478
+        },
+        "mlp": {
+          "dropout_rate": 0.28037852394633556,
+          "lr": 0.0032190122604525227,
+          "n_layers": 1,
+          "n_units": 26
+        },
+        "rf": {
+          "max_depth": 6,
+          "max_features": "sqrt",
+          "min_samples_leaf": 2,
+          "min_samples_split": 3,
+          "n_estimators": 49
+        },
+        "svm": {
+          "C": 0.32800293602151787
+        },
+        "xgb": {
+          "colsample_bytree": 0.9063839916355981,
+          "gamma": 0.08288398234647426,
+          "learning_rate": 0.08042769709532903,
+          "max_depth": 4,
+          "n_estimators": 41,
+          "subsample": 0.9723973579644914
+        }
+      },
+      "preop": {
+        "knn": {
+          "n_neighbors": 9
+        },
+        "log_reg": {
+          "C": 0.2726574537526168
+        },
+        "mlp": {
+          "dropout_rate": 0.2189974801855296,
+          "lr": 0.0017318406027074136,
+          "n_layers": 2,
+          "n_units": 19
+        },
+        "rf": {
+          "max_depth": 5,
+          "max_features": "sqrt",
+          "min_samples_leaf": 1,
+          "min_samples_split": 4,
+          "n_estimators": 45
+        },
+        "svm": {
+          "C": 0.5760935820011388
+        },
+        "xgb": {
+          "colsample_bytree": 0.8659238513036494,
+          "gamma": 0.3791202611711958,
+          "learning_rate": 0.05218049923352605,
+          "max_depth": 4,
+          "n_estimators": 38,
+          "subsample": 0.9275546316283109
+        }
+      }
+    }
+  },
+  "outputs": [
+    "artifacts/smoke_hpo/datasets/splits/hpo_preop.parquet",
+    "artifacts/smoke_hpo/datasets/splits/hpo_intraop.parquet",
+    "artifacts/smoke_hpo/datasets/splits/hpo_combined.parquet",
+    "artifacts/smoke_hpo/tuning/tabular_best_params.json",
+    "artifacts/smoke_hpo/tuning/tabular_trials.parquet"
+  ],
+  "runtime_profile": "balanced",
+  "stage": "tune_tabular",
+  "stage_runtime_plan": {
+    "bootstrap_workers": 8,
+    "csv_read_threads": 8,
+    "dataloader_workers": 7,
+    "evaluation_workers": 8,
+    "gpu_enabled": true,
+    "hpo_model_threads": 8,
+    "max_concurrent_gpu_jobs": 1,
+    "nested_blas_threads": 1,
+    "preop_feature_workers": 4,
+    "profile": "balanced",
+    "report_workers": 4,
+    "sequence_partitions": 32,
+    "sequence_use_gpu": true,
+    "sequence_workers": 8,
+    "shap_workers": 2,
+    "stage": "tune_tabular",
+    "tabular_column_workers": 8,
+    "timeseries_partitions": 32,
+    "timeseries_workers": 8,
+    "torch_num_threads": 8,
+    "train_model_threads": 16,
+    "usable_cpus": 28,
+    "usable_ram_gb": 90,
+    "xgb_use_gpu": false
+  },
+  "system_resources": {
+    "available_ram_gb": 108,
+    "cpu_count": 32,
+    "gpu_available": true,
+    "gpu_free_memory_gb": 38,
+    "gpu_name": "NVIDIA A100-SXM4-40GB",
+    "gpu_total_memory_gb": 39,
+    "total_ram_gb": 115
+  },
+  "timestamp_utc": "2026-03-24T02:54:40.777521+00:00",
+  "wall_time_seconds": 75.62506524601486
+}

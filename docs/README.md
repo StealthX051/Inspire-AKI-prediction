@@ -2,6 +2,20 @@
 
 This directory is the deeper code-first knowledge base for `Inspire-AKI-prediction`.
 
+## Current Handoff Snapshot
+
+As of March 24, 2026:
+
+- synthetic `pytest` coverage for the refactor is green
+- the real-data preprocessing path on the mounted INSPIRE volume has been exercised
+- the real-data HPO tuning path now completes after Optuna `4.x` state-handling fixes
+- the full real-data `configs/aki/smoke_hpo.yaml` run is still pending final end-to-end validation from training through report
+
+For the current portability/validation status, start with:
+
+- [08_reproducibility_and_known_gaps.md](08_reproducibility_and_known_gaps.md)
+- [09_codex_workflow.md](09_codex_workflow.md)
+
 ## Recommended Reading Order
 
 1. [../README.md](../README.md)

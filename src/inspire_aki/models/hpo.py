@@ -12,7 +12,36 @@ from sklearn.preprocessing import StandardScaler
 from inspire_aki.datasets.splits import subset_from_manifest
 from inspire_aki.models.sequence import HybridModel
 from inspire_aki.models.tabular import PyTorchMLP, fit_tabular_model, tabular_feature_columns
-from inspire_aki.runtime import configure_torch_threads, worker_count
+from inspire_aki.runtime import build_stage_runtime_plan, configure_torch_threads, thread_limited_context
+
+
+def _hpo_cfg(config: dict) -> dict[str, Any]:
+    return config.get("models", {}).get("hpo", {})
+
+
+def _trial_state_name(state: Any) -> str:
+    if state is None:
+        return ""
+    name = getattr(state, "name", None)
+    if name:
+        return str(name)
+    try:
+        from optuna.trial import TrialState
+
+        if state == TrialState.COMPLETE:
+            return "COMPLETE"
+    except Exception:
+        pass
+    state_text = str(state)
+    if state_text.isdigit():
+        return "COMPLETE" if int(state_text) == 1 else state_text
+    if "." in state_text:
+        return state_text.rsplit(".", 1)[-1]
+    return state_text
+
+
+def _has_completed_trials(study: Any) -> bool:
+    return any(_trial_state_name(getattr(trial, "state", None)) == "COMPLETE" for trial in getattr(study, "trials", []))
 
 
 def tune_tabular_dataset(
@@ -31,16 +60,19 @@ def tune_tabular_dataset(
     train_df = subset_from_manifest(df, manifest, repeat_id=0, fold_id=0, split_name="train")
     val_df = subset_from_manifest(df, manifest, repeat_id=0, fold_id=0, split_name="val")
     feature_cols = tabular_feature_columns(df, target)
-    x_train = train_df[feature_cols].values
+    x_train = train_df[feature_cols].copy()
     y_train = train_df[target].values
-    x_val = val_df[feature_cols].values
+    x_val = val_df[feature_cols].copy()
     y_val = val_df[target].values
+    runtime_plan = build_stage_runtime_plan(config, "tune_tabular")
     scaler = StandardScaler()
-    x_train_scaled = scaler.fit_transform(x_train)
-    x_val_scaled = scaler.transform(x_val)
-    training_workers = worker_count(config)
+    with thread_limited_context(runtime_plan.nested_blas_threads):
+        x_train_scaled = pd.DataFrame(scaler.fit_transform(x_train), columns=feature_cols, index=train_df.index)
+        x_val_scaled = pd.DataFrame(scaler.transform(x_val), columns=feature_cols, index=val_df.index)
+    training_workers = runtime_plan.hpo_model_threads
 
     search_spaces = config["models"]["tabular_hpo_search_spaces"]
+    hpo_cfg = _hpo_cfg(config)
     results: dict[str, dict[str, Any]] = {}
     trials: list[dict[str, Any]] = []
 
@@ -87,7 +119,7 @@ def tune_tabular_dataset(
                     "gamma": trial.suggest_float("gamma", *search_spaces["xgb"]["gamma"]),
                     "scale_pos_weight": np.sum(y_train == 0) / np.sum(y_train == 1) if np.sum(y_train == 1) > 0 else 1,
                 }
-                if torch is not None and torch.cuda.is_available():
+                if runtime_plan.xgb_use_gpu and torch is not None and torch.cuda.is_available():
                     params["device"] = "cuda"
                 model = xgb.XGBClassifier(**params)
                 model.fit(x_train_scaled, y_train, verbose=False)
@@ -126,20 +158,20 @@ def tune_tabular_dataset(
             if model_key == "mlp":
                 if torch is None or nn is None or optim is None:
                     raise ImportError("torch is required for MLP HPO.")
-                configure_torch_threads(config)
+                configure_torch_threads(config, stage="hpo")
                 lr = trial.suggest_float("lr", *search_spaces["mlp"]["lr"], log=True)
                 n_layers = trial.suggest_int("n_layers", *search_spaces["mlp"]["n_layers"])
                 n_units = trial.suggest_int("n_units", *search_spaces["mlp"]["n_units"])
                 dropout_rate = trial.suggest_float("dropout_rate", *search_spaces["mlp"]["dropout_rate"])
-                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                x_train_tensor = torch.FloatTensor(x_train_scaled).to(device)
+                device = torch.device("cuda" if runtime_plan.sequence_use_gpu and torch.cuda.is_available() else "cpu")
+                x_train_tensor = torch.FloatTensor(x_train_scaled.to_numpy()).to(device)
                 y_train_tensor = torch.FloatTensor(y_train).reshape(-1, 1).to(device)
-                x_val_tensor = torch.FloatTensor(x_val_scaled).to(device)
+                x_val_tensor = torch.FloatTensor(x_val_scaled.to_numpy()).to(device)
                 model = PyTorchMLP(x_train_scaled.shape[1], n_layers, n_units, dropout_rate).to(device)
                 optimizer = optim.Adam(model.parameters(), lr=lr)
                 pos_weight = torch.tensor([np.sum(y_train == 0) / np.sum(y_train == 1)], device=device)
                 criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-                for _ in range(100):
+                for _ in range(int(hpo_cfg.get("tabular_mlp_epochs", 100))):
                     model.train()
                     outputs = model(x_train_tensor)
                     loss = criterion(outputs, y_train_tensor)
@@ -158,7 +190,12 @@ def tune_tabular_dataset(
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     for model_key in enabled:
         study = optuna.create_study(direction="maximize", study_name=f"{dataset_regime}_{model_key}")
-        study.optimize(objective_factory(model_key), n_trials=50, show_progress_bar=False)
+        study.optimize(objective_factory(model_key), n_trials=int(hpo_cfg.get("n_trials", 50)), show_progress_bar=False)
+        if not _has_completed_trials(study):
+            raise RuntimeError(
+                f"Tabular HPO completed no trials for dataset_regime='{dataset_regime}', model_key='{model_key}'. "
+                "Consider relaxing the HPO search or pruning settings."
+            )
         results[model_key] = study.best_params
         for trial in study.trials:
             trials.append(
@@ -168,7 +205,7 @@ def tune_tabular_dataset(
                     "trial_number": trial.number,
                     "value": trial.value,
                     "params": trial.params,
-                    "state": str(trial.state),
+                    "state": _trial_state_name(getattr(trial, "state", None)),
                 }
             )
     return results, pd.DataFrame(trials)
@@ -191,27 +228,30 @@ def tune_sequence_dataset(df_sequence: pd.DataFrame, manifest: pd.DataFrame, con
         raise ImportError("torch is required for sequence HPO.") from exc
 
     search_spaces = config["models"]["sequence_hpo_search_spaces"]
+    hpo_cfg = _hpo_cfg(config)
     feature_cols_tab = [col for col in df_sequence.columns if col not in ["op_id", "time_tensors", "seq_len", target]]
     train_df = subset_from_manifest(df_sequence, manifest, repeat_id=0, fold_id=0, split_name="train")
     val_df = subset_from_manifest(df_sequence, manifest, repeat_id=0, fold_id=0, split_name="val")
     scaler = StandardScaler()
-    train_df.loc[:, feature_cols_tab] = scaler.fit_transform(train_df[feature_cols_tab])
-    val_df.loc[:, feature_cols_tab] = scaler.transform(val_df[feature_cols_tab])
+    runtime_plan = build_stage_runtime_plan(config, "tune_sequence")
+    with thread_limited_context(runtime_plan.nested_blas_threads):
+        train_df.loc[:, feature_cols_tab] = scaler.fit_transform(train_df[feature_cols_tab])
+        val_df.loc[:, feature_cols_tab] = scaler.transform(val_df[feature_cols_tab])
 
     def df_to_tensors(sub_df: pd.DataFrame):
         x_tab = torch.tensor(sub_df[feature_cols_tab].values, dtype=torch.float32)
-        x_time = torch.stack([tensor.clone().detach() for tensor in sub_df["time_tensors"]]).to(torch.float32)
+        x_time = torch.stack([torch.as_tensor(tensor, dtype=torch.float32).clone().detach() for tensor in sub_df["time_tensors"]]).to(torch.float32)
         seq_len = torch.tensor(sub_df["seq_len"].tolist(), dtype=torch.long)
         y = torch.tensor(sub_df[target].values, dtype=torch.float32)
         return x_tab, x_time, seq_len, y
 
     train_dataset = TensorDataset(*df_to_tensors(train_df))
     val_dataset = TensorDataset(*df_to_tensors(val_df))
-    configure_torch_threads(config)
-    loader_workers = worker_count(config)
+    configure_torch_threads(config, stage="hpo")
+    loader_workers = runtime_plan.dataloader_workers
     train_loader = DataLoader(train_dataset, batch_size=512, shuffle=True, num_workers=loader_workers)
     val_loader = DataLoader(val_dataset, batch_size=512, num_workers=loader_workers)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if runtime_plan.sequence_use_gpu and torch.cuda.is_available() else "cpu")
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     def objective_builder(model_key: str):
@@ -244,7 +284,7 @@ def tune_sequence_dataset(df_sequence: pd.DataFrame, manifest: pd.DataFrame, con
 
             best_val_metric = 0.0
             patience_counter = 0
-            for epoch in range(150):
+            for epoch in range(int(hpo_cfg.get("sequence_epochs", 150))):
                 model.train()
                 for batch in train_loader:
                     x_tab_batch, x_time_batch, seq_len_batch, y_batch = [tensor.to(device) for tensor in batch]
@@ -270,7 +310,7 @@ def tune_sequence_dataset(df_sequence: pd.DataFrame, manifest: pd.DataFrame, con
                 else:
                     patience_counter += 1
                 trial.report(best_val_metric, epoch)
-                if trial.should_prune() or patience_counter >= 15:
+                if trial.should_prune() or patience_counter >= int(hpo_cfg.get("sequence_patience", 15)):
                     raise optuna.exceptions.TrialPruned()
             return best_val_metric
 
@@ -278,7 +318,12 @@ def tune_sequence_dataset(df_sequence: pd.DataFrame, manifest: pd.DataFrame, con
 
     for model_key in enabled:
         study = optuna.create_study(direction="maximize", study_name=f"{model_key}_hpo")
-        study.optimize(objective_builder(model_key), n_trials=50, show_progress_bar=False)
+        study.optimize(objective_builder(model_key), n_trials=int(hpo_cfg.get("n_trials", 50)), show_progress_bar=False)
+        if not _has_completed_trials(study):
+            raise RuntimeError(
+                f"Sequence HPO completed no trials for model_key='{model_key}'. "
+                "Consider increasing models.hpo.sequence_epochs or models.hpo.sequence_patience."
+            )
         best_params = study.best_params
         if "n_mlp_layers" in best_params:
             mlp_dims = [best_params[f"mlp_layer_{i}_size"] for i in range(best_params["n_mlp_layers"])]
@@ -290,5 +335,14 @@ def tune_sequence_dataset(df_sequence: pd.DataFrame, manifest: pd.DataFrame, con
         else:
             results[model_key] = best_params
         for trial in study.trials:
-            trials_out.append({"dataset_regime": "sequence_common", "model_key": model_key, "trial_number": trial.number, "value": trial.value, "params": trial.params, "state": str(trial.state)})
+            trials_out.append(
+                {
+                    "dataset_regime": "sequence_common",
+                    "model_key": model_key,
+                    "trial_number": trial.number,
+                    "value": trial.value,
+                    "params": trial.params,
+                    "state": _trial_state_name(getattr(trial, "state", None)),
+                }
+            )
     return results, pd.DataFrame(trials_out)

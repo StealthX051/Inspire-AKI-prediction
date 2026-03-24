@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
+
+from inspire_aki.runtime import build_stage_runtime_plan, thread_limited_context
 
 
 def calculate_net_benefit_for_thresholds(y_true: np.ndarray, y_prob: np.ndarray, pt_grid: np.ndarray) -> np.ndarray:
@@ -16,22 +19,14 @@ def calculate_net_benefit_for_thresholds(y_true: np.ndarray, y_prob: np.ndarray,
     return np.asarray(benefits)
 
 
-def decision_curve_table(predictions_df: pd.DataFrame, config: dict) -> pd.DataFrame:
-    eval_cfg = config["evaluation"]
-    pt_grid = np.arange(
-        eval_cfg["dca_threshold_min"],
-        eval_cfg["dca_threshold_max"] + eval_cfg["dca_threshold_step"] / 2,
-        eval_cfg["dca_threshold_step"],
-    )
-
-    rows: list[dict[str, object]] = []
-    group_cols = ["dataset_regime", "population_id", "model_key"]
-    for keys, group_df in predictions_df.groupby(group_cols, sort=False):
+def _decision_curve_group_worker(keys: tuple, group_df: pd.DataFrame, pt_grid: np.ndarray, nested_blas_threads: int) -> list[dict[str, object]]:
+    with thread_limited_context(nested_blas_threads):
         y_true = group_df["y_true"].astype(int).to_numpy()
         y_prob = group_df["y_prob_calibrated"].fillna(group_df["y_prob_raw"]).astype(float).to_numpy()
         prevalence = float(np.mean(y_true))
         model_nb = calculate_net_benefit_for_thresholds(y_true, y_prob, pt_grid)
         treat_all = prevalence - (1 - prevalence) * (pt_grid / (1 - pt_grid))
+        rows: list[dict[str, object]] = []
         for threshold, net_benefit_model, net_benefit_all in zip(pt_grid, model_nb, treat_all):
             rows.append(
                 {
@@ -44,5 +39,22 @@ def decision_curve_table(predictions_df: pd.DataFrame, config: dict) -> pd.DataF
                     "net_benefit_treat_none": 0.0,
                 }
             )
-    return pd.DataFrame(rows)
+    return rows
 
+
+def decision_curve_table(predictions_df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    eval_cfg = config["evaluation"]
+    pt_grid = np.arange(
+        eval_cfg["dca_threshold_min"],
+        eval_cfg["dca_threshold_max"] + eval_cfg["dca_threshold_step"] / 2,
+        eval_cfg["dca_threshold_step"],
+    )
+
+    group_cols = ["dataset_regime", "population_id", "model_key"]
+    groups = [(keys, group_df.copy()) for keys, group_df in predictions_df.groupby(group_cols, sort=False)]
+    runtime_plan = build_stage_runtime_plan(config, "evaluate_dca", {"group_count": len(groups)})
+    rows_nested = Parallel(n_jobs=max(1, runtime_plan.evaluation_workers), backend="loky")(
+        delayed(_decision_curve_group_worker)(keys, group_df, pt_grid, runtime_plan.nested_blas_threads)
+        for keys, group_df in groups
+    )
+    return pd.DataFrame([row for rows in rows_nested for row in rows])

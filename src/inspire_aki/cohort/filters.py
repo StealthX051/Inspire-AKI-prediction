@@ -26,6 +26,8 @@ def apply_preop_filters(
     audit = record_count(audit, "has_opstart_time", df_preop)
 
     df_preop["op_len"] = df_preop["opend_time"] - df_preop["opstart_time"]
+    df_preop = df_preop[df_preop["op_len"] > 0]
+    audit = record_count(audit, "positive_op_len_only", df_preop)
     df_preop["sex"] = df_preop["sex"] == "M"
     df_preop = df_preop[~(df_preop["weight"].isna() | df_preop["height"].isna())]
     audit = record_count(audit, "has_height_weight", df_preop)

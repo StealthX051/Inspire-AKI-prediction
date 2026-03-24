@@ -10,7 +10,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-from inspire_aki.runtime import configure_torch_threads, worker_count
+from inspire_aki.runtime import build_stage_runtime_plan, configure_torch_threads
 
 try:
     import torch
@@ -135,9 +135,10 @@ def fit_sequence_model(
 ) -> FittedSequenceBundle:
     if torch is None or optim is None or DataLoader is None or TensorDataset is None:
         raise ImportError("torch is required for sequence models.")
-    configure_torch_threads(config)
-    loader_workers = worker_count(config)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    runtime_plan = build_stage_runtime_plan(config, "train_sequence")
+    configure_torch_threads(config, stage="train_sequence")
+    loader_workers = runtime_plan.dataloader_workers
+    device = torch.device("cuda" if runtime_plan.sequence_use_gpu and torch.cuda.is_available() else "cpu")
     model_output_dir.mkdir(parents=True, exist_ok=True)
 
     train_split, val_split = train_test_split(
@@ -220,7 +221,7 @@ def fit_sequence_model(
         dropout_rate=params["dropout_rate"],
         mlp_dims=list(params.get("mlp_dims", [])),
         mode=model_key,
-        metadata={"seed": seed, "loader_workers": loader_workers},
+        metadata={"seed": seed, "loader_workers": loader_workers, "sequence_use_gpu": runtime_plan.sequence_use_gpu},
     )
     save_sequence_bundle(bundle, model_output_dir)
     return bundle
@@ -230,7 +231,8 @@ def predict_sequence_bundle(bundle: FittedSequenceBundle, test_df: pd.DataFrame)
     if torch is None or DataLoader is None or TensorDataset is None:
         raise ImportError("torch is required for sequence models.")
     loader_workers = int(bundle.metadata.get("loader_workers", 0))
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    prefer_gpu = bool(bundle.metadata.get("sequence_use_gpu", True))
+    device = torch.device("cuda" if prefer_gpu and torch.cuda.is_available() else "cpu")
     feature_cols = bundle.feature_names
     test_copy = test_df.copy()
     if bundle.scaler is not None:

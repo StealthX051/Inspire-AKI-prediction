@@ -46,7 +46,7 @@ def build_tabular_datasets(preop_df: pd.DataFrame, intraop_df: pd.DataFrame, con
 
     df_unnormalized = replace_outliers(df, ignore_cols, config)
     cols_to_norm = [col for col in df_unnormalized.columns if col not in ignore_cols and pd.api.types.is_numeric_dtype(df_unnormalized[col])]
-    df_normalized, stats = fit_and_apply_standard_scaler(df_unnormalized, cols_to_norm)
+    df_normalized, stats = fit_and_apply_standard_scaler(df_unnormalized, cols_to_norm, config)
     df_imputed, fill_rates = impute_with_current_behavior(df_normalized, config)
 
     preop_cols_final = [col for col in df_imputed.columns if col in preop_df.columns and col != "subject_id"]

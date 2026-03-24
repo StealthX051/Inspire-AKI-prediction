@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pandas as pd
 
 from inspire_aki.cohort.audit import record_count
+from inspire_aki.io.csv import read_csv_optimized
+from inspire_aki.runtime import build_stage_runtime_plan
 
 
 def derive_aki_labels(
@@ -17,15 +20,31 @@ def derive_aki_labels(
     cohort_cfg = config["cohort"]
     labs_path = raw_inspire_dir / "labs.csv"
     ward_vitals_path = raw_inspire_dir / "ward_vitals.csv"
+    runtime_plan = build_stage_runtime_plan(config, "preprocess_labels")
 
-    df_ward = pd.read_csv(ward_vitals_path)
+    with ThreadPoolExecutor(max_workers=min(2, max(1, runtime_plan.csv_read_threads))) as executor:
+        ward_future = executor.submit(
+            read_csv_optimized,
+            ward_vitals_path,
+            config=config,
+            usecols=["subject_id", "chart_time", "item_name", "value"],
+            large=True,
+        )
+        labs_future = executor.submit(
+            read_csv_optimized,
+            labs_path,
+            config=config,
+            usecols=["subject_id", "chart_time", "item_name", "value"],
+            large=True,
+        )
+        df_ward = ward_future.result()
+        df_labs = labs_future.result()
     df_dialysis = df_ward[df_ward["item_name"] == cohort_cfg["dialysis_item_name"]][["subject_id", "value"]]
     df_dialysis = df_dialysis.rename(columns={"value": "dialysis"})
     df_dialysis = df_dialysis.drop_duplicates(subset="subject_id", keep="first").reset_index(drop=True)
 
     cols_to_keep = ["op_id", "subject_id", "preop_creatinine", "opend_time"]
     df_preop = preop_df[cols_to_keep].copy()
-    df_labs = pd.read_csv(labs_path)
     base_combined = tabular_combined_df[["op_id"]].copy()
     df_preop = df_preop.merge(base_combined, on="op_id", how="inner")
 

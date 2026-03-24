@@ -72,6 +72,8 @@ class ArtifactManager:
         inputs: list[str] | None = None,
         outputs: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        stage_runtime_plan: dict[str, Any] | None = None,
+        wall_time_seconds: float | None = None,
     ) -> Path:
         payload = build_manifest(
             stage=stage,
@@ -80,5 +82,7 @@ class ArtifactManager:
             inputs=inputs,
             outputs=outputs,
             metadata=metadata,
+            stage_runtime_plan=stage_runtime_plan,
+            wall_time_seconds=wall_time_seconds,
         )
         return self.write_json(payload, *manifest_parts)

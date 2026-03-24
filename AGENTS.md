@@ -36,6 +36,23 @@ This file is the short agent-facing operating contract for `Inspire-AKI-predicti
 - The refactor defaults now target the mounted volume path `/media/volume/ncs_inspire_data/ncs_aki/data/inspire`.
 - Mid-refactor: the new package path is `src/inspire_aki/` with CLI entrypoint `inspire-aki`.
 
+## Current Handoff Status
+
+As of March 24, 2026:
+
+- the synthetic refactor suite passes with `46` tests
+- the real-data refactor preprocessing chain has completed on the mounted INSPIRE volume
+- the real-data HPO tuning stages now complete after fixing Optuna `4.x` trial-state handling
+- the full real-data `configs/aki/smoke_hpo.yaml` run is still **not** validated end to end in one uninterrupted pass
+- the next recommended continuation point is:
+  - `inspire-aki train tabular --config configs/aki/smoke_hpo.yaml`
+  - `inspire-aki train sequence --config configs/aki/smoke_hpo.yaml`
+  - `inspire-aki evaluate calibrate --config configs/aki/smoke_hpo.yaml`
+  - `inspire-aki evaluate metrics --config configs/aki/smoke_hpo.yaml`
+  - `inspire-aki evaluate delong --config configs/aki/smoke_hpo.yaml`
+  - `inspire-aki evaluate dca --config configs/aki/smoke_hpo.yaml`
+  - `inspire-aki report manuscript --config configs/aki/smoke_hpo.yaml`
+
 ## Safe Working Rules
 
 - Prefer `rg` and targeted reads before editing.
@@ -85,7 +102,9 @@ This file is the short agent-facing operating contract for `Inspire-AKI-predicti
 - Current training toggles do not enable every model or every dataset.
 - `asa_rule` only applies to datasets that still contain `asa`.
 - The refactor writes manifests and stage outputs under `artifacts/`.
+- The refactor resolves stage worker/thread budgets through `src/inspire_aki/runtime.py`; use `inspire-aki runtime inspect --config ...` before expensive runs on a new host class.
 - Refactor raw predictions are stage-owned partitions under `artifacts/predictions/raw/`, plus a rebuilt combined `raw_predictions.parquet`.
+- Parallel timeseries and sequence preprocessing now uses internal staging artifacts under `artifacts/staging/`.
 - `inspire-aki report manuscript` now includes SHAP when configured in `reports.manuscript_sections`.
 - Legacy alias export is explicit through `inspire-aki compat export-legacy`; `run all` does not export aliases automatically.
 

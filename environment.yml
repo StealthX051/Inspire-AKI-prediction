@@ -7,3 +7,4 @@ dependencies:
   - graphviz
   - pip:
       - -r requirements.txt
+      - -e .

@@ -4,10 +4,12 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from sklearn.calibration import IsotonicRegression
 from sklearn.model_selection import KFold
 
 from inspire_aki.evaluation.thresholds import find_optimal_fbeta_threshold
+from inspire_aki.runtime import build_stage_runtime_plan, thread_limited_context
 
 
 @dataclass
@@ -66,20 +68,26 @@ def _calibrate_group(group_df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame
     return group_df, summary
 
 
+def _calibrate_group_worker(group_df: pd.DataFrame, config: dict, nested_blas_threads: int) -> tuple[pd.DataFrame, dict[str, object]]:
+    with thread_limited_context(nested_blas_threads):
+        return _calibrate_group(group_df, config)
+
+
 def calibrate_prediction_groups(predictions_df: pd.DataFrame, config: dict) -> CalibrationResult:
     if predictions_df.empty:
         return CalibrationResult(predictions=predictions_df.copy(), thresholds=pd.DataFrame())
 
-    calibrated_groups: list[pd.DataFrame] = []
-    threshold_rows: list[dict[str, object]] = []
     group_cols = ["dataset_regime", "population_id", "model_key"]
-    for _, group_df in predictions_df.groupby(group_cols, sort=False):
-        calibrated_df, summary = _calibrate_group(group_df, config)
-        calibrated_groups.append(calibrated_df)
-        threshold_rows.append(summary)
+    groups = [group_df.copy() for _, group_df in predictions_df.groupby(group_cols, sort=False)]
+    runtime_plan = build_stage_runtime_plan(config, "evaluate_calibration", {"group_count": len(groups)})
+    results = Parallel(n_jobs=max(1, runtime_plan.evaluation_workers), backend="loky")(
+        delayed(_calibrate_group_worker)(group_df, config, runtime_plan.nested_blas_threads)
+        for group_df in groups
+    )
+    calibrated_groups = [result[0] for result in results]
+    threshold_rows = [result[1] for result in results]
 
     return CalibrationResult(
         predictions=pd.concat(calibrated_groups, ignore_index=True),
         thresholds=pd.DataFrame(threshold_rows),
     )
-

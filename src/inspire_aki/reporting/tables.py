@@ -75,9 +75,10 @@ def generate_table_outputs(artifacts: ArtifactManager) -> list[Path]:
         fill_html.write_text(fill_df.to_html(index=False), encoding="utf-8")
         outputs.append(fill_html)
 
-    cohort_path = artifacts.paths.artifact_path("datasets", "tabular", "tabular_combined_labeled.csv")
-    if cohort_path.exists():
-        cohort_df = pd.read_csv(cohort_path)
+    cohort_path = artifacts.paths.artifact_path("datasets", "tabular", "tabular_combined_unnormalized.csv")
+    labels_path = artifacts.paths.artifact_path("cohort", "aki_labels.csv")
+    if cohort_path.exists() and labels_path.exists():
+        cohort_df = pd.read_csv(cohort_path).merge(pd.read_csv(labels_path), on="op_id", how="inner")
         characteristics = _cohort_characteristics(cohort_df)
         if not characteristics.empty:
             char_csv = artifacts.write_dataframe(characteristics, "reports", "tables", "cohort_characteristics.csv")
@@ -85,6 +86,8 @@ def generate_table_outputs(artifacts: ArtifactManager) -> list[Path]:
             char_html = artifacts.resolve("reports", "tables", "cohort_characteristics.html")
             char_html.write_text(characteristics.to_html(index=False), encoding="utf-8")
             outputs.append(char_html)
+    elif cohort_path.exists() != labels_path.exists():
+        missing = cohort_path if not cohort_path.exists() else labels_path
+        raise FileNotFoundError(f"Required cohort reporting input was not found: {missing}")
 
     return outputs
-

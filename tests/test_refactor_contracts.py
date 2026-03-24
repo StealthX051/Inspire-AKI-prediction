@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
+import types
 
 import numpy as np
 import pandas as pd
@@ -18,6 +20,8 @@ from inspire_aki.pipelines.report import run_manuscript
 from inspire_aki.pipelines.train import run_train_sequence, run_train_tabular
 from inspire_aki.pipelines.tune import run_tune_sequence, run_tune_tabular
 from inspire_aki.reporting.manuscript import generate_manuscript_outputs
+from inspire_aki.datasets.splits import build_hpo_split_manifest
+from inspire_aki.models.hpo import _has_completed_trials, tune_sequence_dataset, tune_tabular_dataset
 
 
 def _prepare_training_inputs(config_path: Path, *, include_sequence: bool = False) -> dict:
@@ -185,15 +189,39 @@ def test_tune_tabular_uses_pipeline_written_hpo_manifests(monkeypatch, synthetic
 
     def fake_tune_tabular_dataset(dataset_df, dataset_regime, manifest, _config):
         captured[dataset_regime] = manifest.copy()
-        return {}, pd.DataFrame()
+        return {"log_reg": {"C": 1.0}}, pd.DataFrame(
+            [
+                {
+                    "dataset_regime": dataset_regime,
+                    "model_key": "log_reg",
+                    "trial_number": 0,
+                    "value": 0.9,
+                    "params": {"C": 1.0},
+                    "state": "COMPLETE",
+                }
+            ]
+        )
 
     monkeypatch.setattr("inspire_aki.pipelines.tune.tune_tabular_dataset", fake_tune_tabular_dataset)
-    run_tune_tabular(config)
+    outputs = run_tune_tabular(config)
 
     assert set(captured) == {"preop", "intraop", "combined"}
+    assert set(outputs) == {"best_params", "trials"}
+    best_params_output = artifacts.relative(artifacts.paths.artifact_path("tuning", "tabular_best_params.json"))
+    trials_output = artifacts.relative(artifacts.paths.artifact_path("tuning", "tabular_trials.parquet"))
     for dataset_regime, manifest in captured.items():
         assert set(manifest["split_name"]) == {"train", "val", "holdout"}
-        assert artifacts.paths.artifact_path("datasets", "splits", f"hpo_{dataset_regime}.parquet").exists()
+        split_output = artifacts.paths.artifact_path("datasets", "splits", f"hpo_{dataset_regime}.parquet")
+        assert split_output.exists()
+        manifest_payload = artifacts.read_json("manifests", f"tune_tabular_{dataset_regime}.json")
+        assert artifacts.relative(split_output) in manifest_payload["outputs"]
+        assert best_params_output in manifest_payload["outputs"]
+        assert trials_output in manifest_payload["outputs"]
+
+    aggregate_manifest = artifacts.read_json("manifests", "tune_tabular.json")
+    assert best_params_output in aggregate_manifest["outputs"]
+    assert trials_output in aggregate_manifest["outputs"]
+    assert len([output for output in aggregate_manifest["outputs"] if output.endswith(".parquet")]) == 4
 
 
 def test_tune_sequence_uses_pipeline_written_hpo_manifest(monkeypatch, synthetic_config: Path) -> None:
@@ -210,6 +238,106 @@ def test_tune_sequence_uses_pipeline_written_hpo_manifest(monkeypatch, synthetic
 
     assert set(captured["sequence"]["split_name"]) == {"train", "val", "holdout"}
     assert artifacts.paths.artifact_path("datasets", "splits", "hpo_sequence.parquet").exists()
+
+
+def _fake_optuna_module(captured_trials: list[int], *, trial_state: object = "1") -> types.SimpleNamespace:
+    class _FakeLogging:
+        WARNING = "WARNING"
+
+        @staticmethod
+        def set_verbosity(_value) -> None:
+            return None
+
+    class _FakeStudy:
+        def __init__(self) -> None:
+            self.best_params: dict[str, object] = {}
+            self.trials = [types.SimpleNamespace(number=0, value=0.5, params={}, state=trial_state)]
+
+        def optimize(self, _objective, *, n_trials: int, show_progress_bar: bool) -> None:
+            captured_trials.append(n_trials)
+            assert show_progress_bar is False
+
+    return types.SimpleNamespace(
+        logging=_FakeLogging(),
+        create_study=lambda **_kwargs: _FakeStudy(),
+    )
+
+
+def test_has_completed_trials_accepts_optuna4_numeric_state() -> None:
+    study = types.SimpleNamespace(
+        trials=[
+            types.SimpleNamespace(state="0"),
+            types.SimpleNamespace(state="1"),
+        ]
+    )
+
+    assert _has_completed_trials(study) is True
+
+
+def test_has_completed_trials_accepts_enum_like_state_name() -> None:
+    complete_state = types.SimpleNamespace(name="COMPLETE")
+    study = types.SimpleNamespace(trials=[types.SimpleNamespace(state=complete_state)])
+
+    assert _has_completed_trials(study) is True
+
+
+def test_tabular_hpo_uses_configured_trial_count(monkeypatch, synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config)
+    config["models"]["tabular_hpo_enabled"] = ["log_reg", "xgb", "rf", "svm", "mlp", "knn"]
+    config["models"]["hpo"] = {"n_trials": 3, "tabular_mlp_epochs": 5, "sequence_epochs": 2, "sequence_patience": 5}
+
+    artifacts = ArtifactManager(config)
+    dataset_df = pd.read_csv(artifacts.paths.artifact_path("datasets", "tabular", "tabular_preop_labeled.csv"))
+    manifest = build_hpo_split_manifest(
+        dataset_df,
+        target=config["models"]["target"],
+        dataset_regime="preop",
+        population_id="preop",
+        random_state=config["splits"]["random_state"],
+        holdout_fraction=config["splits"]["holdout_fraction"],
+        validation_fraction_within_train=config["splits"]["hpo_validation_fraction_within_train"],
+    )
+
+    captured_trials: list[int] = []
+    monkeypatch.setitem(sys.modules, "optuna", _fake_optuna_module(captured_trials))
+    monkeypatch.setitem(sys.modules, "xgboost", types.SimpleNamespace(XGBClassifier=object))
+
+    results, trials_df = tune_tabular_dataset(dataset_df, "preop", manifest, config)
+
+    assert set(results) == {"log_reg", "xgb", "rf", "svm", "mlp", "knn"}
+    assert trials_df["model_key"].tolist() == ["log_reg", "xgb", "rf", "svm", "mlp", "knn"]
+    assert set(trials_df["state"]) == {"COMPLETE"}
+    assert captured_trials == [3, 3, 3, 3, 3, 3]
+
+
+def test_sequence_hpo_uses_configured_trial_count(monkeypatch, synthetic_config: Path) -> None:
+    pytest.importorskip("torch")
+
+    config = _prepare_training_inputs(synthetic_config, include_sequence=True)
+    config["models"]["sequence_hpo_enabled"] = ["lstm_only", "hybrid"]
+    config["models"]["hpo"] = {"n_trials": 2, "tabular_mlp_epochs": 5, "sequence_epochs": 2, "sequence_patience": 5}
+
+    artifacts = ArtifactManager(config)
+    sequence_df = artifacts.read_pickle("datasets", "sequence", "lstm_trainable.pkl")
+    manifest = build_hpo_split_manifest(
+        sequence_df,
+        target=config["models"]["target"],
+        dataset_regime="sequence",
+        population_id="sequence_common",
+        random_state=config["splits"]["random_state"],
+        holdout_fraction=config["splits"]["holdout_fraction"],
+        validation_fraction_within_train=config["splits"]["hpo_validation_fraction_within_train"],
+    )
+
+    captured_trials: list[int] = []
+    monkeypatch.setitem(sys.modules, "optuna", _fake_optuna_module(captured_trials))
+
+    results, trials_df = tune_sequence_dataset(sequence_df, manifest, config)
+
+    assert set(results) == {"lstm_only", "hybrid"}
+    assert trials_df["model_key"].tolist() == ["lstm_only", "hybrid"]
+    assert set(trials_df["state"]) == {"COMPLETE"}
+    assert captured_trials == [2, 2]
 
 
 def test_build_tabular_datasets_requires_op_id(loaded_synthetic_config) -> None:

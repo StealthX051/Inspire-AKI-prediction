@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
@@ -14,6 +15,7 @@ from sklearn.metrics import (
 )
 
 from inspire_aki.evaluation.bootstrap import bootstrap_metric_intervals
+from inspire_aki.runtime import build_stage_runtime_plan, thread_limited_context
 
 
 def _safe_auc(y_true: np.ndarray, y_prob: np.ndarray) -> tuple[float, float]:
@@ -43,26 +45,40 @@ def _metric_summary(group_df: pd.DataFrame) -> dict[str, float | int | str]:
     }
 
 
-def compute_group_metrics(predictions_df: pd.DataFrame) -> pd.DataFrame:
+def _compute_metric_group_worker(keys: tuple, group_df: pd.DataFrame, nested_blas_threads: int) -> dict[str, object]:
     group_cols = ["dataset_regime", "population_id", "model_key", "repeat_id", "fold_id"]
-    rows: list[dict[str, object]] = []
-    for keys, group_df in predictions_df.groupby(group_cols, sort=False):
+    with thread_limited_context(nested_blas_threads):
         row = dict(zip(group_cols, keys))
         row.update(_metric_summary(group_df))
-        rows.append(row)
+    return row
+
+
+def compute_group_metrics(predictions_df: pd.DataFrame, config: dict | None = None) -> pd.DataFrame:
+    group_cols = ["dataset_regime", "population_id", "model_key", "repeat_id", "fold_id"]
+    groups = [(keys, group_df.copy()) for keys, group_df in predictions_df.groupby(group_cols, sort=False)]
+    if not groups:
+        return pd.DataFrame()
+    if not isinstance(config, dict):
+        rows = [_compute_metric_group_worker(keys, group_df, 1) for keys, group_df in groups]
+        return pd.DataFrame(rows)
+    runtime_plan = build_stage_runtime_plan(config, "evaluate_metrics", {"group_count": len(groups)})
+    rows = Parallel(n_jobs=max(1, runtime_plan.evaluation_workers), backend="loky")(
+        delayed(_compute_metric_group_worker)(keys, group_df, runtime_plan.nested_blas_threads)
+        for keys, group_df in groups
+    )
     return pd.DataFrame(rows)
 
 
-def summarize_group_metrics(predictions_df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
-    group_cols = ["dataset_regime", "population_id", "model_key"]
-    summary_rows: list[dict[str, object]] = []
-    bootstrap_rows: list[pd.DataFrame] = []
-
-    for keys, group_df in predictions_df.groupby(group_cols, sort=False):
-        row = dict(zip(group_cols, keys))
+def _summary_group_worker(
+    keys: tuple,
+    group_df: pd.DataFrame,
+    config: dict,
+    bootstrap_jobs: int,
+    nested_blas_threads: int,
+) -> tuple[dict[str, object], pd.DataFrame]:
+    with thread_limited_context(nested_blas_threads):
+        row = dict(zip(["dataset_regime", "population_id", "model_key"], keys))
         row.update(_metric_summary(group_df))
-        summary_rows.append(row)
-
         y_true = group_df["y_true"].astype(int).to_numpy()
         y_prob = group_df["y_prob_calibrated"].fillna(group_df["y_prob_raw"]).astype(float).to_numpy()
         threshold = float(group_df["threshold"].iloc[0])
@@ -72,12 +88,44 @@ def summarize_group_metrics(predictions_df: pd.DataFrame, config: dict) -> tuple
             threshold,
             n_bootstrap=config["evaluation"]["bootstrap_reps"],
             random_state=config["splits"]["random_state"],
+            n_jobs=bootstrap_jobs,
         )
         if not bootstrap_df.empty:
             bootstrap_df.insert(0, "model_key", row["model_key"])
             bootstrap_df.insert(0, "population_id", row["population_id"])
             bootstrap_df.insert(0, "dataset_regime", row["dataset_regime"])
-            bootstrap_rows.append(bootstrap_df)
+    return row, bootstrap_df
 
+
+def summarize_group_metrics(predictions_df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+    group_cols = ["dataset_regime", "population_id", "model_key"]
+    groups = [(keys, group_df.copy()) for keys, group_df in predictions_df.groupby(group_cols, sort=False)]
+    if not groups:
+        return pd.DataFrame(), pd.DataFrame()
+    runtime_plan = build_stage_runtime_plan(config, "evaluate_metrics", {"group_count": len(groups)})
+    use_parallel_bootstrap = len(groups) < 4
+    if use_parallel_bootstrap:
+        results = [
+            _summary_group_worker(
+                keys,
+                group_df,
+                config,
+                runtime_plan.bootstrap_workers,
+                runtime_plan.nested_blas_threads,
+            )
+            for keys, group_df in groups
+        ]
+    else:
+        results = Parallel(n_jobs=max(1, runtime_plan.evaluation_workers), backend="loky")(
+            delayed(_summary_group_worker)(
+                keys,
+                group_df,
+                config,
+                1,
+                runtime_plan.nested_blas_threads,
+            )
+            for keys, group_df in groups
+        )
+    summary_rows = [result[0] for result in results]
+    bootstrap_rows = [result[1] for result in results if not result[1].empty]
     return pd.DataFrame(summary_rows), pd.concat(bootstrap_rows, ignore_index=True) if bootstrap_rows else pd.DataFrame()
-

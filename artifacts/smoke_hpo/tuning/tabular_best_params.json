@@ -1,0 +1,98 @@
+{
+  "combined": {
+    "knn": {
+      "n_neighbors": 9
+    },
+    "log_reg": {
+      "C": 0.9105985992218563
+    },
+    "mlp": {
+      "dropout_rate": 0.15371474272773283,
+      "lr": 0.0009670029279796218,
+      "n_layers": 1,
+      "n_units": 12
+    },
+    "rf": {
+      "max_depth": 5,
+      "max_features": "log2",
+      "min_samples_leaf": 2,
+      "min_samples_split": 3,
+      "n_estimators": 30
+    },
+    "svm": {
+      "C": 0.022714591616479415
+    },
+    "xgb": {
+      "colsample_bytree": 0.8411818809256979,
+      "gamma": 0.28716331605609163,
+      "learning_rate": 0.09516620387354718,
+      "max_depth": 3,
+      "n_estimators": 44,
+      "subsample": 0.889741638561862
+    }
+  },
+  "intraop": {
+    "knn": {
+      "n_neighbors": 4
+    },
+    "log_reg": {
+      "C": 0.4050557458566478
+    },
+    "mlp": {
+      "dropout_rate": 0.28037852394633556,
+      "lr": 0.0032190122604525227,
+      "n_layers": 1,
+      "n_units": 26
+    },
+    "rf": {
+      "max_depth": 6,
+      "max_features": "sqrt",
+      "min_samples_leaf": 2,
+      "min_samples_split": 3,
+      "n_estimators": 49
+    },
+    "svm": {
+      "C": 0.32800293602151787
+    },
+    "xgb": {
+      "colsample_bytree": 0.9063839916355981,
+      "gamma": 0.08288398234647426,
+      "learning_rate": 0.08042769709532903,
+      "max_depth": 4,
+      "n_estimators": 41,
+      "subsample": 0.9723973579644914
+    }
+  },
+  "preop": {
+    "knn": {
+      "n_neighbors": 9
+    },
+    "log_reg": {
+      "C": 0.2726574537526168
+    },
+    "mlp": {
+      "dropout_rate": 0.2189974801855296,
+      "lr": 0.0017318406027074136,
+      "n_layers": 2,
+      "n_units": 19
+    },
+    "rf": {
+      "max_depth": 5,
+      "max_features": "sqrt",
+      "min_samples_leaf": 1,
+      "min_samples_split": 4,
+      "n_estimators": 45
+    },
+    "svm": {
+      "C": 0.5760935820011388
+    },
+    "xgb": {
+      "colsample_bytree": 0.8659238513036494,
+      "gamma": 0.3791202611711958,
+      "learning_rate": 0.05218049923352605,
+      "max_depth": 4,
+      "n_estimators": 38,
+      "subsample": 0.9275546316283109
+    }
+  }
+}

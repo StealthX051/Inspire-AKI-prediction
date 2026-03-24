@@ -9,6 +9,17 @@ This document separates:
 
 The important distinction is that the legacy pipeline writes into `/home/server/...`, while the refactor writes into the configured `artifacts/` root and keeps stage ownership explicit.
 
+## Current Validation Snapshot
+
+As of March 24, 2026:
+
+- `artifacts/smoke_hpo/` contains real-data preprocessing outputs plus completed HPO tuning outputs
+- the current tuning artifacts now use normalized trial states such as `COMPLETE`, not raw Optuna numeric codes
+- the tabular tuning manifests now enumerate both:
+  - the per-dataset HPO split parquet
+  - the shared tuning outputs under `tuning/`
+- the downstream real-data `train -> evaluate -> report` portion of `configs/aki/smoke_hpo.yaml` still needs one clean end-to-end validation run
+
 ## Refactor Artifact Contract
 
 The current `src/inspire_aki/` package is designed around staged artifacts plus manifests.
@@ -18,6 +29,10 @@ The current `src/inspire_aki/` package is designed around staged artifacts plus 
 - default root: `artifacts/`
 - every stage may also write a manifest under:
   - `artifacts/manifests/`
+- tuning now writes:
+  - per-dataset tabular manifests such as `manifests/tune_tabular_preop.json`
+  - a top-level aggregate manifest `manifests/tune_tabular.json`
+  - `manifests/tune_sequence.json`
 
 ### Refactor preprocessing artifacts
 
@@ -36,6 +51,21 @@ The current `src/inspire_aki/` package is designed around staged artifacts plus 
 | Labeled preop table | `datasets/tabular/tabular_preop_labeled.csv` | `inspire-aki preprocess labels` | Main preop modeling dataset |
 | Labeled intraop table | `datasets/tabular/tabular_intraop_labeled.csv` | `inspire-aki preprocess labels` | Main intraop modeling dataset |
 | Sequence-ready dataset | `datasets/sequence/lstm_trainable.pkl` | `inspire-aki preprocess sequence` | Padded sequence plus static features |
+
+Refactor invariant:
+
+- `features/intraop/feature_engineered.csv` must not contain `inf` or `-inf`
+- `preprocess intraop` now fails if infinite values remain after feature engineering
+
+### Refactor staging artifacts
+
+These are internal implementation details for the adaptive parallel sequence path. They are not manuscript-facing outputs, but they are now expected during runtime.
+
+| Artifact | Typical path under `artifacts/` | Produced by | Notes |
+| --- | --- | --- | --- |
+| Filtered time-series partitions | `staging/timeseries_filtered/part-*.parquet` | `inspire-aki preprocess timeseries` | Hash-partitioned filtered vitals rows |
+| Cleaned time-series partitions | `staging/timeseries_cleaned/part-*.parquet` | `inspire-aki preprocess timeseries` | Cleaned/interpolated per-partition outputs before final concatenation |
+| Sequence partitions | `staging/sequence/part-*.pkl` | `inspire-aki preprocess sequence` | Partitioned padded sequence shards before final concatenation |
 
 ### Refactor split artifacts
 
@@ -101,6 +131,10 @@ The combined raw prediction view is deduplicated and sorted so stage reruns are 
 | SHAP importance CSVs | `explainability/shap_importance_<dataset>_<model>.csv` | `inspire-aki explain shap` or `report manuscript` | Only for supported SHAP models |
 | Report figures | `reports/figures/*` | `inspire-aki report ...` | ROC, PR, calibration, DCA, SHAP, consort outputs |
 | Report tables | `reports/tables/*` | `inspire-aki report ...` | Markdown, CSV, HTML manuscript-facing tables |
+
+Refactor reporting note:
+
+- cohort-characteristics outputs are now built from `tabular_combined_unnormalized.csv` merged with `cohort/aki_labels.csv`, not from the normalized labeled modeling table
 
 ### Refactor report contract
 

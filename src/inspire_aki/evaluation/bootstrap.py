@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
@@ -51,17 +52,14 @@ def _metric_row(y_true: np.ndarray, y_prob: np.ndarray, threshold: float) -> dic
     return metrics
 
 
-def bootstrap_metric_intervals(
+def _bootstrap_chunk(
     y_true: np.ndarray,
     y_prob: np.ndarray,
     threshold: float,
     *,
     n_bootstrap: int,
     random_state: int,
-) -> pd.DataFrame:
-    if len(y_true) == 0:
-        return pd.DataFrame()
-
+) -> list[dict[str, float]]:
     rng = np.random.default_rng(random_state)
     bootstrap_rows: list[dict[str, float]] = []
     n_samples = len(y_true)
@@ -72,6 +70,45 @@ def bootstrap_metric_intervals(
         if len(np.unique(y_true_boot)) < 2:
             continue
         bootstrap_rows.append(_metric_row(y_true_boot, y_prob_boot, threshold))
+    return bootstrap_rows
+
+
+def bootstrap_metric_intervals(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    threshold: float,
+    *,
+    n_bootstrap: int,
+    random_state: int,
+    n_jobs: int = 1,
+) -> pd.DataFrame:
+    if len(y_true) == 0:
+        return pd.DataFrame()
+
+    if n_jobs <= 1 or n_bootstrap <= 1:
+        bootstrap_rows = _bootstrap_chunk(
+            y_true,
+            y_prob,
+            threshold,
+            n_bootstrap=n_bootstrap,
+            random_state=random_state,
+        )
+    else:
+        batch_sizes = [n_bootstrap // n_jobs] * n_jobs
+        for idx in range(n_bootstrap % n_jobs):
+            batch_sizes[idx] += 1
+        bootstrap_rows_nested = Parallel(n_jobs=n_jobs, backend="loky")(
+            delayed(_bootstrap_chunk)(
+                y_true,
+                y_prob,
+                threshold,
+                n_bootstrap=batch_size,
+                random_state=random_state + batch_idx,
+            )
+            for batch_idx, batch_size in enumerate(batch_sizes)
+            if batch_size > 0
+        )
+        bootstrap_rows = [row for rows in bootstrap_rows_nested for row in rows]
 
     if not bootstrap_rows:
         return pd.DataFrame()

@@ -1,0 +1,30 @@
+digraph consort {
+  rankdir="LR";
+  n0 [shape=box, label="stage\nN=NA"];
+  n1 [shape=box, label="stage\nN=NA"];
+  n0 -> n1;
+  n2 [shape=box, label="stage\nN=NA"];
+  n1 -> n2;
+  n3 [shape=box, label="stage\nN=NA"];
+  n2 -> n3;
+  n4 [shape=box, label="stage\nN=NA"];
+  n3 -> n4;
+  n5 [shape=box, label="stage\nN=NA"];
+  n4 -> n5;
+  n6 [shape=box, label="stage\nN=NA"];
+  n5 -> n6;
+  n7 [shape=box, label="stage\nN=NA"];
+  n6 -> n7;
+  n8 [shape=box, label="stage\nN=NA"];
+  n7 -> n8;
+  n9 [shape=box, label="stage\nN=NA"];
+  n8 -> n9;
+  n10 [shape=box, label="stage\nN=NA"];
+  n9 -> n10;
+  n11 [shape=box, label="stage\nN=NA"];
+  n10 -> n11;
+  n12 [shape=box, label="stage\nN=NA"];
+  n11 -> n12;
+  n13 [shape=box, label="stage\nN=NA"];
+  n12 -> n13;
+}

@@ -57,6 +57,30 @@ def validate_config(config: dict[str, Any]) -> None:
     if splits_cfg["use_bootstrapping"] and (splits_cfg["n_bootstrap_iterations"] % splits_cfg["n_cv_folds"]) != 0:
         raise ValueError("When bootstrapping is enabled, splits.n_bootstrap_iterations must be divisible by splits.n_cv_folds.")
 
+    runtime_cfg = config.get("runtime", {})
+    if runtime_cfg.get("profile", "balanced") not in {"balanced", "aggressive", "conservative"}:
+        raise ValueError("runtime.profile must be one of: balanced, aggressive, conservative.")
+    if float(runtime_cfg.get("cpu_reserve_fraction", 0.125)) < 0:
+        raise ValueError("runtime.cpu_reserve_fraction must be non-negative.")
+    if float(runtime_cfg.get("ram_reserve_fraction", 0.15)) < 0:
+        raise ValueError("runtime.ram_reserve_fraction must be non-negative.")
+    if int(runtime_cfg.get("cpu_reserve_min", 4)) < 0:
+        raise ValueError("runtime.cpu_reserve_min must be non-negative.")
+    if int(runtime_cfg.get("ram_reserve_gb_min", 16)) < 0:
+        raise ValueError("runtime.ram_reserve_gb_min must be non-negative.")
+    if int(runtime_cfg.get("nested_blas_threads", 1)) < 1:
+        raise ValueError("runtime.nested_blas_threads must be at least 1.")
+
+    hpo_cfg = config.get("models", {}).get("hpo", {})
+    if int(hpo_cfg.get("n_trials", 50)) < 1:
+        raise ValueError("models.hpo.n_trials must be at least 1.")
+    if int(hpo_cfg.get("tabular_mlp_epochs", 100)) < 1:
+        raise ValueError("models.hpo.tabular_mlp_epochs must be at least 1.")
+    if int(hpo_cfg.get("sequence_epochs", 150)) < 1:
+        raise ValueError("models.hpo.sequence_epochs must be at least 1.")
+    if int(hpo_cfg.get("sequence_patience", 15)) < 1:
+        raise ValueError("models.hpo.sequence_patience must be at least 1.")
+
     report_sections = config.get("reports", {}).get("manuscript_sections", [])
     unknown_sections = sorted(set(report_sections) - set(MANUSCRIPT_SECTIONS))
     if unknown_sections:
