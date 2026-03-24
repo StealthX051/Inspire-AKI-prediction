@@ -22,6 +22,18 @@ def _save_plot(path: Path, figure_dpi: int) -> None:
     plt.close()
 
 
+def _dca_title(dataset_regime: str, population_id: str, *, multi_population: bool) -> str:
+    if multi_population:
+        return f"Decision Curve Analysis: {dataset_regime} ({population_id})"
+    return f"Decision Curve Analysis: {dataset_regime}"
+
+
+def _dca_output_name(dataset_regime: str, population_id: str, *, multi_population: bool) -> str:
+    if multi_population:
+        return f"dca_curves_{dataset_regime}_{population_id}.png"
+    return f"dca_curves_{dataset_regime}.png"
+
+
 def _curve_outputs_for_dataset(dataset_regime: str, dataset_df: pd.DataFrame, config: dict, artifacts: ArtifactManager) -> list[Path]:
     import matplotlib.pyplot as plt
 
@@ -83,7 +95,15 @@ def _curve_outputs_for_dataset(dataset_regime: str, dataset_df: pd.DataFrame, co
     return outputs
 
 
-def _dca_outputs_for_dataset(dataset_regime: str, dataset_df: pd.DataFrame, config: dict, artifacts: ArtifactManager) -> list[Path]:
+def _dca_outputs_for_population(
+    dataset_regime: str,
+    population_id: str,
+    dataset_df: pd.DataFrame,
+    config: dict,
+    artifacts: ArtifactManager,
+    *,
+    multi_population: bool,
+) -> list[Path]:
     import matplotlib.pyplot as plt
 
     figure_dpi = config["reports"]["figure_dpi"]
@@ -97,14 +117,15 @@ def _dca_outputs_for_dataset(dataset_regime: str, dataset_df: pd.DataFrame, conf
             label=model_display_name(model_key),
             color=model_colors.get(model_display_name(model_key)),
         )
-    base_df = next(iter(dataset_df.groupby("model_key")))[1]
+    # Treat-all depends on cohort prevalence, so DCA figures must stay population-specific.
+    base_df = next(iter(dataset_df.groupby("model_key", sort=False)))[1]
     plt.plot(base_df["threshold_prob"] * 100.0, base_df["net_benefit_treat_all"], linestyle="--", color="black", label="Treat All")
     plt.plot(base_df["threshold_prob"] * 100.0, base_df["net_benefit_treat_none"], linestyle="-", color="gray", label="Treat None")
     plt.xlabel("Threshold Probability (%)")
     plt.ylabel("Net Benefit")
-    plt.title(f"Decision Curve Analysis: {dataset_regime}")
+    plt.title(_dca_title(dataset_regime, population_id, multi_population=multi_population))
     plt.legend(loc="upper right")
-    out_path = artifacts.resolve("reports", "figures", f"dca_curves_{dataset_regime}.png")
+    out_path = artifacts.resolve("reports", "figures", _dca_output_name(dataset_regime, population_id, multi_population=multi_population))
     _save_plot(out_path, figure_dpi)
     return [out_path]
 
@@ -128,11 +149,22 @@ def generate_curve_outputs(artifacts: ArtifactManager, config: dict) -> list[Pat
     dca_path = artifacts.paths.artifact_path("evaluation", "dca_curves.csv")
     if dca_path.exists():
         dca_df = pd.read_csv(dca_path)
-        dca_groups = [(dataset_regime, dataset_df.copy()) for dataset_regime, dataset_df in dca_df.groupby("dataset_regime", sort=False)]
+        dca_groups: list[tuple[str, str, pd.DataFrame, bool]] = []
+        for dataset_regime, regime_df in dca_df.groupby("dataset_regime", sort=False):
+            population_groups = [(population_id, population_df.copy()) for population_id, population_df in regime_df.groupby("population_id", sort=False)]
+            multi_population = len(population_groups) > 1
+            if multi_population:
+                legacy_path = artifacts.paths.artifact_path("reports", "figures", f"dca_curves_{dataset_regime}.png")
+                if legacy_path.exists():
+                    legacy_path.unlink()
+            dca_groups.extend(
+                (dataset_regime, population_id, population_df, multi_population)
+                for population_id, population_df in population_groups
+            )
         if dca_groups:
             dca_outputs_nested = Parallel(n_jobs=max(1, runtime_plan.report_workers), backend="loky")(
-                delayed(_dca_outputs_for_dataset)(dataset_regime, dataset_df, config, artifacts)
-                for dataset_regime, dataset_df in dca_groups
+                delayed(_dca_outputs_for_population)(dataset_regime, population_id, dataset_df, config, artifacts, multi_population=multi_population)
+                for dataset_regime, population_id, dataset_df, multi_population in dca_groups
             )
             outputs.extend(path for group in dca_outputs_nested for path in group)
 

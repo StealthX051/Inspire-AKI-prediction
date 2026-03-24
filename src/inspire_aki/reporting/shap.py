@@ -29,6 +29,28 @@ def _shap_bundle_dir(artifacts: ArtifactManager, dataset_regime: str, model_key:
     return artifacts.paths.artifact_path("models", "tabular", dataset_regime, model_key, "repeat_0", "fold_0")
 
 
+def _select_binary_class_shap_values(shap_values: object, feature_count: int) -> np.ndarray:
+    if isinstance(shap_values, list):
+        if not shap_values:
+            raise ValueError("SHAP returned an empty list of explanations.")
+        values = np.asarray(shap_values[1] if len(shap_values) > 1 else shap_values[0])
+    else:
+        values = np.asarray(shap_values)
+
+    if values.ndim == 2:
+        return values
+    if values.ndim != 3:
+        raise ValueError(f"Unsupported SHAP value shape: {values.shape!r}")
+
+    if values.shape[1] == feature_count:
+        class_index = 1 if values.shape[2] > 1 else 0
+        return values[:, :, class_index]
+    if values.shape[2] == feature_count:
+        class_index = 1 if values.shape[0] > 1 else 0
+        return values[class_index, :, :]
+    raise ValueError(f"Could not infer feature axis from SHAP value shape: {values.shape!r}")
+
+
 def _generate_shap_job(config: dict, dataset_regime: str, model_key: str) -> list[str]:
     artifacts = ArtifactManager(config)
     bundle_dir = _shap_bundle_dir(artifacts, dataset_regime, model_key)
@@ -61,7 +83,7 @@ def _generate_shap_job(config: dict, dataset_regime: str, model_key: str) -> lis
     if model_key in {"xgb", "rf"}:
         explainer = shap.TreeExplainer(bundle.model)
         shap_values = explainer.shap_values(x_explain)
-        values = shap_values if not isinstance(shap_values, list) else shap_values[1]
+        values = _select_binary_class_shap_values(shap_values, feature_count=len(feature_cols))
     elif model_key == "log_reg":
         explainer = shap.LinearExplainer(bundle.model, x_background)
         values = explainer.shap_values(x_explain)
