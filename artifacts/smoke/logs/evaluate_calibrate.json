@@ -1,4 +1,0 @@
-{
-  "predictions": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke/predictions/calibrated_predictions.parquet",
-  "thresholds": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke/evaluation/thresholds.csv"
-}

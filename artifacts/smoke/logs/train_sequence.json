@@ -1,4 +1,0 @@
-{
-  "partition": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke/predictions/raw/sequence.parquet",
-  "predictions": "/home/exouser/Inspire-AKI-prediction/artifacts/smoke/predictions/raw_predictions.parquet"
-}
