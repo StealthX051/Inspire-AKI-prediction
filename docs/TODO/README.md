@@ -1,6 +1,7 @@
 # TODO Notes
 
 Use this folder for explicit open work items that should survive across sessions.
+Keep TODOs scoped to one concrete task per file so the file can simply be deleted when that task is completed.
 
 Suggested filename pattern:
 
@@ -14,4 +15,8 @@ Keep entries short and practical:
 - next steps
 - done criteria
 
-Prefer one note per concrete workstream rather than one giant backlog file.
+Conventions:
+
+- Create one TODO file per concrete task.
+- Do not combine unrelated follow-ups into one shared TODO file.
+- When a TODO is completed, delete its file instead of marking it done in place.
