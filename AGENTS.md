@@ -6,7 +6,7 @@ This file is the short agent-facing operating contract for `Inspire-AKI-predicti
 
 1. Read `README.md`.
 2. Read `docs/README.md`.
-3. Treat the numbered scripts as the main pipeline unless a task explicitly targets legacy code.
+3. Treat the refactored CLI and `src/inspire_aki/` as the current implementation; use `docs/legacy/` and the numbered scripts for audit/parity work.
 
 ## Trust Order
 
@@ -62,7 +62,7 @@ As of March 24, 2026:
 - If you change code behavior, update:
   - `README.md`
   - the relevant `docs/*.md`
-  - `docs/07_manuscript_alignment.md` if manuscript-facing behavior changed
+  - `docs/legacy/07_manuscript_alignment.md` if manuscript-facing behavior changed
 
 ## Canonical Script Order
 
@@ -107,6 +107,7 @@ As of March 24, 2026:
 - Parallel timeseries and sequence preprocessing now uses internal staging artifacts under `artifacts/staging/`.
 - `inspire-aki report manuscript` now includes SHAP when configured in `reports.manuscript_sections`.
 - Legacy alias export is explicit through `inspire-aki compat export-legacy`; `run all` does not export aliases automatically.
+- Explicit team notes now live under `docs/TODO/` and `docs/HANDOFF/`.
 
 ## Done Criteria
 
@@ -118,10 +119,12 @@ As of March 24, 2026:
 ## Deep Docs
 
 - [docs/README.md](docs/README.md)
-- [docs/02_data_pipeline.md](docs/02_data_pipeline.md)
-- [docs/03_labels_and_features.md](docs/03_labels_and_features.md)
-- [docs/04_modeling_and_evaluation.md](docs/04_modeling_and_evaluation.md)
-- [docs/07_manuscript_alignment.md](docs/07_manuscript_alignment.md)
-- [docs/08_reproducibility_and_known_gaps.md](docs/08_reproducibility_and_known_gaps.md)
-- [docs/09_codex_workflow.md](docs/09_codex_workflow.md)
+- [docs/current/README.md](docs/current/README.md)
+- [docs/current/pipeline.md](docs/current/pipeline.md)
+- [docs/legacy/02_data_pipeline.md](docs/legacy/02_data_pipeline.md)
+- [docs/legacy/03_labels_and_features.md](docs/legacy/03_labels_and_features.md)
+- [docs/legacy/04_modeling_and_evaluation.md](docs/legacy/04_modeling_and_evaluation.md)
+- [docs/legacy/07_manuscript_alignment.md](docs/legacy/07_manuscript_alignment.md)
+- [docs/legacy/08_reproducibility_and_known_gaps.md](docs/legacy/08_reproducibility_and_known_gaps.md)
+- [docs/codex_workflow.md](docs/codex_workflow.md)
 - [docs/refactor/behavior_drift.md](docs/refactor/behavior_drift.md)

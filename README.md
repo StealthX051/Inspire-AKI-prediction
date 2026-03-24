@@ -403,16 +403,24 @@ Start with:
 
 Deep dives:
 
-- [docs/01_repo_map.md](docs/01_repo_map.md)
-- [docs/02_data_pipeline.md](docs/02_data_pipeline.md)
-- [docs/03_labels_and_features.md](docs/03_labels_and_features.md)
-- [docs/04_modeling_and_evaluation.md](docs/04_modeling_and_evaluation.md)
-- [docs/05_artifacts_and_outputs.md](docs/05_artifacts_and_outputs.md)
-- [docs/06_notebook_index.md](docs/06_notebook_index.md)
-- [docs/07_manuscript_alignment.md](docs/07_manuscript_alignment.md)
-- [docs/08_reproducibility_and_known_gaps.md](docs/08_reproducibility_and_known_gaps.md)
-- [docs/09_codex_workflow.md](docs/09_codex_workflow.md)
+- [docs/current/README.md](docs/current/README.md)
+- [docs/current/pipeline.md](docs/current/pipeline.md)
+- [docs/codex_workflow.md](docs/codex_workflow.md)
 - [docs/refactor/behavior_drift.md](docs/refactor/behavior_drift.md)
+- [docs/legacy/README.md](docs/legacy/README.md)
+- [docs/legacy/01_repo_map.md](docs/legacy/01_repo_map.md)
+- [docs/legacy/02_data_pipeline.md](docs/legacy/02_data_pipeline.md)
+- [docs/legacy/03_labels_and_features.md](docs/legacy/03_labels_and_features.md)
+- [docs/legacy/04_modeling_and_evaluation.md](docs/legacy/04_modeling_and_evaluation.md)
+- [docs/legacy/05_artifacts_and_outputs.md](docs/legacy/05_artifacts_and_outputs.md)
+- [docs/legacy/06_notebook_index.md](docs/legacy/06_notebook_index.md)
+- [docs/legacy/07_manuscript_alignment.md](docs/legacy/07_manuscript_alignment.md)
+- [docs/legacy/08_reproducibility_and_known_gaps.md](docs/legacy/08_reproducibility_and_known_gaps.md)
+
+Project coordination:
+
+- [docs/TODO/README.md](docs/TODO/README.md)
+- [docs/HANDOFF/README.md](docs/HANDOFF/README.md)
 
 ## Important Caveats
 
@@ -427,7 +435,8 @@ Deep dives:
 1. [README.md](README.md)
 2. [AGENTS.md](AGENTS.md)
 3. [docs/README.md](docs/README.md)
-4. [docs/02_data_pipeline.md](docs/02_data_pipeline.md)
-5. [docs/04_modeling_and_evaluation.md](docs/04_modeling_and_evaluation.md)
-6. [docs/07_manuscript_alignment.md](docs/07_manuscript_alignment.md)
-7. [docs/08_reproducibility_and_known_gaps.md](docs/08_reproducibility_and_known_gaps.md)
+4. [docs/current/README.md](docs/current/README.md)
+5. [docs/current/pipeline.md](docs/current/pipeline.md)
+6. [docs/codex_workflow.md](docs/codex_workflow.md)
+7. [docs/legacy/07_manuscript_alignment.md](docs/legacy/07_manuscript_alignment.md)
+8. [docs/legacy/08_reproducibility_and_known_gaps.md](docs/legacy/08_reproducibility_and_known_gaps.md)

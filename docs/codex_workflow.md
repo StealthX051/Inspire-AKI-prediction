@@ -36,10 +36,10 @@ inspire-aki report manuscript --config configs/aki/smoke_hpo.yaml
 1. Read `README.md`.
 2. Read `AGENTS.md`.
 3. Read `docs/README.md`.
-4. For data questions, read `docs/02_data_pipeline.md` and `docs/03_labels_and_features.md`.
-5. For model/evaluation questions, read `docs/04_modeling_and_evaluation.md`.
-6. For manuscript claims or disagreements, read `docs/07_manuscript_alignment.md`.
-7. For execution feasibility, read `docs/08_reproducibility_and_known_gaps.md`.
+4. Read `docs/current/README.md`.
+5. For current refactor execution questions, read `docs/current/pipeline.md`, `src/inspire_aki/`, and `docs/refactor/behavior_drift.md`.
+6. For legacy data questions or parity checks, read `docs/legacy/02_data_pipeline.md` and `docs/legacy/03_labels_and_features.md`.
+7. For manuscript claims or execution feasibility, read `docs/legacy/07_manuscript_alignment.md` and `docs/legacy/08_reproducibility_and_known_gaps.md`.
 
 ## Preferred Sources By Question Type
 
@@ -65,6 +65,7 @@ inspire-aki report manuscript --config configs/aki/smoke_hpo.yaml
 - Treat `reports.manuscript_sections` and `reports.shap_jobs` in `configs/aki/default.yaml` as the source of truth for report composition.
 - Treat `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` as the current default raw INSPIRE mount for the refactor.
 - Treat `artifacts/staging/` as intentional refactor staging, not stray output, for the partitioned timeseries and sequence path.
+- Use `docs/TODO/` for explicit queued work items and `docs/HANDOFF/` for dated session handoffs.
 - Treat notebooks as structured data:
   - inspect with `jq` or targeted text extraction
   - avoid editing them unless explicitly asked
@@ -92,8 +93,8 @@ Update docs whenever:
 Minimum doc update set after a behavior change:
 
 - `README.md`
-- the relevant `docs/*.md`
-- `docs/07_manuscript_alignment.md` if the change affects a manuscript-facing claim
+- `docs/current/pipeline.md`
+- `docs/legacy/07_manuscript_alignment.md` if the change affects a manuscript-facing claim
 - `docs/refactor/behavior_drift.md` if the refactor intentionally deviates from the brittle legacy path
 
 ## When Not To Edit
