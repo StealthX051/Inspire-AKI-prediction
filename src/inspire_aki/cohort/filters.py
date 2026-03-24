@@ -12,7 +12,6 @@ def apply_preop_filters(
     audit: list[dict],
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[dict]]:
     cohort_cfg = config["cohort"]
-    feature_cfg = config["features"]
 
     df_preop = df_preop[df_preop["asa"] < cohort_cfg["max_asa_exclusive"]]
     audit = record_count(audit, "asa_lt_6", df_preop)
@@ -39,7 +38,4 @@ def apply_preop_filters(
     df_ops_for_merge["antype"] = df_ops_for_merge["antype"].map(antype_map).astype(float)
     df_ops_for_merge = df_ops_for_merge[~df_ops_for_merge["department"].isin(cohort_cfg["department_exclude"])]
     df_ops_for_merge = pd.get_dummies(df_ops_for_merge, columns=["department"])
-
-    ignore_cols = set(feature_cfg["base_ignore_cols"])
-    ignore_cols.update(col for col in df_preop.columns if "department_" in col)
     return df_preop, df_ops_for_merge, audit

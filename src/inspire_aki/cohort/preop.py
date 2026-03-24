@@ -93,16 +93,15 @@ def build_preop_features(config: dict, raw_inspire_dir: Path) -> tuple[pd.DataFr
     runtime_plan = build_stage_runtime_plan(config, "preprocess_preop")
     sources = load_preop_sources(raw_inspire_dir, config, runtime_plan.csv_read_threads)
 
-    df_labs = sources["labs"].copy()
+    df_labs = sources["labs"]
     df_labs["chart_time"] = df_labs["chart_time"].astype(float)
-    df_ward = sources["ward_vitals"].copy()
+    df_ward = sources["ward_vitals"]
     df_ward["chart_time"] = df_ward["chart_time"].astype(float)
-    df_ops = sources["operations"].copy()
-    df_diags = sources["diagnosis"].copy()
+    df_ops = sources["operations"]
+    df_diags = sources["diagnosis"]
 
     audit: list[dict] = []
-    df_preop = df_ops.copy()
-    record_count(audit, "raw_operations", df_preop)
+    record_count(audit, "raw_operations", df_ops)
 
     desired_columns = [
         "op_id",
@@ -120,7 +119,7 @@ def build_preop_features(config: dict, raw_inspire_dir: Path) -> tuple[pd.DataFr
         "orin_time",
         "orout_time",
     ]
-    df_preop = df_preop[desired_columns]
+    df_preop = df_ops[desired_columns].copy()
     for column in ["opstart_time", "opend_time", "orin_time", "orout_time"]:
         df_preop[column] = df_preop[column].astype(float)
 
@@ -154,8 +153,13 @@ def build_preop_features(config: dict, raw_inspire_dir: Path) -> tuple[pd.DataFr
     df_preop = pd.merge(df_preop, df_ops_for_merge[cols_to_keep], on=["op_id", "subject_id"], how="inner")
     record_count(audit, "after_antype_department_merge", df_preop)
 
+    mask = df_ops["icd10_pcs"].astype(str).str.startswith(tuple(cohort_cfg["exclude_icd10_prefixes"]))
+    ops_to_exclude = df_ops.loc[mask, "op_id"]
+    df_preop = df_preop[~df_preop["op_id"].isin(ops_to_exclude)]
+    record_count(audit, "after_prefix_exclusions", df_preop)
+
     tolerance = cohort_cfg["preop_window_days"] * 24 * 60
-    preop_base = df_preop[["op_id", "subject_id", "opstart_time"]].copy()
+    preop_base = df_preop[["op_id", "subject_id", "opstart_time"]]
     feature_jobs = [
         ("labs", item_name, f"preop_{item_name}")
         for item_name in feature_cfg["preop_lab_items"]
@@ -184,10 +188,5 @@ def build_preop_features(config: dict, raw_inspire_dir: Path) -> tuple[pd.DataFr
     with thread_limited_context(runtime_plan.nested_blas_threads):
         for feature_frame in extracted_features:
             df_preop = df_preop.merge(feature_frame, on="op_id", how="left")
-
-    mask = df_ops["icd10_pcs"].astype(str).str.startswith(tuple(cohort_cfg["exclude_icd10_prefixes"]))
-    ops_to_exclude = df_ops.loc[mask, "op_id"]
-    df_preop = df_preop[~df_preop["op_id"].isin(ops_to_exclude)]
-    record_count(audit, "after_prefix_exclusions", df_preop)
 
     return df_preop.reset_index(drop=True), pd.DataFrame(audit)

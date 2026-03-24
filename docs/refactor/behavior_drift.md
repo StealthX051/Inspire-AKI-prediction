@@ -20,7 +20,9 @@ It is organized by the refactored CLI stages described in the canonical pipeline
 | --- | --- | --- | --- |
 | Pandas dtype handling in `antype` | Mutated string columns in place with integer values, which breaks on newer pandas/Arrow-backed strings | Uses explicit `map()` to numeric anesthesia codes | Makes preprocessing portable across newer pandas versions |
 | `merge_asof` time columns | Mixed integer and float surgery/lab timestamps depending on CSV inference | Casts surgery timing columns to float before `merge_asof` | Avoids dtype mismatch failures |
-| Zero-duration operations | Legacy scripts allowed `op_len == 0` cases into downstream preprocessing and relied on later `inf -> NaN` cleanup | Refactor now excludes `op_len <= 0` during preop filtering and records the exclusion in audit/manifests | Prevents invalid duration-normalized intraop features at the source |
+| Non-positive operation length | Legacy scripts could allow `op_len <= 0` cases into downstream preprocessing and relied on later `inf -> NaN` cleanup | Refactor now excludes `op_len <= 0` during preop filtering and records the exclusion in audit/manifests | Prevents invalid duration-normalized intraop features at the source |
+| ICD-10 prefix exclusion ordering | Legacy scripts removed excluded `icd10_pcs` prefixes only after the preop lab and ward feature merges | Refactor now removes excluded operations before preop feature extraction, after the anesthesia/department merge filters | Avoids wasted `merge_asof` work on rows that will be dropped anyway |
+| Preop audit artifact | Legacy extractor printed progress and wrote only the preop feature CSV | Refactor also emits `cohort/preop_audit.csv` plus a stage manifest with runtime and exclusion metadata | Makes cohort-step counts and stage metadata explicit for downstream reporting and handoff |
 
 ### `preprocess intraop`
 

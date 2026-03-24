@@ -135,6 +135,7 @@ Important:
 - the wrapper now always calls `tune tabular` and `tune sequence`, but under `configs/aki/smoke.yaml` those stages are lightweight because the HPO model lists are empty
 - the smoke profile still exercises SHAP and manuscript report rendering, so it will fail if those dependencies or upstream artifacts are missing
 - cohort counts may differ slightly from earlier smoke runs because zero-duration operations are now excluded during preop filtering
+- configured ICD-10 procedure-prefix exclusions now happen before preop feature extraction, so excluded operations no longer incur unnecessary `merge_asof` work
 
 If you also want to smoke-test HPO itself, use the dedicated HPO profile:
 

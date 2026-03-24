@@ -150,11 +150,16 @@ def _profile_adjustment(profile: str) -> tuple[float, float]:
     return 1.0, 1.0
 
 
-def _auto_plan(resources: SystemResources, config: dict[str, Any], workload_hint: dict[str, Any] | None = None) -> StageRuntimePlan:
+def build_stage_runtime_plan(config: dict[str, Any], stage: str, workload_hint: dict[str, Any] | None = None) -> StageRuntimePlan:
+    profile = config.get("runtime", {}).get("profile", "balanced")
+    if profile not in _PROFILE_CHOICES:
+        raise ValueError(f"Unknown runtime.profile '{profile}'. Expected one of {sorted(_PROFILE_CHOICES)}.")
+    resources = detect_system_resources()
+    hint = dict(workload_hint or {})
+    hint["stage"] = stage
     runtime_cfg = config.get("runtime", {})
     stage_cfg = runtime_cfg.get("stages", {})
     gpu_cfg = runtime_cfg.get("gpu", {})
-    profile = runtime_cfg.get("profile", "balanced")
     cpu_factor, memory_factor = _profile_adjustment(profile)
 
     cpu_reserve = max(
@@ -184,7 +189,7 @@ def _auto_plan(resources: SystemResources, config: dict[str, Any], workload_hint
     torch_num_threads = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
     bootstrap_workers = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
 
-    group_count = int((workload_hint or {}).get("group_count", 0))
+    group_count = int(hint.get("group_count", 0))
     if group_count >= 4:
         bootstrap_workers = 1
 
@@ -194,8 +199,8 @@ def _auto_plan(resources: SystemResources, config: dict[str, Any], workload_hint
     xgb_use_gpu = gpu_enabled and _resolve_bool(gpu_cfg.get("xgb_use_gpu", False), False)
     max_concurrent_gpu_jobs = max(1, int(gpu_cfg.get("max_concurrent_jobs", 1)))
 
-    plan = StageRuntimePlan(
-        stage=str((workload_hint or {}).get("stage", "default")),
+    return StageRuntimePlan(
+        stage=str(hint.get("stage", "default")),
         profile=profile,
         usable_cpus=usable_cpus,
         usable_ram_gb=usable_ram_gb,
@@ -220,17 +225,6 @@ def _auto_plan(resources: SystemResources, config: dict[str, Any], workload_hint
         xgb_use_gpu=xgb_use_gpu,
         max_concurrent_gpu_jobs=max_concurrent_gpu_jobs,
     )
-    return plan
-
-
-def build_stage_runtime_plan(config: dict[str, Any], stage: str, workload_hint: dict[str, Any] | None = None) -> StageRuntimePlan:
-    profile = config.get("runtime", {}).get("profile", "balanced")
-    if profile not in _PROFILE_CHOICES:
-        raise ValueError(f"Unknown runtime.profile '{profile}'. Expected one of {sorted(_PROFILE_CHOICES)}.")
-    resources = detect_system_resources()
-    hint = dict(workload_hint or {})
-    hint["stage"] = stage
-    return _auto_plan(resources, config, hint)
 
 
 @contextmanager

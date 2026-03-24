@@ -55,6 +55,21 @@ def test_apply_preop_filters_excludes_nonpositive_op_len(loaded_synthetic_config
     assert pd.DataFrame(audit)["step"].tolist().count("positive_op_len_only") == 1
 
 
+def test_build_preop_features_excludes_prefix_ops_from_output(synthetic_config: Path) -> None:
+    config = load_config(synthetic_config)
+    raw_dir = synthetic_config.parent / "raw"
+    operations_path = raw_dir / "operations.csv"
+    operations = pd.read_csv(operations_path)
+    excluded_op_id = int(operations.loc[0, "op_id"])
+    operations.loc[0, "icd10_pcs"] = "10ZZ"
+    operations.to_csv(operations_path, index=False)
+
+    preop_module = __import__("inspire_aki.cohort.preop", fromlist=["build_preop_features", "_extract_preop_item_feature"])
+    preop_df, _ = preop_module.build_preop_features(config, raw_dir)
+
+    assert excluded_op_id not in preop_df["op_id"].tolist()
+
+
 def test_safe_intraop_statistics_are_finite() -> None:
     constant = np.array([1.0, 1.0, 1.0, 1.0])
     zeros = np.array([0.0, 0.0, 0.0, 0.0])
