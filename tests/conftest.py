@@ -192,6 +192,17 @@ def _write_workspace(base_path: Path) -> Path:
         "reports": {
             "batch_shap_jobs": [],
         },
+        "runtime": {
+            "profile": "balanced",
+            "progress_interval_seconds": 60,
+            "orchestration": {
+                "mode": "serial",
+            },
+            "cpu_reserve_fraction": 0.125,
+            "cpu_reserve_min": 4,
+            "ram_reserve_fraction": 0.15,
+            "ram_reserve_gb_min": 16,
+        },
     }
     config_path = base_path / "test_config.yaml"
     config_path.write_text(yaml.safe_dump(config), encoding="utf-8")

@@ -26,6 +26,8 @@ The `src/inspire_aki/` refactor now has these package-level guarantees:
   - `log_reg`
 - `report manuscript` is the top-level report command and includes SHAP when `reports.manuscript_sections` contains `shap`
 - HPO manifests are authored in pipeline code and passed into the model/HPO layer rather than being rebuilt there
+- the current refactor optimization policy now uses validation `balanced_accuracy` for HPO and early-stopping monitors
+- the current refactor now materializes explicit inverse-frequency `balance_weight`-style weighting across trainable model families, with `knn` using weighted resampling because `sklearn` KNN does not accept `sample_weight`
 
 The current runtime defaults are adaptive rather than fixed:
 
@@ -78,6 +80,7 @@ The current runtime defaults are adaptive rather than fixed:
 - `N_TRIALS = 50`
 - objective metric for all HPO paths is validation AUROC except the deep HPO path below
 - the script explicitly omits AutoGluon HPO
+- the legacy AutoGluon training script below uses `eval_metric='balanced_accuracy'`; that is separate from the tabular Optuna objective
 
 ## Tabular training
 
@@ -143,7 +146,7 @@ This is better described as repeated fold-style resampling than classical bootst
 
 ### Important implementation caveat
 
-The current AutoGluon branch sets `sample_weight='balance_weight'` on `TabularPredictor`, but the script does not add a `balance_weight` column to the training DataFrame before fitting. Treat this as a likely implementation issue in the current code, even if checked-in results came from an earlier working variant.
+The legacy `create_results/08_tabular_model_creation.py` snapshot sets `sample_weight='balance_weight'` on `TabularPredictor`, but the script does not add a `balance_weight` column to the training DataFrame before fitting. Treat that as a legacy-script inconsistency, not as the current refactor contract.
 
 ## Deep HPO
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import numpy as np
@@ -10,17 +11,20 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
+from inspire_aki.models.weighting import balance_sample_weights, positive_balance_weight, safe_balanced_accuracy
 from inspire_aki.runtime import build_stage_runtime_plan, configure_torch_threads
 
 try:
     import torch
     import torch.nn as nn
+    import torch.nn.functional as functional
     import torch.optim as optim
     from torch.nn.utils.rnn import pack_padded_sequence
     from torch.utils.data import DataLoader, TensorDataset
 except ImportError:  # pragma: no cover - optional dependency guard
     torch = None
     nn = None
+    functional = None
     optim = None
     pack_padded_sequence = None
     DataLoader = None
@@ -123,6 +127,27 @@ def _df_to_tensors(sub_df: pd.DataFrame, feature_cols_tab: list[str]) -> tuple[t
     return x_tab, x_time, seq_len, y
 
 
+def _enable_sequence_cuda_benchmark(device: Any) -> None:
+    if torch is None or getattr(device, "type", None) != "cuda":
+        return
+    cudnn = getattr(getattr(torch, "backends", None), "cudnn", None)
+    if cudnn is not None:
+        cudnn.benchmark = True
+
+
+def _sequence_loader_kwargs(*, loader_workers: int, use_gpu: bool, shuffle: bool) -> dict[str, Any]:
+    num_workers = max(0, int(loader_workers))
+    kwargs: dict[str, Any] = {
+        "shuffle": shuffle,
+        "pin_memory": bool(use_gpu),
+        "num_workers": num_workers,
+    }
+    if num_workers > 0:
+        kwargs["persistent_workers"] = True
+        kwargs["prefetch_factor"] = 2
+    return kwargs
+
+
 def fit_sequence_model(
     *,
     model_key: str,
@@ -132,13 +157,15 @@ def fit_sequence_model(
     config: dict,
     model_output_dir: Path,
     seed: int,
+    progress_callback: Any | None = None,
 ) -> FittedSequenceBundle:
-    if torch is None or optim is None or DataLoader is None or TensorDataset is None:
+    if torch is None or optim is None or DataLoader is None or TensorDataset is None or functional is None:
         raise ImportError("torch is required for sequence models.")
     runtime_plan = build_stage_runtime_plan(config, "train_sequence")
     configure_torch_threads(config, stage="train_sequence")
     loader_workers = runtime_plan.dataloader_workers
     device = torch.device("cuda" if runtime_plan.sequence_use_gpu and torch.cuda.is_available() else "cpu")
+    _enable_sequence_cuda_benchmark(device)
     model_output_dir.mkdir(parents=True, exist_ok=True)
 
     train_split, val_split = train_test_split(
@@ -155,8 +182,16 @@ def fit_sequence_model(
     val_tensors = _df_to_tensors(val_split, feature_cols_tab)
     train_dataset = TensorDataset(*train_tensors)
     val_dataset = TensorDataset(*val_tensors)
-    train_loader = DataLoader(train_dataset, batch_size=params["batch_size"], shuffle=True, pin_memory=True, num_workers=loader_workers)
-    val_loader = DataLoader(val_dataset, batch_size=params["batch_size"], shuffle=False, pin_memory=True, num_workers=loader_workers)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=params["batch_size"],
+        **_sequence_loader_kwargs(loader_workers=loader_workers, use_gpu=device.type == "cuda", shuffle=True),
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=params["batch_size"],
+        **_sequence_loader_kwargs(loader_workers=loader_workers, use_gpu=device.type == "cuda", shuffle=False),
+    )
 
     lstm_input_size = train_tensors[1].shape[2] if train_tensors[1].numel() > 1 else 0
     model = HybridModel(
@@ -171,41 +206,67 @@ def fit_sequence_model(
     optimizer = optim.Adam(model.parameters(), lr=params["learning_rate"])
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
-        mode="min",
+        mode="max",
         factor=params["lr_scheduler_factor"],
         patience=params["lr_scheduler_patience"],
     )
     y_train = train_loader.dataset.tensors[3].cpu().numpy()
-    pos_weight_val = np.sum(y_train == 0) / np.sum(y_train == 1) if np.sum(y_train == 1) > 0 else 1.0
-    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight_val], device=device))
+    positive_weight = positive_balance_weight(y_train)
 
-    best_val_loss, patience_counter, best_state = float("inf"), 0, None
+    start = perf_counter()
+    best_val_metric, best_val_loss, patience_counter, best_state = 0.0, float("inf"), 0, None
     for epoch in range(params["epochs"]):
         model.train()
         for batch in train_loader:
             x_tab_batch, x_time_batch, seq_len_batch, y_batch = [tensor.to(device) for tensor in batch]
             optimizer.zero_grad()
             outputs = model(x_tab_batch, x_time_batch, seq_len_batch)
-            loss = criterion(outputs, y_batch.unsqueeze(1))
+            batch_weights = torch.FloatTensor(
+                balance_sample_weights(y_batch.cpu().numpy(), positive_weight=positive_weight)
+            ).reshape(-1, 1).to(device)
+            loss = functional.binary_cross_entropy_with_logits(outputs, y_batch.unsqueeze(1), weight=batch_weights)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=params["gradient_clip_value"])
             optimizer.step()
         if (epoch + 1) % params["es_check_interval"] == 0:
             model.eval()
             val_loss = 0.0
+            all_val_probs = []
             with torch.no_grad():
                 for batch in val_loader:
                     x_tab_batch, x_time_batch, seq_len_batch, y_batch = [tensor.to(device) for tensor in batch]
                     val_outputs = model(x_tab_batch, x_time_batch, seq_len_batch)
-                    val_loss += criterion(val_outputs, y_batch.unsqueeze(1)).item()
+                    batch_weights = torch.FloatTensor(
+                        balance_sample_weights(y_batch.cpu().numpy(), positive_weight=positive_weight)
+                    ).reshape(-1, 1).to(device)
+                    val_loss += functional.binary_cross_entropy_with_logits(
+                        val_outputs,
+                        y_batch.unsqueeze(1),
+                        weight=batch_weights,
+                    ).item()
+                    all_val_probs.append(torch.sigmoid(val_outputs).cpu())
             avg_val_loss = val_loss / max(len(val_loader), 1)
-            scheduler.step(avg_val_loss)
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
+            val_probs = torch.cat(all_val_probs).numpy().flatten()
+            current_val_metric = safe_balanced_accuracy(val_loader.dataset.tensors[3].cpu().numpy(), (val_probs >= 0.5).astype(int))
+            scheduler.step(current_val_metric)
+            best_val_loss = min(best_val_loss, avg_val_loss)
+            if current_val_metric > best_val_metric:
+                best_val_metric = current_val_metric
                 patience_counter = 0
                 best_state = copy.deepcopy(model.state_dict())
             else:
                 patience_counter += 1
+            if progress_callback is not None:
+                progress_callback(
+                    epoch=epoch + 1,
+                    val_loss=float(avg_val_loss),
+                    best_val_loss=float(best_val_loss),
+                    val_balanced_accuracy=float(current_val_metric),
+                    best_val_balanced_accuracy=float(best_val_metric),
+                    patience_counter=patience_counter,
+                    learning_rate=float(optimizer.param_groups[0]["lr"]),
+                    elapsed_seconds=perf_counter() - start,
+                )
             if patience_counter >= params["patience"]:
                 break
     if best_state is not None:
@@ -221,7 +282,12 @@ def fit_sequence_model(
         dropout_rate=params["dropout_rate"],
         mlp_dims=list(params.get("mlp_dims", [])),
         mode=model_key,
-        metadata={"seed": seed, "loader_workers": loader_workers, "sequence_use_gpu": runtime_plan.sequence_use_gpu},
+        metadata={
+            "seed": seed,
+            "loader_workers": loader_workers,
+            "sequence_use_gpu": runtime_plan.sequence_use_gpu,
+            "batch_size": int(params["batch_size"]),
+        },
     )
     save_sequence_bundle(bundle, model_output_dir)
     return bundle
@@ -239,7 +305,11 @@ def predict_sequence_bundle(bundle: FittedSequenceBundle, test_df: pd.DataFrame)
         test_copy.loc[:, feature_cols] = bundle.scaler.transform(test_copy[feature_cols])
     test_tensors = _df_to_tensors(test_copy, feature_cols)
     test_dataset = TensorDataset(*test_tensors)
-    test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False, pin_memory=True, num_workers=loader_workers)
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=int(bundle.metadata.get("batch_size", 512)),
+        **_sequence_loader_kwargs(loader_workers=loader_workers, use_gpu=device.type == "cuda", shuffle=False),
+    )
     bundle.model = bundle.model.to(device)
     bundle.model.eval()
     all_probs = []

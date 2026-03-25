@@ -176,10 +176,12 @@ models:
     tabular_mlp_epochs: 100
     sequence_epochs: 150
     sequence_patience: 15
+    sequence_batch_size: 1024
   autogluon:
     time_limit_seconds: 600
     presets: best_quality
     num_cpus: auto
+    num_gpus: auto
   tabular_defaults:
     log_reg: {C: 1.0}
     xgb: {}
@@ -279,13 +281,16 @@ reports:
     - {run_name: LogReg_Preop, model_key: log_reg, dataset_regime: preop}
     - {run_name: LogReg_Intraop, model_key: log_reg, dataset_regime: intraop}
 runtime:
-  profile: balanced
-  cpu_reserve_fraction: 0.125
-  cpu_reserve_min: 4
-  ram_reserve_fraction: 0.15
-  ram_reserve_gb_min: 16
+  profile: throughput
+  cpu_reserve_fraction: 0.0625
+  cpu_reserve_min: 2
+  ram_reserve_fraction: 0.1
+  ram_reserve_gb_min: 8
+  progress_interval_seconds: 60
   csv_engine: pyarrow
   nested_blas_threads: 1
+  orchestration:
+    mode: overlap
   gpu:
     enabled: auto
     max_concurrent_jobs: 1

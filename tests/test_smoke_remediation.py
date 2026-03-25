@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+import types
 import warnings
 from pathlib import Path
 
@@ -11,7 +13,8 @@ from inspire_aki.cohort.filters import apply_preop_filters
 from inspire_aki.config import load_config
 from inspire_aki.features.intraop_tabular import build_intraop_features, safe_entropy, safe_kurtosis, safe_skew, safe_trend
 from inspire_aki.io.artifacts import ArtifactManager
-from inspire_aki.models.tabular import fit_tabular_model, predict_tabular_bundle
+from inspire_aki.models.tabular import _AUTOGLUON_SAMPLE_WEIGHT_COLUMN, fit_tabular_model, predict_tabular_bundle
+from inspire_aki.models.weighting import balance_sample_weights, positive_balance_weight
 from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop, run_tabular
 from inspire_aki.pipelines.report import run_manuscript
 from inspire_aki.pipelines.train import run_train_tabular
@@ -155,3 +158,104 @@ def test_tabular_bundle_prediction_emits_no_scaler_feature_name_warning(syntheti
 
     matching = [warning for warning in caught if "feature names" in str(warning.message)]
     assert not matching
+
+
+def test_autogluon_uses_non_reserved_sample_weight_column(loaded_synthetic_config, tmp_path: Path, monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeTabularPredictor:
+        def __init__(self, *, label, eval_metric, path, sample_weight):
+            captured["label"] = label
+            captured["eval_metric"] = eval_metric
+            captured["path"] = path
+            captured["sample_weight"] = sample_weight
+
+        def fit(self, *, train_data, time_limit, presets, num_cpus, num_gpus):
+            captured["columns"] = list(train_data.columns)
+            captured["train_data"] = train_data.copy()
+            captured["time_limit"] = time_limit
+            captured["presets"] = presets
+            captured["num_cpus"] = num_cpus
+            captured["num_gpus"] = num_gpus
+            return self
+
+    monkeypatch.setitem(sys.modules, "autogluon.tabular", types.SimpleNamespace(TabularPredictor=FakeTabularPredictor))
+
+    train_df = pd.DataFrame(
+        {
+            "feature_a": [0.1, 0.2, 0.3, 0.4, 0.5],
+            "feature_b": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "aki_boolean": [0, 0, 0, 1, 0],
+        }
+    )
+    bundle = fit_tabular_model(
+        model_key="autogluon",
+        train_df=train_df,
+        feature_cols=["feature_a", "feature_b"],
+        target="aki_boolean",
+        params={},
+        config=loaded_synthetic_config,
+        model_output_dir=tmp_path / "autogluon_model",
+        seed=42,
+    )
+
+    assert bundle.model_key == "autogluon"
+    assert captured["eval_metric"] == "balanced_accuracy"
+    assert captured["sample_weight"] == _AUTOGLUON_SAMPLE_WEIGHT_COLUMN
+    assert _AUTOGLUON_SAMPLE_WEIGHT_COLUMN in captured["columns"]
+    assert "balance_weight" not in captured["columns"]
+    assert captured["num_gpus"] == "auto"
+    train_data = captured["train_data"]
+    positive_weights = train_data.loc[train_data["aki_boolean"] == 1, _AUTOGLUON_SAMPLE_WEIGHT_COLUMN]
+    negative_weights = train_data.loc[train_data["aki_boolean"] == 0, _AUTOGLUON_SAMPLE_WEIGHT_COLUMN]
+    assert positive_weights.nunique() == 1
+    assert positive_weights.iloc[0] == pytest.approx(4.0)
+    assert negative_weights.eq(1.0).all()
+
+
+def test_balance_sample_weights_upweight_positive_class() -> None:
+    y = np.array([0, 0, 0, 1])
+
+    weights = balance_sample_weights(y)
+
+    assert positive_balance_weight(y) == pytest.approx(3.0)
+    assert weights.tolist() == pytest.approx([1.0, 1.0, 1.0, 3.0])
+
+
+def test_log_reg_training_uses_balance_sample_weights(loaded_synthetic_config, tmp_path: Path, monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeLogisticRegression:
+        def __init__(self, **kwargs):
+            captured["init_kwargs"] = kwargs
+
+        def fit(self, x, y, sample_weight=None):
+            captured["x_shape"] = getattr(x, "shape", None)
+            captured["y"] = np.asarray(y)
+            captured["sample_weight"] = np.asarray(sample_weight)
+            return self
+
+    monkeypatch.setattr("inspire_aki.models.tabular.LogisticRegression", FakeLogisticRegression)
+    monkeypatch.setattr("inspire_aki.models.tabular.save_tabular_bundle", lambda *_args, **_kwargs: None)
+
+    train_df = pd.DataFrame(
+        {
+            "feature_a": [0.1, 0.2, 0.3, 0.4],
+            "feature_b": [1.0, 2.0, 3.0, 4.0],
+            "aki_boolean": [0, 0, 0, 1],
+        }
+    )
+    bundle = fit_tabular_model(
+        model_key="log_reg",
+        train_df=train_df,
+        feature_cols=["feature_a", "feature_b"],
+        target="aki_boolean",
+        params={"C": 1.0},
+        config=loaded_synthetic_config,
+        model_output_dir=tmp_path / "log_reg_model",
+        seed=42,
+    )
+
+    assert bundle.model_key == "log_reg"
+    assert captured["sample_weight"].tolist() == pytest.approx([1.0, 1.0, 1.0, 3.0])
+    assert "class_weight" not in captured["init_kwargs"]

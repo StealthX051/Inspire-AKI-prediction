@@ -58,8 +58,8 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("When bootstrapping is enabled, splits.n_bootstrap_iterations must be divisible by splits.n_cv_folds.")
 
     runtime_cfg = config.get("runtime", {})
-    if runtime_cfg.get("profile", "balanced") not in {"balanced", "aggressive", "conservative"}:
-        raise ValueError("runtime.profile must be one of: balanced, aggressive, conservative.")
+    if runtime_cfg.get("profile", "balanced") not in {"balanced", "aggressive", "conservative", "throughput"}:
+        raise ValueError("runtime.profile must be one of: balanced, aggressive, conservative, throughput.")
     if float(runtime_cfg.get("cpu_reserve_fraction", 0.125)) < 0:
         raise ValueError("runtime.cpu_reserve_fraction must be non-negative.")
     if float(runtime_cfg.get("ram_reserve_fraction", 0.15)) < 0:
@@ -70,6 +70,13 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("runtime.ram_reserve_gb_min must be non-negative.")
     if int(runtime_cfg.get("nested_blas_threads", 1)) < 1:
         raise ValueError("runtime.nested_blas_threads must be at least 1.")
+    orchestration_cfg = runtime_cfg.get("orchestration", {})
+    if not isinstance(orchestration_cfg, dict):
+        raise ValueError("runtime.orchestration must be a mapping.")
+    if orchestration_cfg.get("mode", "serial") not in {"serial", "overlap"}:
+        raise ValueError("runtime.orchestration.mode must be one of: serial, overlap.")
+    if int(runtime_cfg.get("progress_interval_seconds", 60)) < 1:
+        raise ValueError("runtime.progress_interval_seconds must be at least 1.")
 
     hpo_cfg = config.get("models", {}).get("hpo", {})
     if int(hpo_cfg.get("n_trials", 50)) < 1:
@@ -80,6 +87,19 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("models.hpo.sequence_epochs must be at least 1.")
     if int(hpo_cfg.get("sequence_patience", 15)) < 1:
         raise ValueError("models.hpo.sequence_patience must be at least 1.")
+    if int(hpo_cfg.get("sequence_batch_size", 1024)) < 1:
+        raise ValueError("models.hpo.sequence_batch_size must be at least 1.")
+
+    ag_cfg = config.get("models", {}).get("autogluon", {})
+    if ag_cfg:
+        num_gpus = ag_cfg.get("num_gpus", "auto")
+        if num_gpus != "auto":
+            try:
+                numeric_num_gpus = float(num_gpus)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("models.autogluon.num_gpus must be 'auto' or a non-negative integer.") from exc
+            if numeric_num_gpus < 0 or not numeric_num_gpus.is_integer():
+                raise ValueError("models.autogluon.num_gpus must be 'auto' or a non-negative integer.")
 
     report_sections = config.get("reports", {}).get("manuscript_sections", [])
     unknown_sections = sorted(set(report_sections) - set(MANUSCRIPT_SECTIONS))

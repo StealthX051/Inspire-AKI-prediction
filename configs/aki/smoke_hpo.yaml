@@ -1,6 +1,12 @@
 paths:
   artifacts_dir: artifacts/smoke_hpo
 
+runtime:
+  profile: balanced
+  progress_interval_seconds: 60
+  orchestration:
+    mode: serial
+
 splits:
   use_bootstrapping: false
 
@@ -24,6 +30,7 @@ models:
     tabular_mlp_epochs: 10
     sequence_epochs: 3
     sequence_patience: 5
+    sequence_batch_size: 1024
   tabular_hpo_search_spaces:
     log_reg: {C: [0.1, 1.0]}
     xgb: {n_estimators: [25, 50], learning_rate: [0.05, 0.1], max_depth: [3, 4], subsample: [0.8, 1.0], colsample_bytree: [0.8, 1.0], gamma: [0.0, 0.5]}

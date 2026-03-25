@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,15 +16,18 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
 
+from inspire_aki.models.weighting import balance_sample_weights, balance_weight_series, positive_balance_weight, safe_balanced_accuracy, weighted_resample_for_knn
 from inspire_aki.runtime import build_stage_runtime_plan, configure_torch_threads, thread_limited_context
 
 try:
     import torch
     import torch.nn as nn
+    import torch.nn.functional as functional
     import torch.optim as optim
 except ImportError:  # pragma: no cover - optional dependency guard
     torch = None
     nn = None
+    functional = None
     optim = None
 
 try:
@@ -32,8 +36,88 @@ except ImportError:  # pragma: no cover - optional dependency guard
     xgb = None
 
 
+_AUTOGLUON_SAMPLE_WEIGHT_COLUMN = "__inspire_sample_weight__"
+_TABULAR_DATASET_REGIMES = ("preop", "intraop", "combined")
+_TABULAR_EXECUTION_POLICY_ENV = "INSPIRE_AKI_EXECUTION_POLICY"
+_TABULAR_MODEL_KEYS_ENV = "INSPIRE_AKI_MODEL_KEYS"
+_TABULAR_DATASET_REGIMES_ENV = "INSPIRE_AKI_DATASET_REGIMES"
+
+
+@dataclass(frozen=True)
+class TabularExecutionPolicy:
+    hpo_parallel_by_regime: bool = False
+    hpo_thread_cap: int | None = None
+    train_parallel_by_repeat: bool = False
+    train_thread_cap: int | None = None
+    train_tol: float | None = None
+
+
+@dataclass
+class PreparedTabularFold:
+    feature_cols: list[str]
+    target: str
+    train_df: pd.DataFrame
+    test_df: pd.DataFrame
+    x_train_scaled: pd.DataFrame
+    x_test_scaled: pd.DataFrame
+    y_train: np.ndarray
+    sample_weights: np.ndarray
+    scaler: StandardScaler
+
+
+_SERIAL_EXECUTION_POLICIES: dict[str, TabularExecutionPolicy] = {
+    "log_reg": TabularExecutionPolicy(hpo_thread_cap=1, train_thread_cap=1),
+    "svm": TabularExecutionPolicy(hpo_thread_cap=1, train_thread_cap=1),
+}
+
+_OPTIMIZED_LOW_CPU_POLICIES: dict[str, TabularExecutionPolicy] = {
+    "log_reg": TabularExecutionPolicy(hpo_thread_cap=4, train_thread_cap=4),
+    "svm": TabularExecutionPolicy(
+        hpo_parallel_by_regime=True,
+        hpo_thread_cap=1,
+        train_parallel_by_repeat=True,
+        train_thread_cap=1,
+        train_tol=0.01,
+    ),
+}
+
+
 def tabular_feature_columns(df: pd.DataFrame, target: str) -> list[str]:
     return [col for col in df.columns if col not in ["op_id", target, f"{target}_boolean", f"{target}_positive"]]
+
+
+def tabular_execution_policy_name() -> str:
+    value = os.environ.get(_TABULAR_EXECUTION_POLICY_ENV, "optimized_low_cpu").strip() or "optimized_low_cpu"
+    return value if value in {"optimized_low_cpu", "serial"} else "optimized_low_cpu"
+
+
+def tabular_execution_policy(model_key: str) -> TabularExecutionPolicy:
+    if tabular_execution_policy_name() == "serial":
+        return _SERIAL_EXECUTION_POLICIES.get(model_key, TabularExecutionPolicy())
+    return _OPTIMIZED_LOW_CPU_POLICIES.get(model_key, TabularExecutionPolicy())
+
+
+def selected_tabular_models(config: dict[str, Any], stage: str) -> list[str]:
+    raw = os.environ.get(_TABULAR_MODEL_KEYS_ENV, "")
+    if raw.strip():
+        return [item.strip() for item in raw.split(",") if item.strip()]
+    if stage == "tune":
+        return list(config["models"]["tabular_hpo_enabled"])
+    if stage == "train":
+        return list(config["models"]["tabular_enabled"])
+    raise ValueError(f"Unsupported tabular stage '{stage}'.")
+
+
+def selected_tabular_dataset_regimes() -> list[str]:
+    raw = os.environ.get(_TABULAR_DATASET_REGIMES_ENV, "")
+    if raw.strip():
+        return [item.strip() for item in raw.split(",") if item.strip()]
+    return list(_TABULAR_DATASET_REGIMES)
+
+
+def _autogluon_num_gpus(config: dict[str, Any]) -> int | str:
+    num_gpus = config["models"]["autogluon"].get("num_gpus", "auto")
+    return "auto" if num_gpus == "auto" else int(float(num_gpus))
 
 
 if nn is not None:
@@ -89,6 +173,38 @@ def _scale_if_needed(
     return x_train, x_test, scaler
 
 
+def prepare_tabular_fold(
+    *,
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    feature_cols: list[str],
+    target: str,
+) -> PreparedTabularFold:
+    scaler = StandardScaler()
+    x_train_scaled = pd.DataFrame(
+        scaler.fit_transform(train_df[feature_cols]),
+        columns=feature_cols,
+        index=train_df.index,
+    )
+    x_test_scaled = pd.DataFrame(
+        scaler.transform(test_df[feature_cols]),
+        columns=feature_cols,
+        index=test_df.index,
+    )
+    y_train = train_df[target].to_numpy()
+    return PreparedTabularFold(
+        feature_cols=list(feature_cols),
+        target=target,
+        train_df=train_df.copy(),
+        test_df=test_df.copy(),
+        x_train_scaled=x_train_scaled,
+        x_test_scaled=x_test_scaled,
+        y_train=y_train,
+        sample_weights=balance_sample_weights(y_train),
+        scaler=scaler,
+    )
+
+
 def fit_tabular_model(
     *,
     model_key: str,
@@ -99,26 +215,36 @@ def fit_tabular_model(
     config: dict,
     model_output_dir: Path,
     seed: int,
+    prepared_fold: PreparedTabularFold | None = None,
+    thread_cap: int | None = None,
 ) -> FittedTabularBundle:
     runtime_plan = build_stage_runtime_plan(config, "train_tabular")
     training_workers = runtime_plan.train_model_threads
-    x_train, _, scaler = _scale_if_needed(train_df, train_df, feature_cols, model_key)
-    y_train = train_df[target].values
+    policy = tabular_execution_policy(model_key)
+    effective_thread_cap = thread_cap if thread_cap is not None else policy.train_thread_cap
+    if prepared_fold is None or model_key in {"autogluon", "asa_rule"}:
+        x_train, _, scaler = _scale_if_needed(train_df, train_df, feature_cols, model_key)
+        y_train = train_df[target].values
+        sample_weights = balance_sample_weights(y_train)
+    else:
+        x_train = prepared_fold.x_train_scaled
+        scaler = prepared_fold.scaler
+        y_train = prepared_fold.y_train
+        sample_weights = prepared_fold.sample_weights
     model_output_dir.mkdir(parents=True, exist_ok=True)
 
     if model_key == "log_reg":
         model = LogisticRegression(
             **params,
-            class_weight="balanced",
             max_iter=10000,
             tol=0.01,
             random_state=seed,
         )
-        with thread_limited_context(runtime_plan.nested_blas_threads):
-            model.fit(x_train, y_train)
+        with thread_limited_context(effective_thread_cap or runtime_plan.nested_blas_threads):
+            model.fit(x_train, y_train, sample_weight=sample_weights)
     elif model_key == "rf":
-        model = RandomForestClassifier(**params, class_weight="balanced", n_jobs=training_workers, random_state=seed)
-        model.fit(x_train, y_train)
+        model = RandomForestClassifier(**params, n_jobs=training_workers, random_state=seed)
+        model.fit(x_train, y_train, sample_weight=sample_weights)
     elif model_key == "xgb":
         if xgb is None:
             raise ImportError("xgboost is required for the xgb model.")
@@ -129,18 +255,21 @@ def fit_tabular_model(
         xgb_params.setdefault("n_jobs", training_workers)
         if runtime_plan.xgb_use_gpu and torch is not None and torch.cuda.is_available():
             xgb_params.setdefault("device", "cuda")
-        scale_pos_weight = np.sum(y_train == 0) / np.sum(y_train == 1) if np.sum(y_train == 1) > 0 else 1
-        model = xgb.XGBClassifier(**xgb_params, scale_pos_weight=scale_pos_weight)
-        model.fit(x_train, y_train, verbose=False)
+        model = xgb.XGBClassifier(**xgb_params)
+        model.fit(x_train, y_train, sample_weight=sample_weights, verbose=False)
     elif model_key == "svm":
-        model = LinearSVC(**params, class_weight="balanced", dual="auto", random_state=seed, max_iter=5000)
-        with thread_limited_context(runtime_plan.nested_blas_threads):
-            model.fit(x_train, y_train)
+        svm_params = dict(params)
+        if policy.train_tol is not None and "tol" not in svm_params:
+            svm_params["tol"] = policy.train_tol
+        model = LinearSVC(**svm_params, dual="auto", random_state=seed, max_iter=5000)
+        with thread_limited_context(effective_thread_cap or runtime_plan.nested_blas_threads):
+            model.fit(x_train, y_train, sample_weight=sample_weights)
     elif model_key == "knn":
         model = KNeighborsClassifier(**params, weights="distance", n_jobs=training_workers)
-        model.fit(x_train, y_train)
+        x_train_resampled, y_train_resampled = weighted_resample_for_knn(x_train, y_train, seed=seed)
+        model.fit(x_train_resampled, y_train_resampled)
     elif model_key == "mlp":
-        if torch is None or optim is None:
+        if torch is None or optim is None or functional is None:
             raise ImportError("torch is required for the MLP tabular model.")
         configure_torch_threads(config, stage="train_tabular")
         lr = params.get("lr", 0.001)
@@ -160,28 +289,25 @@ def fit_tabular_model(
         x_val_tensor = torch.FloatTensor(x_val_part).to(device)
         model = PyTorchMLP(len(feature_cols), n_layers, n_units, dropout_rate).to(device)
         optimizer = optim.Adam(model.parameters(), lr=lr)
-        pos_weight_val = np.sum(y_train_part == 0) / np.sum(y_train_part == 1) if np.sum(y_train_part == 1) > 0 else 1.0
-        criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight_val], device=device))
-        best_val_auc, patience_counter, best_model_state = 0.0, 0, None
+        train_positive_weight = positive_balance_weight(y_train_part)
+        train_weight_tensor = torch.FloatTensor(
+            balance_sample_weights(y_train_part, positive_weight=train_positive_weight)
+        ).reshape(-1, 1).to(device)
+        best_val_metric, patience_counter, best_model_state = 0.0, 0, None
         for epoch in range(5000):
             model.train()
             optimizer.zero_grad()
             outputs = model(x_train_tensor)
-            loss = criterion(outputs, y_train_tensor)
+            loss = functional.binary_cross_entropy_with_logits(outputs, y_train_tensor, weight=train_weight_tensor)
             loss.backward()
             optimizer.step()
             if (epoch + 1) % 10 == 0:
                 model.eval()
                 with torch.no_grad():
                     val_probs = torch.sigmoid(model(x_val_tensor)).cpu().numpy().flatten()
-                if len(np.unique(y_val_part)) > 1:
-                    from sklearn.metrics import roc_auc_score
-
-                    current_val_auc = roc_auc_score(y_val_part, val_probs)
-                else:
-                    current_val_auc = 0.5
-                if current_val_auc > best_val_auc:
-                    best_val_auc = current_val_auc
+                current_val_metric = safe_balanced_accuracy(y_val_part, (val_probs >= 0.5).astype(int))
+                if current_val_metric > best_val_metric:
+                    best_val_metric = current_val_metric
                     patience_counter = 0
                     best_model_state = copy.deepcopy(model.state_dict())
                 else:
@@ -194,20 +320,20 @@ def fit_tabular_model(
         from autogluon.tabular import TabularPredictor
 
         train_ag = train_df[feature_cols + [target]].copy()
-        balance_weight = (train_ag[target].astype(int) * 17) + 1
-        train_ag["balance_weight"] = balance_weight
+        train_ag[_AUTOGLUON_SAMPLE_WEIGHT_COLUMN] = balance_weight_series(train_ag[target].astype(int))
         ag_cfg = config["models"]["autogluon"]
         model = TabularPredictor(
             label=target,
             eval_metric="balanced_accuracy",
             path=str(model_output_dir),
-            sample_weight="balance_weight",
+            sample_weight=_AUTOGLUON_SAMPLE_WEIGHT_COLUMN,
         )
         model.fit(
             train_data=train_ag,
             time_limit=ag_cfg["time_limit_seconds"],
             presets=ag_cfg["presets"],
             num_cpus=training_workers if ag_cfg.get("num_cpus", "auto") == "auto" else ag_cfg["num_cpus"],
+            num_gpus=_autogluon_num_gpus(config),
         )
     elif model_key == "asa_rule":
         model = None
@@ -220,10 +346,17 @@ def fit_tabular_model(
     return bundle
 
 
-def predict_tabular_bundle(bundle: FittedTabularBundle, test_df: pd.DataFrame, target: str) -> tuple[np.ndarray, np.ndarray]:
+def predict_tabular_bundle(
+    bundle: FittedTabularBundle,
+    test_df: pd.DataFrame,
+    target: str,
+    prepared_fold: PreparedTabularFold | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
     feature_cols = bundle.feature_names
     if bundle.scaler is None or bundle.model_key in {"autogluon", "asa_rule"}:
         x_test = test_df[feature_cols].copy()
+    elif prepared_fold is not None and prepared_fold.feature_cols == feature_cols and prepared_fold.target == target:
+        x_test = prepared_fold.x_test_scaled
     else:
         x_test = pd.DataFrame(
             bundle.scaler.transform(test_df[feature_cols]),

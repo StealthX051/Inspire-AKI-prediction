@@ -22,6 +22,8 @@ from inspire_aki.pipelines.tune import run_tune_sequence, run_tune_tabular
 from inspire_aki.reporting.manuscript import generate_manuscript_outputs
 from inspire_aki.datasets.splits import build_hpo_split_manifest
 from inspire_aki.models.hpo import _has_completed_trials, tune_sequence_dataset, tune_tabular_dataset
+from inspire_aki.models.tabular import tabular_execution_policy
+from inspire_aki.models.weighting import safe_balanced_accuracy
 
 
 def _prepare_training_inputs(config_path: Path, *, include_sequence: bool = False) -> dict:
@@ -51,6 +53,42 @@ def test_train_tabular_is_idempotent(synthetic_config: Path) -> None:
     pd.testing.assert_frame_equal(first_partition, second_partition)
     pd.testing.assert_frame_equal(first_combined, second_combined)
     assert not second_combined.duplicated(PREDICTION_PRIMARY_KEY).any()
+
+
+def test_train_tabular_uses_repeat_executor_for_svm(monkeypatch, synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config)
+    config["models"]["tabular_enabled"] = ["svm"]
+    submissions: list[int] = []
+    captured_max_workers: list[int] = []
+
+    class FakeFuture:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def result(self):
+            return self._payload
+
+    class FakeExecutor:
+        def __init__(self, max_workers: int):
+            captured_max_workers.append(max_workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def submit(self, fn, task, cfg):
+            submissions.append(task.repeat_id)
+            return FakeFuture(fn(task, cfg))
+
+    monkeypatch.setattr("inspire_aki.pipelines.train.ProcessPoolExecutor", FakeExecutor)
+    monkeypatch.setattr("inspire_aki.pipelines.train.as_completed", lambda futures: list(futures))
+
+    run_train_tabular(config)
+
+    assert captured_max_workers == [2, 2, 2]
+    assert submissions == [0, 1, 0, 1, 0, 1]
 
 
 def test_train_sequence_is_idempotent_and_preserves_tabular(monkeypatch, synthetic_config: Path) -> None:
@@ -184,10 +222,11 @@ def test_run_all_relies_on_report_manuscript_instead_of_run_shap(monkeypatch, sy
 
 def test_tune_tabular_uses_pipeline_written_hpo_manifests(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_training_inputs(synthetic_config)
+    config["models"]["tabular_hpo_enabled"] = ["log_reg"]
     artifacts = ArtifactManager(config)
     captured: dict[str, pd.DataFrame] = {}
 
-    def fake_tune_tabular_dataset(dataset_df, dataset_regime, manifest, _config):
+    def fake_tune_tabular_dataset(dataset_df, dataset_regime, manifest, _config, **_kwargs):
         captured[dataset_regime] = manifest.copy()
         return {"log_reg": {"C": 1.0}}, pd.DataFrame(
             [
@@ -224,12 +263,117 @@ def test_tune_tabular_uses_pipeline_written_hpo_manifests(monkeypatch, synthetic
     assert len([output for output in aggregate_manifest["outputs"] if output.endswith(".parquet")]) == 4
 
 
+def test_tune_tabular_resumes_completed_per_study_outputs(monkeypatch, synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config)
+    config["models"]["tabular_hpo_enabled"] = ["log_reg"]
+    artifacts = ArtifactManager(config)
+
+    def fake_tune_tabular_dataset(dataset_df, dataset_regime, manifest, _config, **_kwargs):
+        return {"log_reg": {"C": 1.0}}, pd.DataFrame(
+            [
+                {
+                    "dataset_regime": dataset_regime,
+                    "model_key": "log_reg",
+                    "trial_number": 0,
+                    "value": 0.8,
+                    "params": {"C": 1.0},
+                    "state": "COMPLETE",
+                }
+            ]
+        )
+
+    monkeypatch.setattr("inspire_aki.pipelines.tune.tune_tabular_dataset", fake_tune_tabular_dataset)
+    run_tune_tabular(config)
+
+    study_dir = artifacts.paths.artifact_path("tuning", "tabular_studies")
+    assert (study_dir / "preop__log_reg_best_params.json").exists()
+    assert (study_dir / "intraop__log_reg_best_params.json").exists()
+    assert (study_dir / "combined__log_reg_best_params.json").exists()
+
+    monkeypatch.setattr(
+        "inspire_aki.pipelines.tune.tune_tabular_dataset",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("resume should skip completed studies")),
+    )
+
+    outputs = run_tune_tabular(config)
+
+    assert set(outputs) == {"best_params", "trials"}
+
+
+def test_tabular_execution_policy_targets_low_cpu_models(monkeypatch) -> None:
+    monkeypatch.setenv("INSPIRE_AKI_EXECUTION_POLICY", "optimized_low_cpu")
+
+    assert tabular_execution_policy("svm").hpo_parallel_by_regime is True
+    assert tabular_execution_policy("svm").train_parallel_by_repeat is True
+    assert tabular_execution_policy("svm").train_tol == pytest.approx(0.01)
+    assert tabular_execution_policy("log_reg").hpo_thread_cap == 4
+    assert tabular_execution_policy("log_reg").train_thread_cap == 4
+
+
+def test_tune_tabular_uses_regime_executor_for_svm(monkeypatch, synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config)
+    config["models"]["tabular_hpo_enabled"] = ["svm"]
+    submissions: list[str] = []
+    captured_max_workers: list[int] = []
+
+    class FakeFuture:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def result(self):
+            return self._payload
+
+    class FakeExecutor:
+        def __init__(self, max_workers: int):
+            captured_max_workers.append(max_workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def submit(self, _fn, spec, _config):
+            submissions.append(spec.dataset_regime)
+            return FakeFuture(
+                {
+                    "dataset_regime": spec.dataset_regime,
+                    "model_key": spec.model_key,
+                    "best_params": {"C": 0.5},
+                    "trials_df": pd.DataFrame(
+                        [
+                            {
+                                "dataset_regime": spec.dataset_regime,
+                                "model_key": spec.model_key,
+                                "trial_number": 0,
+                                "value": 0.75,
+                                "params": {"C": 0.5},
+                                "state": "COMPLETE",
+                            }
+                        ]
+                    ),
+                    "best_params_path": str(Path(spec.dataset_path).with_name(f"{spec.dataset_regime}_{spec.model_key}.json")),
+                    "trials_path": str(Path(spec.dataset_path).with_name(f"{spec.dataset_regime}_{spec.model_key}.parquet")),
+                    "manifest_path": str(Path(spec.manifest_path)),
+                    "wall_time_seconds": 0.1,
+                }
+            )
+
+    monkeypatch.setattr("inspire_aki.pipelines.tune.ProcessPoolExecutor", FakeExecutor)
+    monkeypatch.setattr("inspire_aki.pipelines.tune.as_completed", lambda futures: list(futures))
+
+    run_tune_tabular(config)
+
+    assert captured_max_workers == [3]
+    assert submissions == ["preop", "intraop", "combined"]
+
+
 def test_tune_sequence_uses_pipeline_written_hpo_manifest(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_training_inputs(synthetic_config, include_sequence=True)
     artifacts = ArtifactManager(config)
     captured: dict[str, pd.DataFrame] = {}
 
-    def fake_tune_sequence_dataset(sequence_df, manifest, _config):
+    def fake_tune_sequence_dataset(sequence_df, manifest, _config, **_kwargs):
         captured["sequence"] = manifest.copy()
         return {}, pd.DataFrame()
 
@@ -253,9 +397,10 @@ def _fake_optuna_module(captured_trials: list[int], *, trial_state: object = "1"
             self.best_params: dict[str, object] = {}
             self.trials = [types.SimpleNamespace(number=0, value=0.5, params={}, state=trial_state)]
 
-        def optimize(self, _objective, *, n_trials: int, show_progress_bar: bool) -> None:
+        def optimize(self, _objective, *, n_trials: int, show_progress_bar: bool, callbacks=None) -> None:
             captured_trials.append(n_trials)
             assert show_progress_bar is False
+            assert callbacks is None or len(callbacks) == 1
 
     return types.SimpleNamespace(
         logging=_FakeLogging(),
@@ -308,6 +453,88 @@ def test_tabular_hpo_uses_configured_trial_count(monkeypatch, synthetic_config: 
     assert trials_df["model_key"].tolist() == ["log_reg", "xgb", "rf", "svm", "mlp", "knn"]
     assert set(trials_df["state"]) == {"COMPLETE"}
     assert captured_trials == [3, 3, 3, 3, 3, 3]
+
+
+def test_tabular_hpo_log_reg_uses_balanced_accuracy_and_balance_weights(monkeypatch, synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config)
+    config["models"]["tabular_hpo_enabled"] = ["log_reg"]
+    config["models"]["hpo"] = {"n_trials": 1, "tabular_mlp_epochs": 5, "sequence_epochs": 2, "sequence_patience": 5}
+
+    artifacts = ArtifactManager(config)
+    dataset_df = pd.read_csv(artifacts.paths.artifact_path("datasets", "tabular", "tabular_preop_labeled.csv"))
+    manifest = build_hpo_split_manifest(
+        dataset_df,
+        target=config["models"]["target"],
+        dataset_regime="preop",
+        population_id="preop",
+        random_state=config["splits"]["random_state"],
+        holdout_fraction=config["splits"]["holdout_fraction"],
+        validation_fraction_within_train=config["splits"]["hpo_validation_fraction_within_train"],
+    )
+    val_op_ids = manifest.loc[manifest["split_name"] == "val", "op_id"]
+    val_df = dataset_df[dataset_df["op_id"].isin(val_op_ids)]
+    expected_value = safe_balanced_accuracy(val_df[config["models"]["target"]].to_numpy(), np.zeros(len(val_df), dtype=int))
+    captured: dict[str, object] = {}
+
+    class FakeTrial:
+        def __init__(self) -> None:
+            self.number = 0
+            self.params: dict[str, float] = {}
+            self.value = None
+            self.state = types.SimpleNamespace(name="COMPLETE")
+
+        def suggest_float(self, name, _low, _high, log=False):  # noqa: ARG002
+            self.params[name] = 1.0
+            return 1.0
+
+    class FakeStudy:
+        def __init__(self) -> None:
+            self.best_params: dict[str, float] = {}
+            self.best_value: float | None = None
+            self.trials: list[FakeTrial] = []
+
+        def optimize(self, objective, *, n_trials: int, show_progress_bar: bool, callbacks=None) -> None:
+            assert n_trials == 1
+            assert show_progress_bar is False
+            trial = FakeTrial()
+            trial.value = objective(trial)
+            self.best_params = dict(trial.params)
+            self.best_value = trial.value
+            self.trials = [trial]
+            if callbacks:
+                for callback in callbacks:
+                    callback(self, trial)
+
+    class _FakeLogging:
+        WARNING = "WARNING"
+
+        @staticmethod
+        def set_verbosity(_value) -> None:
+            return None
+
+    class FakeLogisticRegression:
+        def __init__(self, **kwargs):
+            captured["init_kwargs"] = kwargs
+
+        def fit(self, x, y, sample_weight=None):
+            captured["fit_rows"] = len(x)
+            captured["sample_weight"] = np.asarray(sample_weight)
+            captured["y"] = np.asarray(y)
+            return self
+
+        def predict(self, x):
+            return np.zeros(len(x), dtype=int)
+
+    monkeypatch.setitem(sys.modules, "optuna", types.SimpleNamespace(logging=_FakeLogging(), create_study=lambda **_kwargs: FakeStudy()))
+    monkeypatch.setattr("sklearn.linear_model.LogisticRegression", FakeLogisticRegression)
+
+    results, trials_df = tune_tabular_dataset(dataset_df, "preop", manifest, config)
+
+    assert results == {"log_reg": {"C": 1.0}}
+    assert trials_df["value"].tolist() == pytest.approx([expected_value])
+    assert captured["sample_weight"].shape[0] == captured["fit_rows"]
+    assert captured["sample_weight"].max() > captured["sample_weight"].min()
+    assert "class_weight" not in captured["init_kwargs"]
 
 
 def test_sequence_hpo_uses_configured_trial_count(monkeypatch, synthetic_config: Path) -> None:

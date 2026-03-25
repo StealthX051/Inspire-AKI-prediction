@@ -228,5 +228,6 @@ pip-selfcheck.json
 
 saved_data/
 artifacts/
+logs/
 
 preoperative_models/AutogluonModels/

@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover - dependency guard
     threadpool_limits = None
 
 
-_PROFILE_CHOICES = {"balanced", "aggressive", "conservative"}
+_PROFILE_CHOICES = {"balanced", "aggressive", "conservative", "throughput"}
 
 
 @dataclass(frozen=True)
@@ -75,6 +75,17 @@ def _resolve_bool(value: Any, default: bool) -> bool:
     if value in {None, "auto"}:
         return bool(default)
     return bool(value)
+
+
+def _stage_overrides(runtime_cfg: dict[str, Any], stage: str) -> dict[str, Any]:
+    raw_stage_cfg = runtime_cfg.get("stages", {})
+    if not isinstance(raw_stage_cfg, dict):
+        return {}
+    overrides = {key: value for key, value in raw_stage_cfg.items() if not isinstance(value, dict)}
+    stage_specific = raw_stage_cfg.get(stage)
+    if isinstance(stage_specific, dict):
+        overrides.update(stage_specific)
+    return overrides
 
 
 def _linux_meminfo() -> tuple[int, int] | None:
@@ -143,6 +154,8 @@ def detect_system_resources() -> SystemResources:
 
 
 def _profile_adjustment(profile: str) -> tuple[float, float]:
+    if profile == "throughput":
+        return 1.4, 1.25
     if profile == "aggressive":
         return 1.25, 1.25
     if profile == "conservative":
@@ -158,39 +171,70 @@ def build_stage_runtime_plan(config: dict[str, Any], stage: str, workload_hint: 
     hint = dict(workload_hint or {})
     hint["stage"] = stage
     runtime_cfg = config.get("runtime", {})
-    stage_cfg = runtime_cfg.get("stages", {})
+    stage_cfg = _stage_overrides(runtime_cfg, stage)
     gpu_cfg = runtime_cfg.get("gpu", {})
     cpu_factor, memory_factor = _profile_adjustment(profile)
 
+    if profile == "throughput":
+        cpu_reserve_default = 2
+        cpu_reserve_fraction_default = 0.0625
+        ram_reserve_default = 8
+        ram_reserve_fraction_default = 0.10
+    else:
+        cpu_reserve_default = 4
+        cpu_reserve_fraction_default = 0.125
+        ram_reserve_default = 16
+        ram_reserve_fraction_default = 0.15
+
     cpu_reserve = max(
-        int(runtime_cfg.get("cpu_reserve_min", 4)),
-        _ceil_fraction(resources.cpu_count, float(runtime_cfg.get("cpu_reserve_fraction", 0.125))),
+        int(runtime_cfg.get("cpu_reserve_min", cpu_reserve_default)),
+        _ceil_fraction(resources.cpu_count, float(runtime_cfg.get("cpu_reserve_fraction", cpu_reserve_fraction_default))),
     )
     ram_reserve_gb = max(
-        int(runtime_cfg.get("ram_reserve_gb_min", 16)),
-        _ceil_fraction(resources.total_ram_gb, float(runtime_cfg.get("ram_reserve_fraction", 0.15))),
+        int(runtime_cfg.get("ram_reserve_gb_min", ram_reserve_default)),
+        _ceil_fraction(resources.total_ram_gb, float(runtime_cfg.get("ram_reserve_fraction", ram_reserve_fraction_default))),
     )
     usable_cpus = max(1, resources.cpu_count - cpu_reserve)
     usable_ram_gb = max(1, resources.available_ram_gb - ram_reserve_gb)
 
-    csv_read_threads = min(8, max(1, int(round((usable_cpus / 2) * cpu_factor))))
-    preop_feature_workers = min(4, max(1, int(round((usable_cpus / 7) * cpu_factor))))
-    tabular_column_workers = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
-    timeseries_workers = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
-    timeseries_partitions = min(64, max(4, int(round((usable_cpus + 4) * memory_factor))))
-    sequence_workers = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
-    sequence_partitions = min(64, max(4, int(round((usable_cpus + 4) * memory_factor))))
-    evaluation_workers = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
-    report_workers = min(4, max(1, int(round((usable_cpus / 7) * cpu_factor))))
-    shap_workers = min(2, max(1, int(round((usable_cpus / 14) * cpu_factor))))
-    train_model_threads = min(16, max(2, int(round(((resources.cpu_count / 2)) * cpu_factor))))
-    hpo_model_threads = min(8, max(2, int(round((usable_cpus / 3) * cpu_factor))))
-    dataloader_workers = min(7, max(1, sequence_workers - 1))
-    torch_num_threads = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
-    bootstrap_workers = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
+    if profile == "throughput":
+        csv_read_threads = min(16, max(2, int(round((usable_cpus / 2) * cpu_factor))))
+        preop_feature_workers = min(8, max(2, int(round((usable_cpus / 4) * cpu_factor))))
+        tabular_column_workers = min(16, max(4, int(round((usable_cpus / 2) * cpu_factor))))
+        timeseries_workers = min(16, max(4, int(round((usable_cpus / 2) * cpu_factor))))
+        timeseries_partitions = min(96, max(8, int(round((usable_cpus * 2) * memory_factor))))
+        sequence_workers = min(16, max(4, int(round((usable_cpus / 2) * cpu_factor))))
+        sequence_partitions = min(96, max(8, int(round((usable_cpus * 2) * memory_factor))))
+        evaluation_workers = min(16, max(4, int(round((usable_cpus / 2) * cpu_factor))))
+        report_workers = min(8, max(2, int(round((usable_cpus / 4) * cpu_factor))))
+        shap_workers = min(4, max(1, int(round((usable_cpus / 8) * cpu_factor))))
+        train_model_threads = max(4, usable_cpus)
+        hpo_model_threads = max(4, usable_cpus)
+        dataloader_workers = 0 if stage in {"tune_sequence", "train_sequence"} else min(12, max(2, int(round((usable_cpus / 3) * cpu_factor))))
+        if stage in {"tune_sequence", "train_sequence"}:
+            torch_num_threads = min(8, max(2, int(round((usable_cpus / 4) * cpu_factor))))
+        else:
+            torch_num_threads = min(16, max(2, int(round((usable_cpus / 2) * cpu_factor))))
+        bootstrap_workers = min(16, max(2, int(round((usable_cpus / 2) * cpu_factor))))
+    else:
+        csv_read_threads = min(8, max(1, int(round((usable_cpus / 2) * cpu_factor))))
+        preop_feature_workers = min(4, max(1, int(round((usable_cpus / 7) * cpu_factor))))
+        tabular_column_workers = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
+        timeseries_workers = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
+        timeseries_partitions = min(64, max(4, int(round((usable_cpus + 4) * memory_factor))))
+        sequence_workers = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
+        sequence_partitions = min(64, max(4, int(round((usable_cpus + 4) * memory_factor))))
+        evaluation_workers = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
+        report_workers = min(4, max(1, int(round((usable_cpus / 7) * cpu_factor))))
+        shap_workers = min(2, max(1, int(round((usable_cpus / 14) * cpu_factor))))
+        train_model_threads = min(16, max(2, int(round(((resources.cpu_count / 2)) * cpu_factor))))
+        hpo_model_threads = min(8, max(2, int(round((usable_cpus / 3) * cpu_factor))))
+        dataloader_workers = 0 if stage in {"tune_sequence", "train_sequence"} else min(7, max(1, sequence_workers - 1))
+        torch_num_threads = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
+        bootstrap_workers = min(8, max(1, int(round((usable_cpus / 3) * cpu_factor))))
 
     group_count = int(hint.get("group_count", 0))
-    if group_count >= 4:
+    if group_count >= 4 and profile != "throughput":
         bootstrap_workers = 1
 
     nested_blas_threads = max(1, int(runtime_cfg.get("nested_blas_threads", 1)))

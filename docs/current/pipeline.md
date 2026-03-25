@@ -17,8 +17,14 @@ For the legacy numbered-script path, use [../legacy/README.md](../legacy/README.
 Current behavior to keep in mind:
 
 - `run all` executes preprocessing, tuning, training, evaluation, and `report manuscript`
+- `run all` now emits immediate stage start/end lines plus `artifacts/logs/run_all_events.jsonl`
+- long-running `tune_*` and `train_*` stages now append JSONL progress logs under `artifacts/logs/`
+- in `runtime.orchestration.mode: overlap`, `run all` overlaps `tune sequence` with `train tabular` after `tune tabular`
 - `run all` does not call `compat export-legacy`
 - SHAP can be run explicitly with `explain shap`, but `report manuscript` also includes SHAP when configured
+- the current refactor optimization policy uses validation `balanced_accuracy` for HPO and early-stopping monitors
+- trainable models use explicit inverse-frequency `balance_weight`-style weighting; `knn` applies the same weighting intent through deterministic weighted resampling because `sklearn` KNN does not accept `sample_weight`
+- the current evaluation remains non-nested: HPO runs once on the cohort and later repeated-CV evaluation reuses that tuned parameter set
 
 ## Stage Map
 
@@ -37,21 +43,21 @@ Current behavior to keep in mind:
 
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
-| `tune tabular` | `pipelines/tune.py:run_tune_tabular` | labeled preop, intraop, and combined tabular datasets | `datasets/splits/hpo_{preop,intraop,combined}.parquet`, `tuning/tabular_best_params.json`, `tuning/tabular_trials.parquet` | Searches only the models enabled in `models.tabular_hpo_enabled` |
-| `tune sequence` | `pipelines/tune.py:run_tune_sequence` | `datasets/sequence/lstm_trainable.pkl` | `datasets/splits/hpo_sequence.parquet`, `tuning/sequence_best_params.json`, `tuning/sequence_trials.parquet` | Searches only the models enabled in `models.sequence_hpo_enabled` |
+| `tune tabular` | `pipelines/tune.py:run_tune_tabular` | labeled preop, intraop, and combined tabular datasets | `datasets/splits/hpo_{preop,intraop,combined}.parquet`, `tuning/tabular_best_params.json`, `tuning/tabular_trials.parquet`, `tuning/tabular_studies/*` | Searches only the models enabled in `models.tabular_hpo_enabled`; current HPO objective is validation `balanced_accuracy`; matching completed per-study outputs resume automatically |
+| `tune sequence` | `pipelines/tune.py:run_tune_sequence` | `datasets/sequence/lstm_trainable.pkl` | `datasets/splits/hpo_sequence.parquet`, `tuning/sequence_best_params.json`, `tuning/sequence_trials.parquet` | Searches only the models enabled in `models.sequence_hpo_enabled`; current HPO objective is validation `balanced_accuracy` |
 
 ### Train
 
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
-| `train tabular` | `pipelines/train.py:run_train_tabular` | labeled tabular datasets | `datasets/splits/bootstrap_{preop,intraop,combined}.parquet`, `models/tabular/...`, `predictions/raw/tabular.parquet`, `predictions/raw_predictions.parquet` | Trains every model in `models.tabular_enabled` across each tabular regime; tuned params override configured defaults when present |
-| `train sequence` | `pipelines/train.py:run_train_sequence` | `datasets/sequence/lstm_trainable.pkl` | `datasets/splits/bootstrap_sequence.parquet`, `models/sequence/...`, `predictions/raw/sequence.parquet`, `predictions/raw_predictions.parquet` | Trains every model in `models.sequence_enabled`; tuned params override configured defaults when present |
+| `train tabular` | `pipelines/train.py:run_train_tabular` | labeled tabular datasets | `datasets/splits/bootstrap_{preop,intraop,combined}.parquet`, `models/tabular/...`, `predictions/raw/tabular.parquet`, `predictions/raw_predictions.parquet` | Trains every model in `models.tabular_enabled` across each tabular regime; tuned params override configured defaults when present; trainable models use explicit inverse-frequency balance weights; in the default optimized policy only `svm` fans out across repeats |
+| `train sequence` | `pipelines/train.py:run_train_sequence` | `datasets/sequence/lstm_trainable.pkl` | `datasets/splits/bootstrap_sequence.parquet`, `models/sequence/...`, `predictions/raw/sequence.parquet`, `predictions/raw_predictions.parquet` | Trains every model in `models.sequence_enabled`; tuned params override configured defaults when present; sequence early stopping now follows validation `balanced_accuracy` |
 
 ### Evaluate
 
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
-| `evaluate calibrate` | `pipelines/evaluate.py:run_calibration` | `predictions/raw_predictions.parquet` | `predictions/calibrated_predictions.parquet`, `evaluation/thresholds.csv` | Calibrates prediction groups and stores decision thresholds |
+| `evaluate calibrate` | `pipelines/evaluate.py:run_calibration` | `predictions/raw_predictions.parquet` | `predictions/calibrated_predictions.parquet`, `evaluation/thresholds.csv` | Calibrates prediction groups and stores decision thresholds; repeated rows for the same `op_id` stay together through grouped calibration CV |
 | `evaluate metrics` | `pipelines/evaluate.py:run_metrics` | calibrated predictions | `evaluation/metrics_by_fold.csv`, `evaluation/metrics_summary.csv`, `evaluation/metrics_bootstrap_ci.csv` | Bootstrap CI output is conditional on config and may be omitted |
 | `evaluate delong` | `pipelines/evaluate.py:run_delong` | calibrated predictions | `evaluation/delong_matrix.csv`, `evaluation/delong_long.csv` | Pairwise AUROC comparison tables |
 | `evaluate dca` | `pipelines/evaluate.py:run_dca` | calibrated predictions | `evaluation/dca_curves.csv` | Decision-curve rows for downstream plots/reporting |
@@ -77,6 +83,7 @@ Current behavior to keep in mind:
 | --- | --- | --- | --- | --- |
 | `compat export-legacy` | `io/compat.py:export_legacy_datasets` | selected refactor artifacts | copied files under `compat_aki_dir`, `compat_base_dir`, and `compat_results_dir` | Explicit compatibility export only; not part of `run all` |
 | `runtime inspect` | `runtime.py` | config plus detected host resources | JSON runtime summary | Use this before expensive runs on a new host class |
+| `runtime benchmark` | `benchmarking.py` | config, selected profiles, selected targets | `artifacts/benchmarks/summary.{json,csv}` plus per-run logs | Compare runtime profiles or heavy stages without adding tracked benchmark artifacts; supports `--model-keys`, `--dataset-regimes`, and `--execution-policy` for targeted low-CPU benchmarks |
 
 ## Typical Current Runs
 
@@ -86,6 +93,7 @@ Current behavior to keep in mind:
 source .venv/bin/activate
 inspire-aki runtime inspect --config configs/aki/default.yaml
 inspire-aki run all --config configs/aki/default.yaml
+inspire-aki runtime benchmark --config configs/aki/default.yaml --profiles throughput,balanced --targets tune_tabular,tune_sequence
 ```
 
 ### Resume stage-by-stage
@@ -98,3 +106,12 @@ inspire-aki train ...
 inspire-aki evaluate ...
 inspire-aki report ...
 ```
+
+## Runtime Notes
+
+- `configs/aki/default.yaml` now defaults to `runtime.profile: throughput`
+- `configs/aki/default.yaml` now defaults to `runtime.orchestration.mode: overlap`
+- `configs/aki/smoke.yaml` and `configs/aki/smoke_hpo.yaml` pin `runtime.orchestration.mode: serial`
+- `models.hpo.sequence_batch_size` controls the sequence-HPO batch size; the main default is `1024`
+- if the model-selection policy changes, resume the pipeline from `tune ...` rather than `train ...`
+- the default low-CPU execution policy is intentionally narrow: `svm` gets outer concurrency, while `log_reg` stays serial with a moderate BLAS cap

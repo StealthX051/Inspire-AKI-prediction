@@ -7,7 +7,7 @@ This repository is readable and partially runnable, but it is not fully portable
 As of March 24, 2026:
 
 - the synthetic refactor test suite is green:
-  - `pytest -q` passes with `46` tests
+  - `pytest -q` passes with `82` tests
 - the refactored real-data preprocessing path has been exercised successfully on the mounted INSPIRE volume through sequence construction
 - the refactored HPO tuning path has now also been exercised successfully on real INSPIRE data after fixing Optuna `4.x` trial-state handling
 - the full real-data `configs/aki/smoke_hpo.yaml` pipeline has **not** yet been validated in one uninterrupted run from preprocessing through manuscript reporting
@@ -23,17 +23,19 @@ That means the repo is now in a better state than “docs only” or “syntheti
 | Legacy server-path drift still exists | the refactor defaults now point at the mounted volume, but many legacy scripts and notebooks still document or encode `/home/server/...` paths | The new CLI is easier to run here, but the legacy surface is still brittle | Prefer the refactored CLI and treat legacy paths as historical until they are fully migrated |
 | Multiple historical environments | checked-in AutoGluon metadata spans at least `autogluon.tabular==1.2` and `1.3.1`; the repo now pins a baseline in `environment.yml` and `requirements.txt` | Fresh installs are easier, but exact historical artifact recreation is still not guaranteed | Use `environment.yml` as the baseline setup, and treat old artifacts as descriptive evidence rather than exact rerun targets |
 | Resource-aware execution is host-dependent | the refactor now derives stage worker/thread budgets from detected CPU, RAM, and GPU resources | Runtime behavior is more scalable, but exact wall times and worker counts will differ by machine | Use `inspire-aki runtime inspect --config ...` to verify the resolved plan on the current host |
+| Non-nested evaluation design | legacy and refactor both tune once on the cohort and later reuse that tuned parameter set during repeated CV | Reported performance remains optimistic relative to a fully nested evaluation design | Treat this as a methodological limitation, not a portability bug |
 | Filename drift between stages | `01_extract_preop.py` writes `preop_data_test.csv`; later stages reference `preop_data.csv`; `05_time_series_cleaner.py` expects `preop_cleaned.csv` | The canonical pipeline does not connect perfectly as written | Document the drift explicitly and do not claim turnkey execution |
 | Multiple cohort counts | manuscript brief, consort notebook, and performance notebook comments disagree | Easy to misstate study size or split sizes | Use a divergence table rather than forcing a single count |
 | Intentional refactor cohort cleanup | the refactor now excludes `op_len <= 0`, while legacy scripts let zero-duration cases pass through | Refactor cohort counts can now differ slightly from both the manuscript and the older scripts | Treat this as a correctness fix and document the drift explicitly |
 | Synthetic tests are broad and real-data validation is still partial | `pytest` now exercises the refactor package on synthetic data only, while current real-data validation has reached preprocessing and HPO tuning but not a full end-to-end HPO smoke rerun | The new package surface is safer, but scientific reruns on INSPIRE are still not fully proven here | Treat synthetic passing tests as contract checks and real-data smoke progress as partial validation only |
 | Real-data end-to-end refactor validation is incomplete | preprocessing and HPO tuning have been exercised on real INSPIRE data, but the full `smoke_hpo` `train -> evaluate -> report` chain has not yet been completed in one uninterrupted run | It is still possible that downstream training/report integration issues remain | Resume from `inspire-aki train tabular --config configs/aki/smoke_hpo.yaml` or rerun the full HPO smoke wrapper |
+| Legacy calibration leakage | legacy notebook calibration pooled repeated prediction rows and split them row-wise, so the same `op_id` could land in calibration-train and calibration-test across repeats | Legacy and refactor calibration outputs can drift slightly even when the upstream predictions match | The refactor now uses grouped calibration CV on `op_id`; treat that as a correctness fix |
 
 ## Medium-Impact Code Gaps
 
 | Issue | Evidence | Impact | Notes |
 | --- | --- | --- | --- |
-| AutoGluon weight-column issue | `create_results/08_tabular_model_creation.py` sets `sample_weight='balance_weight'` without creating that column | The current branch may fail or differ from historical runs | Checked-in results may predate the current code snapshot |
+| Legacy AutoGluon weight-column issue | `create_results/08_tabular_model_creation.py` sets `sample_weight='balance_weight'` without creating that column | The legacy script snapshot may fail or differ from historical runs, even though the refactor now materializes explicit balance weights before AutoGluon fitting | Checked-in results may predate the current legacy-script snapshot |
 | Normalize-before-impute order | explicit warning comment in `data_preprocessing/03_create_base.py` | Potential methodological mismatch | Current docs should describe it, not defend it |
 | Sequence path cap at 200 steps | `data_preprocessing/06_create_lstm_trainable.py` | Long operations are dropped from the deep path | This can change the patient set relative to the tabular path |
 | Zero-byte legacy script | `data_preprocessing/AKI_data_selection.py` | Confusing repo surface | Treat as debris, not source |

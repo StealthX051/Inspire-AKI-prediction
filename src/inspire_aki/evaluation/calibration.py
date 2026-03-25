@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 from sklearn.calibration import IsotonicRegression
-from sklearn.model_selection import KFold
+from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
 
 from inspire_aki.evaluation.thresholds import find_optimal_fbeta_threshold
 from inspire_aki.runtime import build_stage_runtime_plan, thread_limited_context
@@ -29,15 +29,28 @@ def _calibrate_group(group_df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame
         raise ValueError(f"Unsupported calibration method: {method}")
 
     unique_classes = np.unique(y_true)
-    n_splits = min(calibration_cfg["cv_folds"], len(group_df))
-    if len(unique_classes) < 2 or n_splits < 2:
+    groups = group_df["op_id"].to_numpy()
+    n_unique_groups = int(pd.Index(groups).nunique())
+    n_splits = min(calibration_cfg["cv_folds"], n_unique_groups)
+    if len(unique_classes) < 2 or n_unique_groups < 2 or n_splits < 2:
         y_prob_calibrated = y_prob_raw.copy()
         threshold = 0.5
         method_used = "identity"
     else:
-        kf = KFold(n_splits=n_splits, shuffle=True, random_state=config["splits"]["random_state"])
         y_prob_calibrated = np.zeros_like(y_prob_raw, dtype=float)
-        for train_idx, test_idx in kf.split(y_prob_raw):
+        try:
+            splitter = StratifiedGroupKFold(
+                n_splits=n_splits,
+                shuffle=True,
+                random_state=config["splits"]["random_state"],
+            )
+            splits = list(splitter.split(y_prob_raw.reshape(-1, 1), y_true, groups=groups))
+            method_used = "isotonic_stratified_group_cv"
+        except ValueError:
+            splitter = GroupKFold(n_splits=n_splits)
+            splits = list(splitter.split(y_prob_raw.reshape(-1, 1), y_true, groups=groups))
+            method_used = "isotonic_group_cv"
+        for train_idx, test_idx in splits:
             calibrator = IsotonicRegression(out_of_bounds="clip")
             calibrator.fit(y_prob_raw[train_idx], y_true[train_idx])
             y_prob_calibrated[test_idx] = calibrator.predict(y_prob_raw[test_idx])
@@ -49,7 +62,6 @@ def _calibrate_group(group_df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame
             threshold_max=calibration_cfg["threshold_max"],
             steps=calibration_cfg["threshold_steps"],
         )
-        method_used = "isotonic_cv"
 
     group_df["y_prob_calibrated"] = y_prob_calibrated
     group_df["threshold"] = threshold

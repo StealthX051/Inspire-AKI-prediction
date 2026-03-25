@@ -12,7 +12,13 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 - Raw refactor predictions are now written as stage partitions plus a deterministic combined `raw_predictions.parquet` view.
 - `inspire-aki report manuscript` is now the report-level command that includes SHAP, rather than requiring a separate SHAP call.
 - The refactor defaults now point at the mounted volume path `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` for raw INSPIRE inputs.
-- On the current 32-CPU node, the default `balanced` runtime profile resolves to a usable CPU budget of `28`, with stage-specific worker caps for timeseries cleaning, evaluation, reporting, and model training.
+- On the current 32-CPU / A100 node, the default `throughput` runtime profile now targets roughly `30` usable CPUs for CPU-bound stages, keeps tensor-backed sequence loaders at `0` workers by default, and leaves GPU-native sequence work on the GPU.
+- `inspire-aki run all` now emits live stage progress to stdout and `artifacts/logs/run_all_events.jsonl`, with dedicated JSONL progress logs for `tune_*` and `train_*`.
+- In `throughput` mode, `run all` now overlaps `tune sequence` with `train tabular` after `tune tabular` completes.
+- `inspire-aki runtime benchmark` now writes machine-readable summaries under `artifacts/benchmarks/`.
+- `tune tabular` now commits durable per-study artifacts under `artifacts/tuning/tabular_studies/` and resumes matching completed studies automatically.
+- The low-CPU tabular optimization is intentionally narrow: only `svm` gets new outer concurrency, with regime-level HPO fanout and repeat-level train fanout; `log_reg` stays serial but uses a moderate BLAS cap.
+- `evaluate calibrate` now uses grouped cross-validation on `op_id`, so repeated prediction rows for the same case are kept together during isotonic calibration.
 - The refactor now excludes operations with `op_len <= 0` upstream, which is an intentional cleanup relative to the legacy scripts.
 - The refactor now treats infinite intraop feature values as invalid and fails the stage instead of silently carrying them forward.
 
@@ -21,7 +27,7 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 As of March 24, 2026, the refactor is in a strong but not fully validated state.
 
 - The synthetic refactor test suite is green:
-  - `pytest -q` currently passes with `46` tests.
+  - `pytest -q` currently passes with `82` tests.
 - The real-data refactor preprocessing path has been exercised on the mounted INSPIRE volume through:
   - `preprocess preop`
   - `preprocess intraop`
@@ -124,11 +130,25 @@ To inspect the resolved runtime plan before launching a run:
 inspire-aki runtime inspect --config configs/aki/smoke.yaml
 ```
 
-To benchmark the adaptive runtime profiles on the smoke pipeline:
+To benchmark runtime profiles or specific heavy stages:
+
+```bash
+inspire-aki runtime benchmark --config configs/aki/smoke.yaml --profiles balanced,throughput --targets run_all
+```
+
+To benchmark only the low-CPU tabular slice:
+
+```bash
+inspire-aki runtime benchmark --config configs/aki/default.yaml --profiles throughput --targets tune_tabular,train_tabular --model-keys svm --dataset-regimes preop,intraop,combined --execution-policy optimized_low_cpu
+```
+
+The wrapper still exists if you want a shell shortcut:
 
 ```bash
 bash scripts/benchmark_runtime_profiles.sh
 ```
+
+Benchmark summaries are written under `artifacts/benchmarks/`.
 
 Important:
 
@@ -156,6 +176,18 @@ Current implemented HPO models are:
 - sequence: `lstm_only`, `hybrid`
 
 `autogluon` and `asa_rule` are not part of the Optuna HPO path.
+When `autogluon` is trained, the refactor keeps the legacy training intent separate from Optuna:
+
+- `TabularPredictor(eval_metric="balanced_accuracy")`
+- class-balance sample weights are materialized explicitly before fitting
+- `num_gpus` is now passed through from config, with `configs/aki/default.yaml` defaulting to `auto`
+
+Current refactor optimization policy:
+
+- trainable models use explicit inverse-frequency `balance_weight`-style weighting during fitting
+- `knn` consumes those weights through deterministic weighted resampling because `sklearn` KNN does not expose `sample_weight` on `fit()`
+- HPO and early-stopping monitors now optimize validation `balanced_accuracy`
+- the current repeated-CV evaluation remains non-nested: HPO is run once on the cohort and the later bootstrap CV reuses that tuned parameter set
 
 Current HPO smoke note:
 
@@ -237,6 +269,7 @@ The training path is idempotent at the artifact level:
 - `train tabular` refreshes `artifacts/predictions/raw/tabular.parquet`
 - `train sequence` refreshes `artifacts/predictions/raw/sequence.parquet`
 - both rebuild `artifacts/predictions/raw_predictions.parquet`
+- if weighting, HPO objective, or other model-selection policy changes, resume from `tune`, not `train`
 
 The refactor also uses internal staging artifacts for the parallel sequence path:
 

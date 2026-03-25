@@ -59,6 +59,15 @@ As of March 24, 2026:
 - Do not casually edit notebooks when a `.py` source or checked-in markdown output already captures the same behavior.
 - Do not treat checked-in model directories as source code.
 - Do not promise reproducibility without private INSPIRE data.
+- Keep handoff/TODO docs selective:
+  - do not create a new handoff for a read-only review, status check, or restatement of repo state
+  - create or update a handoff only when you materially changed code/docs/configs, ran a meaningful command whose result changes the next step, or captured a blocker/traceback/artifact path that would otherwise be lost
+  - prefer updating an existing same-day handoff for the same workstream instead of adding another near-duplicate note
+  - delete superseded handoff or TODO files when they no longer add unique value
+- Keep agent-facing docs concise and non-repetitive:
+  - prefer updating an existing canonical doc over adding a new standalone summary
+  - avoid restating the same repo context across multiple files unless the duplication is necessary for navigation or manuscript alignment
+  - keep notes focused on durable decisions, blockers, artifact paths, and the next concrete step
 - If you change code behavior, update:
   - `README.md`
   - the relevant `docs/*.md`

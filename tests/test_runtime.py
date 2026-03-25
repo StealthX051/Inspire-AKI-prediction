@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -69,6 +70,37 @@ def test_runtime_plan_downscales_on_small_cpu_only_host(monkeypatch, loaded_synt
     assert plan.gpu_enabled is False
     assert plan.dataloader_workers >= 1
     assert plan.dataloader_workers < plan.train_model_threads
+
+
+def test_throughput_runtime_plan_scales_up_cpu_bound_stages(monkeypatch, loaded_synthetic_config) -> None:
+    resources = SystemResources(
+        cpu_count=32,
+        total_ram_gb=115,
+        available_ram_gb=99,
+        gpu_available=True,
+        gpu_name="NVIDIA A100-SXM4-40GB",
+        gpu_total_memory_gb=40,
+        gpu_free_memory_gb=38,
+    )
+    monkeypatch.setattr("inspire_aki.runtime.detect_system_resources", lambda: resources)
+
+    throughput_config = copy.deepcopy(loaded_synthetic_config)
+    throughput_config["runtime"]["profile"] = "throughput"
+    throughput_config["runtime"]["cpu_reserve_fraction"] = 0.0625
+    throughput_config["runtime"]["cpu_reserve_min"] = 2
+    throughput_config["runtime"]["ram_reserve_fraction"] = 0.1
+    throughput_config["runtime"]["ram_reserve_gb_min"] = 8
+
+    balanced_plan = build_stage_runtime_plan(loaded_synthetic_config, "train_tabular")
+    throughput_plan = build_stage_runtime_plan(throughput_config, "train_tabular")
+    throughput_sequence_plan = build_stage_runtime_plan(throughput_config, "tune_sequence")
+
+    assert throughput_plan.profile == "throughput"
+    assert throughput_plan.usable_cpus == 30
+    assert throughput_plan.train_model_threads > balanced_plan.train_model_threads
+    assert throughput_plan.hpo_model_threads > balanced_plan.hpo_model_threads
+    assert throughput_plan.tabular_column_workers > balanced_plan.tabular_column_workers
+    assert throughput_sequence_plan.dataloader_workers == 0
 
 
 def test_runtime_summary_contains_system_and_stage_plans(monkeypatch, loaded_synthetic_config) -> None:

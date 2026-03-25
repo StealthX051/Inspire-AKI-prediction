@@ -1,6 +1,12 @@
 paths:
   artifacts_dir: artifacts/smoke
 
+runtime:
+  profile: balanced
+  progress_interval_seconds: 60
+  orchestration:
+    mode: serial
+
 splits:
   use_bootstrapping: false
 
