@@ -38,20 +38,26 @@ This file is the short agent-facing operating contract for `Inspire-AKI-predicti
 
 ## Current Handoff Status
 
-As of March 24, 2026:
+As of March 25, 2026:
 
-- the synthetic refactor suite passes with `46` tests
-- the real-data refactor preprocessing chain has completed on the mounted INSPIRE volume
-- the real-data HPO tuning stages now complete after fixing Optuna `4.x` trial-state handling
-- the full real-data `configs/aki/smoke_hpo.yaml` run is still **not** validated end to end in one uninterrupted pass
-- the next recommended continuation point is:
-  - `inspire-aki train tabular --config configs/aki/smoke_hpo.yaml`
-  - `inspire-aki train sequence --config configs/aki/smoke_hpo.yaml`
-  - `inspire-aki evaluate calibrate --config configs/aki/smoke_hpo.yaml`
-  - `inspire-aki evaluate metrics --config configs/aki/smoke_hpo.yaml`
-  - `inspire-aki evaluate delong --config configs/aki/smoke_hpo.yaml`
-  - `inspire-aki evaluate dca --config configs/aki/smoke_hpo.yaml`
-  - `inspire-aki report manuscript --config configs/aki/smoke_hpo.yaml`
+- the synthetic refactor suite passes with `82` tests
+- the refactor now has:
+  - live `run all` and stage progress logging
+  - grouped calibration CV on `op_id`, which fixes repeated-row leakage during calibration
+  - durable per-study tabular HPO outputs under `artifacts/tuning/tabular_studies/`
+  - narrow low-CPU tabular concurrency: `svm` fans out across regimes in HPO and across repeats in training, while `log_reg` stays serial with a moderate BLAS cap
+- the current repeated-CV evaluation remains non-nested by design: HPO runs once before repeated-CV training/evaluation
+- if the model-selection policy changes, resume from `tune ...`, not `train ...`
+- the next recommended real-data continuation point for the main default config is:
+  - `inspire-aki tune tabular --config configs/aki/default.yaml`
+  - `inspire-aki tune sequence --config configs/aki/default.yaml`
+  - `inspire-aki train tabular --config configs/aki/default.yaml`
+  - `inspire-aki train sequence --config configs/aki/default.yaml`
+  - `inspire-aki evaluate calibrate --config configs/aki/default.yaml`
+  - `inspire-aki evaluate metrics --config configs/aki/default.yaml`
+  - `inspire-aki evaluate delong --config configs/aki/default.yaml`
+  - `inspire-aki evaluate dca --config configs/aki/default.yaml`
+  - `inspire-aki report manuscript --config configs/aki/default.yaml`
 
 ## Safe Working Rules
 
