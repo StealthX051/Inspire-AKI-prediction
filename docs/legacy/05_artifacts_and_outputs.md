@@ -4,16 +4,16 @@ This document separates:
 
 - private raw inputs
 - legacy numbered-script outputs
-- refactor package artifacts under `artifacts/`
+- refactor package artifacts under the configured artifact root
 - checked-in outputs already present in the repo
 
-The important distinction is that the legacy pipeline writes into `/home/server/...`, while the refactor writes into the configured `artifacts/` root and keeps stage ownership explicit.
+The important distinction is that the legacy pipeline writes into `/home/server/...`, while the refactor writes into the configured artifact root and keeps stage ownership explicit.
 
 ## Current Validation Snapshot
 
 As of March 24, 2026:
 
-- `artifacts/smoke_hpo/` contains real-data preprocessing outputs plus completed HPO tuning outputs
+- `/media/volume/ncs_inspire_data/ncs_aki/artifacts/smoke_hpo/` contains real-data preprocessing outputs plus completed HPO tuning outputs
 - the current tuning artifacts now use normalized trial states such as `COMPLETE`, not raw Optuna numeric codes
 - the tabular tuning manifests now enumerate both:
   - the per-dataset HPO split parquet
@@ -26,9 +26,12 @@ The current `src/inspire_aki/` package is designed around staged artifacts plus 
 
 ### Refactor artifact root
 
-- default root: `artifacts/`
+- default root in the shipped main config: `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default`
+- smoke root in the shipped smoke config: `/media/volume/ncs_inspire_data/ncs_aki/artifacts/smoke`
+- smoke-HPO root in the shipped smoke-HPO config: `/media/volume/ncs_inspire_data/ncs_aki/artifacts/smoke_hpo`
+- the path fragments below are relative to the configured artifact root
 - every stage may also write a manifest under:
-  - `artifacts/manifests/`
+  - `manifests/`
 - tuning now writes:
   - per-dataset tabular manifests such as `manifests/tune_tabular_preop.json`
   - a top-level aggregate manifest `manifests/tune_tabular.json`

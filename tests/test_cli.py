@@ -32,3 +32,22 @@ def test_stage_command_keyboard_interrupt_exits_cleanly(monkeypatch, synthetic_c
 
     assert result.exit_code == 130
     assert "Interrupted tune_sequence; exiting cleanly (130)." in result.output
+
+
+def test_runtime_benchmark_relative_output_dir_uses_artifact_root(monkeypatch, synthetic_config: Path) -> None:
+    runner = CliRunner()
+    captured: dict[str, Path] = {}
+
+    def _fake_benchmarks(**kwargs):
+        captured["output_dir"] = kwargs["output_dir"]
+        return {"ok": True}
+
+    monkeypatch.setattr(cli_module, "run_runtime_benchmarks", _fake_benchmarks)
+
+    result = runner.invoke(
+        app,
+        ["runtime", "benchmark", "--config", str(synthetic_config), "--output-dir", "bench-rel"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert captured["output_dir"] == synthetic_config.parent / "artifacts" / "bench-rel"

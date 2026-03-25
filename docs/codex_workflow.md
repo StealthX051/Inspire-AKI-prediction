@@ -61,10 +61,10 @@ inspire-aki report manuscript --config configs/aki/smoke_hpo.yaml
 - Worker allocation in the refactor is centralized in `src/inspire_aki/runtime.py` and resolved per stage from detected CPU, RAM, and GPU resources.
 - Use `inspire-aki runtime inspect --config ...` before large runs if the host class changed.
 - Use `scripts/benchmark_runtime_profiles.sh` only as a non-CI benchmarking helper; it is not part of the canonical execution path.
-- Treat `artifacts/predictions/raw/*.parquet` as the stage-owned prediction partitions and `artifacts/predictions/raw_predictions.parquet` as the combined evaluation view.
+- Treat `<artifacts_dir>/predictions/raw/*.parquet` as the stage-owned prediction partitions and `<artifacts_dir>/predictions/raw_predictions.parquet` as the combined evaluation view.
 - Treat `reports.manuscript_sections` and `reports.shap_jobs` in `configs/aki/default.yaml` as the source of truth for report composition.
 - Treat `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` as the current default raw INSPIRE mount for the refactor.
-- Treat `artifacts/staging/` as intentional refactor staging, not stray output, for the partitioned timeseries and sequence path.
+- Treat `<artifacts_dir>/staging/` as intentional refactor staging, not stray output, for the partitioned timeseries and sequence path.
 - Use `docs/TODO/` for explicit queued work items and `docs/HANDOFF/` for dated session handoffs.
 - Treat notebooks as structured data:
   - inspect with `jq` or targeted text extraction

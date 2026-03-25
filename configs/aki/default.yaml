@@ -1,5 +1,5 @@
 paths:
-  artifacts_dir: artifacts
+  artifacts_dir: /media/volume/ncs_inspire_data/ncs_aki/artifacts/default
   raw_inspire_dir: /media/volume/ncs_inspire_data/ncs_aki/data/inspire
   compat_aki_dir: /media/volume/ncs_inspire_data/ncs_aki/data/AKI
   compat_base_dir: /media/volume/ncs_inspire_data/ncs_aki/data/base
@@ -180,7 +180,7 @@ models:
   autogluon:
     time_limit_seconds: 600
     presets: best_quality
-    num_cpus: auto
+    num_cpus: 32
     num_gpus: auto
   tabular_defaults:
     log_reg: {C: 1.0}

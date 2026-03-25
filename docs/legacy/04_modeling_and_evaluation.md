@@ -17,8 +17,8 @@ So this document describes the intended current model/evaluation contract, but n
 The `src/inspire_aki/` refactor now has these package-level guarantees:
 
 - stage resource allocation is centralized in `src/inspire_aki/runtime.py`
-- raw training predictions are partitioned by stage under `artifacts/predictions/raw/`
-- `artifacts/predictions/raw_predictions.parquet` is rebuilt deterministically from those partitions
+- raw training predictions are partitioned by stage under `<artifacts_dir>/predictions/raw/`
+- `<artifacts_dir>/predictions/raw_predictions.parquet` is rebuilt deterministically from those partitions
 - sequence checkpoints now carry enough metadata to be reloaded through `load_sequence_bundle(...)`
 - SHAP jobs are validated against the currently supported explainers:
   - `xgb`

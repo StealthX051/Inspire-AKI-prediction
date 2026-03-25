@@ -58,7 +58,7 @@ That means the repo is now in a better state than “docs only” or “syntheti
 - understand the current code-defined label and feature logic
 - run the refactored synthetic pytest suite
 - inspect the resolved stage runtime plan with `inspire-aki runtime inspect`
-- inspect or resume the partially validated real-data HPO smoke artifacts under `artifacts/smoke_hpo/`
+- inspect or resume the partially validated real-data HPO smoke artifacts under `/media/volume/ncs_inspire_data/ncs_aki/artifacts/smoke_hpo/`
 
 ## What Cannot Be Reliably Reproduced From the Repo Alone
 

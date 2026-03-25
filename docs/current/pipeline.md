@@ -9,7 +9,7 @@ For the legacy numbered-script path, use [../legacy/README.md](../legacy/README.
 
 - CLI surface: `src/inspire_aki/cli.py`
 - Default config: `configs/aki/default.yaml`
-- Artifact root: `paths.artifacts_dir` in config, `artifacts/` by default
+- Artifact root: `paths.artifacts_dir` in config, `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default` in the shipped default config
 - Raw INSPIRE root: `paths.raw_inspire_dir` in config
 - Runtime planning: `inspire-aki runtime inspect --config ...`
 - Orchestration: `inspire-aki run all --config ...`
@@ -17,8 +17,8 @@ For the legacy numbered-script path, use [../legacy/README.md](../legacy/README.
 Current behavior to keep in mind:
 
 - `run all` executes preprocessing, tuning, training, evaluation, and `report manuscript`
-- `run all` now emits immediate stage start/end lines plus `artifacts/logs/run_all_events.jsonl`
-- long-running `tune_*` and `train_*` stages now append JSONL progress logs under `artifacts/logs/`
+- `run all` now emits immediate stage start/end lines plus `<artifacts_dir>/logs/run_all_events.jsonl`
+- long-running `tune_*` and `train_*` stages now append JSONL progress logs under `<artifacts_dir>/logs/`
 - interrupting a direct stage command or `run all` with `Ctrl-C` now exits cleanly with code `130`; overlapped child stages are terminated before the parent exits
 - in `runtime.orchestration.mode: overlap`, `run all` overlaps `tune sequence` with `train tabular` after `tune tabular`
 - `run all` does not call `compat export-legacy`
@@ -84,7 +84,7 @@ Current behavior to keep in mind:
 | --- | --- | --- | --- | --- |
 | `compat export-legacy` | `io/compat.py:export_legacy_datasets` | selected refactor artifacts | copied files under `compat_aki_dir`, `compat_base_dir`, and `compat_results_dir` | Explicit compatibility export only; not part of `run all` |
 | `runtime inspect` | `runtime.py` | config plus detected host resources | JSON runtime summary | Use this before expensive runs on a new host class |
-| `runtime benchmark` | `benchmarking.py` | config, selected profiles, selected targets | `artifacts/benchmarks/summary.{json,csv}` plus per-run logs | Compare runtime profiles or heavy stages without adding tracked benchmark artifacts; supports `--model-keys`, `--dataset-regimes`, and `--execution-policy` for targeted low-CPU benchmarks |
+| `runtime benchmark` | `benchmarking.py` | config, selected profiles, selected targets | `<artifacts_dir>/benchmarks/summary.{json,csv}` plus per-run logs | Compare runtime profiles or heavy stages without adding tracked benchmark artifacts; supports `--model-keys`, `--dataset-regimes`, and `--execution-policy` for targeted low-CPU benchmarks |
 
 ## Typical Current Runs
 
@@ -115,5 +115,6 @@ inspire-aki report ...
 - `configs/aki/smoke.yaml` and `configs/aki/smoke_hpo.yaml` pin `runtime.orchestration.mode: serial`
 - `models.hpo.sequence_batch_size` controls the sequence-HPO batch size; the main default is `4096`
 - `models.sequence_defaults.batch_size` controls final sequence training batch size; the main default is `4096`
+- `models.autogluon.num_cpus` is pinned to `32` in `configs/aki/default.yaml` on the current host so AutoGluon can use the full machine CPU count
 - if the model-selection policy changes, resume the pipeline from `tune ...` rather than `train ...`
 - the default low-CPU execution policy is intentionally narrow: `svm` gets outer concurrency, while `log_reg` stays serial with a moderate BLAS cap

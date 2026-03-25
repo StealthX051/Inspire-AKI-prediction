@@ -10,7 +10,7 @@ These files are still useful for:
 - documenting historical issues and limitations in the legacy system
 
 They are **not** the source of truth for the current refactored pipeline under `src/inspire_aki/`.
-The refactor now has its own execution surface through the `inspire-aki` CLI, artifact layout under `artifacts/`, and behavior drift notes under `docs/refactor/`.
+The refactor now has its own execution surface through the `inspire-aki` CLI, artifact layout under the configured artifact root, and behavior drift notes under `docs/refactor/`.
 
 Use the numbered legacy docs when you explicitly need historical context:
 

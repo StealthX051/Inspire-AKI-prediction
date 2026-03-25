@@ -33,18 +33,20 @@ def test_load_config_normalizes_legacy_shap_key_and_removes_dead_compat(syntheti
 
 def test_default_config_validates() -> None:
     config = load_config()
+    assert config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/default"
     assert config["reports"]["shap_jobs"]
     assert config["reports"]["manuscript_sections"] == ["consort", "tables", "curves", "shap"]
     assert config["runtime"]["profile"] == "throughput"
     assert config["runtime"]["orchestration"]["mode"] == "overlap"
     assert config["runtime"]["progress_interval_seconds"] == 60
     assert config["models"]["hpo"]["sequence_batch_size"] == 4096
+    assert config["models"]["autogluon"]["num_cpus"] == 32
     assert config["models"]["autogluon"]["num_gpus"] == "auto"
 
 
 def test_smoke_config_validates_and_is_lightweight() -> None:
     config = load_config("configs/aki/smoke.yaml")
-    assert config["paths"]["artifacts_dir"].endswith("artifacts/smoke")
+    assert config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/smoke"
     assert config["runtime"]["profile"] == "balanced"
     assert config["runtime"]["orchestration"]["mode"] == "serial"
     assert config["splits"]["use_bootstrapping"] is False
@@ -59,7 +61,7 @@ def test_smoke_config_validates_and_is_lightweight() -> None:
 
 def test_smoke_hpo_config_validates_and_limits_trials() -> None:
     config = load_config("configs/aki/smoke_hpo.yaml")
-    assert config["paths"]["artifacts_dir"].endswith("artifacts/smoke_hpo")
+    assert config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/smoke_hpo"
     assert config["runtime"]["profile"] == "balanced"
     assert config["runtime"]["orchestration"]["mode"] == "serial"
     assert config["models"]["hpo"]["n_trials"] == 1

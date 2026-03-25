@@ -283,7 +283,7 @@ def runtime_benchmark(
     else:
         benchmark_dir = Path(output_dir)
         if not benchmark_dir.is_absolute():
-            benchmark_dir = REPO_ROOT / benchmark_dir
+            benchmark_dir = ArtifactManager(cfg).paths.artifacts_root / benchmark_dir
     _echo(
         run_runtime_benchmarks(
             config_path=config,

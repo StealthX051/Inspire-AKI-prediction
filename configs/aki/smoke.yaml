@@ -1,5 +1,5 @@
 paths:
-  artifacts_dir: artifacts/smoke
+  artifacts_dir: /media/volume/ncs_inspire_data/ncs_aki/artifacts/smoke
 
 runtime:
   profile: balanced

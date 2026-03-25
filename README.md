@@ -12,14 +12,16 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 - Raw refactor predictions are now written as stage partitions plus a deterministic combined `raw_predictions.parquet` view.
 - `inspire-aki report manuscript` is now the report-level command that includes SHAP, rather than requiring a separate SHAP call.
 - The refactor defaults now point at the mounted volume path `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` for raw INSPIRE inputs.
+- The shipped configs now also place refactor artifacts on the mounted volume under `/media/volume/ncs_inspire_data/ncs_aki/artifacts/`.
 - On the current 32-CPU / A100 node, the default `throughput` runtime profile now targets roughly `30` usable CPUs for CPU-bound stages, keeps tensor-backed sequence loaders at `0` workers by default, and leaves GPU-native sequence work on the GPU.
+- On the current 32-CPU / A100 node, the main default config now pins AutoGluon `num_cpus` to `32`, so AutoGluon can use the full host CPU count instead of the runtime-capped generic training-worker budget.
 - On the current 32-CPU / A100 node, the main default config now uses `4096` for both sequence HPO batch size and final sequence training batch size.
 - Sequence HPO now distinguishes true Optuna pruning from patience-based early stopping, so early-stopped trials still complete and contribute best params.
-- `inspire-aki run all` now emits live stage progress to stdout and `artifacts/logs/run_all_events.jsonl`, with dedicated JSONL progress logs for `tune_*` and `train_*`.
+- `inspire-aki run all` now emits live stage progress to stdout and `<artifacts_dir>/logs/run_all_events.jsonl`, with dedicated JSONL progress logs for `tune_*` and `train_*`.
 - Interrupting a direct stage command or `run all` with `Ctrl-C` now exits cleanly with code `130`; overlapped child stages are terminated before the parent exits.
 - In `throughput` mode, `run all` now overlaps `tune sequence` with `train tabular` after `tune tabular` completes.
-- `inspire-aki runtime benchmark` now writes machine-readable summaries under `artifacts/benchmarks/`.
-- `tune tabular` now commits durable per-study artifacts under `artifacts/tuning/tabular_studies/` and resumes matching completed studies automatically.
+- `inspire-aki runtime benchmark` now writes machine-readable summaries under `<artifacts_dir>/benchmarks/`.
+- `tune tabular` now commits durable per-study artifacts under `<artifacts_dir>/tuning/tabular_studies/` and resumes matching completed studies automatically.
 - The low-CPU tabular optimization is intentionally narrow: only `svm` gets new outer concurrency, with regime-level HPO fanout and repeat-level train fanout; `log_reg` stays serial but uses a moderate BLAS cap.
 - AutoGluon tabular training now disables DyStack explicitly to avoid the Ray-subprocess failure mode seen on this host, and skips optional model families when AutoGluon's own compatibility checks fail.
 - `evaluate calibrate` now uses grouped cross-validation on `op_id`, so repeated prediction rows for the same case are kept together during isotonic calibration.
@@ -102,7 +104,7 @@ The fastest real-data smoke test for the refactored CLI is a lightweight profile
 - runs the full preprocessing, training, evaluation, and report path
 - disables HPO entirely
 - trains only one cheap tabular model (`log_reg`) and one cheap sequence model (`lstm_only`)
-- writes outputs to `artifacts/smoke/`
+- writes outputs to `/media/volume/ncs_inspire_data/ncs_aki/artifacts/smoke/`
 
 Run it with:
 
@@ -152,7 +154,7 @@ The wrapper still exists if you want a shell shortcut:
 bash scripts/benchmark_runtime_profiles.sh
 ```
 
-Benchmark summaries are written under `artifacts/benchmarks/`.
+Benchmark summaries are written under the resolved `<artifacts_dir>/benchmarks/` directory for the selected config.
 
 Important:
 
@@ -172,7 +174,7 @@ That profile:
 - runs one Optuna trial per implemented HPO model
 - narrows search spaces to cheap ranges
 - shortens tabular-MLP and sequence HPO training loops
-- writes outputs to `artifacts/smoke_hpo/`
+- writes outputs to `/media/volume/ncs_inspire_data/ncs_aki/artifacts/smoke_hpo/`
 
 Current implemented HPO models are:
 
@@ -267,19 +269,19 @@ Treat this repository as a research archive with a partially modernized pipeline
 11. `inspire-aki report consort|tables|curves|manuscript`
 12. `inspire-aki compat export-legacy`
 
-The refactor writes stage outputs and manifests under `artifacts/` instead of relying on implicit handoffs through `/home/server/...`.
+The refactor writes stage outputs and manifests under the configured artifact root instead of relying on implicit handoffs through `/home/server/...`.
 The training path is idempotent at the artifact level:
 
-- `train tabular` refreshes `artifacts/predictions/raw/tabular.parquet`
-- `train sequence` refreshes `artifacts/predictions/raw/sequence.parquet`
-- both rebuild `artifacts/predictions/raw_predictions.parquet`
+- `train tabular` refreshes `<artifacts_dir>/predictions/raw/tabular.parquet`
+- `train sequence` refreshes `<artifacts_dir>/predictions/raw/sequence.parquet`
+- both rebuild `<artifacts_dir>/predictions/raw_predictions.parquet`
 - if weighting, HPO objective, or other model-selection policy changes, resume from `tune`, not `train`
 
 The refactor also uses internal staging artifacts for the parallel sequence path:
 
-- `artifacts/staging/timeseries_filtered/part-*.parquet`
-- `artifacts/staging/timeseries_cleaned/part-*.parquet`
-- `artifacts/staging/sequence/part-*.pkl`
+- `<artifacts_dir>/staging/timeseries_filtered/part-*.parquet`
+- `<artifacts_dir>/staging/timeseries_cleaned/part-*.parquet`
+- `<artifacts_dir>/staging/sequence/part-*.pkl`
 
 Legacy alias exports remain explicit through `inspire-aki compat export-legacy`; they are not emitted automatically during `run all`.
 
