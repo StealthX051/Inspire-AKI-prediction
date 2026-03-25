@@ -51,7 +51,7 @@ Current behavior to keep in mind:
 
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
-| `train tabular` | `pipelines/train.py:run_train_tabular` | labeled tabular datasets | `datasets/splits/bootstrap_{preop,intraop,combined}.parquet`, `models/tabular/...`, `predictions/raw/tabular.parquet`, `predictions/raw_predictions.parquet` | Trains every model in `models.tabular_enabled` across each tabular regime; tuned params override configured defaults when present; trainable models use explicit inverse-frequency balance weights; in the default optimized policy only `svm` fans out across repeats |
+| `train tabular` | `pipelines/train.py:run_train_tabular` | labeled tabular datasets | `datasets/splits/bootstrap_{preop,intraop,combined}.parquet`, `models/tabular/...`, `predictions/raw/tabular.parquet`, `predictions/raw_predictions.parquet` | Trains every model in `models.tabular_enabled` across each tabular regime; tuned params override configured defaults when present; trainable models use explicit inverse-frequency balance weights; in the default optimized policy only `svm` fans out across repeats; AutoGluon disables DyStack and skips optional model families when AutoGluon's compatibility checks fail |
 | `train sequence` | `pipelines/train.py:run_train_sequence` | `datasets/sequence/lstm_trainable.pkl` | `datasets/splits/bootstrap_sequence.parquet`, `models/sequence/...`, `predictions/raw/sequence.parquet`, `predictions/raw_predictions.parquet` | Trains every model in `models.sequence_enabled`; tuned params override configured defaults when present; sequence early stopping now follows validation `balanced_accuracy` |
 
 ### Evaluate

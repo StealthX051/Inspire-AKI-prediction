@@ -13,7 +13,7 @@ from inspire_aki.cohort.filters import apply_preop_filters
 from inspire_aki.config import load_config
 from inspire_aki.features.intraop_tabular import build_intraop_features, safe_entropy, safe_kurtosis, safe_skew, safe_trend
 from inspire_aki.io.artifacts import ArtifactManager
-from inspire_aki.models.tabular import _AUTOGLUON_SAMPLE_WEIGHT_COLUMN, fit_tabular_model, predict_tabular_bundle
+from inspire_aki.models.tabular import FittedTabularBundle, _AUTOGLUON_SAMPLE_WEIGHT_COLUMN, fit_tabular_model, predict_tabular_bundle
 from inspire_aki.models.weighting import balance_sample_weights, positive_balance_weight
 from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop, run_tabular
 from inspire_aki.pipelines.report import run_manuscript
@@ -160,6 +160,28 @@ def test_tabular_bundle_prediction_emits_no_scaler_feature_name_warning(syntheti
     assert not matching
 
 
+def test_mlp_prediction_accepts_dataframe_input() -> None:
+    torch = pytest.importorskip("torch")
+
+    class FakeMLP(torch.nn.Module):
+        def forward(self, tensor):
+            return torch.zeros((tensor.shape[0], 1), device=tensor.device)
+
+    bundle = FittedTabularBundle(
+        model_key="mlp",
+        feature_names=["feature_a", "feature_b"],
+        scaler=None,
+        model=FakeMLP(),
+        metadata={},
+    )
+    test_df = pd.DataFrame({"feature_a": [0.1, 0.2], "feature_b": [1.0, 2.0]})
+
+    y_pred, y_prob = predict_tabular_bundle(bundle, test_df, target="aki_boolean")
+
+    assert y_pred.tolist() == [1, 1]
+    assert y_prob.tolist() == pytest.approx([0.5, 0.5])
+
+
 def test_autogluon_uses_non_reserved_sample_weight_column(loaded_synthetic_config, tmp_path: Path, monkeypatch) -> None:
     captured: dict[str, object] = {}
 
@@ -170,16 +192,20 @@ def test_autogluon_uses_non_reserved_sample_weight_column(loaded_synthetic_confi
             captured["path"] = path
             captured["sample_weight"] = sample_weight
 
-        def fit(self, *, train_data, time_limit, presets, num_cpus, num_gpus):
+        def fit(self, *, train_data, time_limit, presets, num_cpus, num_gpus, dynamic_stacking, fit_strategy, excluded_model_types=None):
             captured["columns"] = list(train_data.columns)
             captured["train_data"] = train_data.copy()
             captured["time_limit"] = time_limit
             captured["presets"] = presets
             captured["num_cpus"] = num_cpus
             captured["num_gpus"] = num_gpus
+            captured["dynamic_stacking"] = dynamic_stacking
+            captured["fit_strategy"] = fit_strategy
+            captured["excluded_model_types"] = excluded_model_types
             return self
 
     monkeypatch.setitem(sys.modules, "autogluon.tabular", types.SimpleNamespace(TabularPredictor=FakeTabularPredictor))
+    monkeypatch.setattr("inspire_aki.models.tabular._autogluon_model_type_available", lambda *_args: True)
 
     train_df = pd.DataFrame(
         {
@@ -205,12 +231,51 @@ def test_autogluon_uses_non_reserved_sample_weight_column(loaded_synthetic_confi
     assert _AUTOGLUON_SAMPLE_WEIGHT_COLUMN in captured["columns"]
     assert "balance_weight" not in captured["columns"]
     assert captured["num_gpus"] == "auto"
+    assert captured["dynamic_stacking"] is False
+    assert captured["fit_strategy"] == "sequential"
+    assert captured["excluded_model_types"] is None
     train_data = captured["train_data"]
     positive_weights = train_data.loc[train_data["aki_boolean"] == 1, _AUTOGLUON_SAMPLE_WEIGHT_COLUMN]
     negative_weights = train_data.loc[train_data["aki_boolean"] == 0, _AUTOGLUON_SAMPLE_WEIGHT_COLUMN]
     assert positive_weights.nunique() == 1
     assert positive_weights.iloc[0] == pytest.approx(4.0)
     assert negative_weights.eq(1.0).all()
+
+
+def test_autogluon_excludes_missing_optional_model_types(loaded_synthetic_config, tmp_path: Path, monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeTabularPredictor:
+        def __init__(self, *, label, eval_metric, path, sample_weight):
+            return None
+
+        def fit(self, **kwargs):
+            captured.update(kwargs)
+            return self
+
+    monkeypatch.setitem(sys.modules, "autogluon.tabular", types.SimpleNamespace(TabularPredictor=FakeTabularPredictor))
+    availability = {"CAT": False, "FASTAI": False, "XGB": True}
+    monkeypatch.setattr("inspire_aki.models.tabular._autogluon_model_type_available", lambda model_type, *_args: availability[model_type])
+
+    train_df = pd.DataFrame(
+        {
+            "feature_a": [0.1, 0.2, 0.3, 0.4, 0.5],
+            "feature_b": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "aki_boolean": [0, 0, 0, 1, 0],
+        }
+    )
+    fit_tabular_model(
+        model_key="autogluon",
+        train_df=train_df,
+        feature_cols=["feature_a", "feature_b"],
+        target="aki_boolean",
+        params={},
+        config=loaded_synthetic_config,
+        model_output_dir=tmp_path / "autogluon_model",
+        seed=42,
+    )
+
+    assert captured["excluded_model_types"] == ["CAT", "FASTAI"]
 
 
 def test_balance_sample_weights_upweight_positive_class() -> None:

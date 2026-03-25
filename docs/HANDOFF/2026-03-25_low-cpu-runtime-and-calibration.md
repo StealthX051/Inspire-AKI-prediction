@@ -1,6 +1,6 @@
 # Handoff: Low-CPU Runtime, Calibration, and Overnight Sequence Tuning
 
-- Author: Codex
+- Author: Justin
 - Date: 2026-03-25
 - Branch: `justin`
 - Current `HEAD`: `2d3cc8e` `justin signoff 3/24/26 PM improved multithreading performance, fixed calibration data leakage`
@@ -37,6 +37,15 @@ The follow-up worktree changes after that commit are:
 - default sequence batch-size increase in [configs/aki/default.yaml](/home/exouser/Inspire-AKI-prediction/configs/aki/default.yaml):
   - HPO `models.hpo.sequence_batch_size: 4096`
   - final training `models.sequence_defaults.batch_size: 4096`
+- AutoGluon train-path hardening in [src/inspire_aki/models/tabular.py](/home/exouser/Inspire-AKI-prediction/src/inspire_aki/models/tabular.py):
+  - explicitly disables DyStack to avoid the Ray-subprocess failure mode seen on this host
+  - keeps AutoGluon fit strategy sequential
+  - skips optional AutoGluon model families when AutoGluon's own compatibility checks fail instead of crashing
+- environment guardrails:
+  - [requirements.txt](/home/exouser/Inspire-AKI-prediction/requirements.txt), [environment.yml](/home/exouser/Inspire-AKI-prediction/environment.yml), and [pyproject.toml](/home/exouser/Inspire-AKI-prediction/pyproject.toml) now pin `setuptools<81` so AutoGluon optional-family imports keep `pkg_resources` available in new environments
+- tabular MLP prediction hardening in [src/inspire_aki/models/tabular.py](/home/exouser/Inspire-AKI-prediction/src/inspire_aki/models/tabular.py):
+  - converts pandas feature frames to `float32` NumPy arrays before creating Torch tensors
+  - fixes the real-data `ValueError: could not determine the shape of object type 'DataFrame'` crash seen in `train tabular`
 - test refresh for the above behavior in:
   - [tests/test_cli.py](/home/exouser/Inspire-AKI-prediction/tests/test_cli.py)
   - [tests/test_progress_logging.py](/home/exouser/Inspire-AKI-prediction/tests/test_progress_logging.py)
@@ -44,6 +53,7 @@ The follow-up worktree changes after that commit are:
   - [tests/test_config_and_artifacts.py](/home/exouser/Inspire-AKI-prediction/tests/test_config_and_artifacts.py)
   - [tests/test_refactor_contracts.py](/home/exouser/Inspire-AKI-prediction/tests/test_refactor_contracts.py)
   - [tests/test_sequence_runtime.py](/home/exouser/Inspire-AKI-prediction/tests/test_sequence_runtime.py)
+  - [tests/test_smoke_remediation.py](/home/exouser/Inspire-AKI-prediction/tests/test_smoke_remediation.py)
 
 ## Documentation Status
 
@@ -63,12 +73,15 @@ Those docs now explicitly cover:
 - clean interrupt handling for direct stages and `run all`
 - the sequence-HPO fix that distinguishes true Optuna pruning from patience-based early stopping
 - the main default `4096` sequence HPO and final-training batch sizes
+- the AutoGluon train-path fallback that disables DyStack and skips unavailable optional AG model families
+- the `setuptools<81` environment pin needed for AutoGluon optional-family imports in this Python environment
+- the tabular MLP prediction fix that converts pandas frames to `float32` NumPy arrays before Torch inference
 - the fact that evaluation is still non-nested
 
 ## Verification
 
 - Full test suite passed: `.venv/bin/pytest -q`
-- Result: `89 passed`
+- Result: `91 passed`
 
 Residual warnings during tests:
 
@@ -77,39 +90,46 @@ Residual warnings during tests:
 
 ## Current Overnight Run Status
 
-- Active process at handoff time: PID `1456669`
-- Current stage: `inspire-aki tune sequence --config configs/aki/default.yaml`
+- Active process at handoff time: none
+- Last completed heavy stage: `inspire-aki tune sequence --config configs/aki/default.yaml`
 - Current config hash in progress logs: `f88c854b30ac4e11`
 - `tune tabular` already completed successfully earlier in this rerun.
-- The current `tune sequence` rerun started after:
+- The `tune sequence` rerun started after:
   - fixing the Optuna callback crash
   - fixing the patience-vs-pruning semantics bug
   - raising default sequence HPO batch size to `4096`
 - The previous PID `1446153` was stopped because it was running the pre-fix sequence-HPO logic.
-- The current PID `1456669` is the restarted patched process and should now allow patience-stopped trials to complete normally.
-- Latest sampled process state after restart:
-  - roughly `258%` CPU
-  - about `4.95 GiB` RSS
-  - GPU sample around `3.7 GiB / 40 GiB` and `23%` utilization
-- As of the latest log sample, the restarted run has written a new `stage_start` event for PID `1456669` at `2026-03-25T03:31:12.183862+00:00`; at that snapshot it had not yet logged its first completed or pruned trial after restart.
+- The restarted patched PID `1456669` completed sequence tuning successfully at `2026-03-25T03:55:35 UTC`.
+- New completed artifacts from that run:
+  - [artifacts/manifests/tune_sequence.json](/home/exouser/Inspire-AKI-prediction/artifacts/manifests/tune_sequence.json)
+  - [artifacts/tuning/sequence_best_params.json](/home/exouser/Inspire-AKI-prediction/artifacts/tuning/sequence_best_params.json)
+  - [artifacts/tuning/sequence_trials.parquet](/home/exouser/Inspire-AKI-prediction/artifacts/tuning/sequence_trials.parquet)
+- A later `train tabular` rerun got past the old AutoGluon DyStack/Raylet failure and advanced through:
+  - `preop/autogluon/repeat_0/fold_0`
+  - `preop/xgb/repeat_0/fold_0`
+  - `preop/rf/repeat_0/fold_0`
+- That rerun then crashed in tabular MLP prediction with:
+  - `ValueError: could not determine the shape of object type 'DataFrame'`
+- Primary traceback:
+  - [logs/20260325T040831Z_train_tabular.log](/home/exouser/Inspire-AKI-prediction/logs/20260325T040831Z_train_tabular.log)
+- That MLP prediction issue is now patched as described above.
+- One important environment note remains:
+  - the current `.venv` still needs `pip install 'setuptools<81'` before rerunning if you want AutoGluon optional families to import instead of being compatibility-skipped
 
 Useful monitor:
 
 ```bash
-tail -f artifacts/logs/tune_sequence_progress.jsonl
+tail -F artifacts/logs/train_tabular_progress.jsonl artifacts/logs/train_sequence_progress.jsonl artifacts/logs/run_all_events.jsonl
 ```
 
 Latest continuation facts:
 
-- because sequence tuning outputs are still written at stage completion, if this overnight run is interrupted before `tune sequence` finishes, the correct resume point remains:
+- because `tune sequence` now completed successfully and wrote its canonical outputs, the correct resume point is now:
 
 ```bash
-inspire-aki tune sequence --config configs/aki/default.yaml
-```
+source .venv/bin/activate
+pip install 'setuptools<81'
 
-- if `tune sequence` completes, the next continuation point is:
-
-```bash
 inspire-aki train tabular --config configs/aki/default.yaml
 inspire-aki train sequence --config configs/aki/default.yaml
 inspire-aki evaluate calibrate --config configs/aki/default.yaml
@@ -122,18 +142,17 @@ inspire-aki report manuscript --config configs/aki/default.yaml
 ## Resume Commands
 
 - The prior real-data run from earlier today should still be treated as stale because tuning/training policy changed during the workstream.
-- Resume from `tune`, not `train`, unless the current overnight `tune sequence` run finishes successfully.
+- Resume from `train tabular`, not `tune`, because the current sequence tuning outputs are now complete and the next blocker was the patched AutoGluon train path.
 
 Recommended command chain:
 
 ```bash
 source .venv/bin/activate
+pip install 'setuptools<81'
 ts=$(date -u +%Y%m%dT%H%M%SZ)
 mkdir -p logs
 set -euo pipefail
 
-inspire-aki tune tabular --config configs/aki/default.yaml 2>&1 | tee logs/${ts}_tune_tabular.log
-inspire-aki tune sequence --config configs/aki/default.yaml 2>&1 | tee logs/${ts}_tune_sequence.log
 inspire-aki train tabular --config configs/aki/default.yaml 2>&1 | tee logs/${ts}_train_tabular.log
 inspire-aki train sequence --config configs/aki/default.yaml 2>&1 | tee logs/${ts}_train_sequence.log
 inspire-aki evaluate calibrate --config configs/aki/default.yaml 2>&1 | tee logs/${ts}_evaluate_calibrate.log
@@ -145,11 +164,7 @@ inspire-aki report manuscript --config configs/aki/default.yaml 2>&1 | tee logs/
 
 Useful live monitors:
 
-- `tail -f artifacts/logs/tune_tabular_progress.jsonl`
-- `tail -f artifacts/logs/tune_sequence_progress.jsonl`
-- `tail -f artifacts/logs/train_tabular_progress.jsonl`
-- `tail -f artifacts/logs/train_sequence_progress.jsonl`
-- `tail -f artifacts/logs/run_all_events.jsonl`
+- `tail -F artifacts/logs/train_tabular_progress.jsonl artifacts/logs/train_sequence_progress.jsonl artifacts/logs/run_all_events.jsonl`
 
 ## Risks / Notes
 

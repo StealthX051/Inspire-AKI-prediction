@@ -21,6 +21,7 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 - `inspire-aki runtime benchmark` now writes machine-readable summaries under `artifacts/benchmarks/`.
 - `tune tabular` now commits durable per-study artifacts under `artifacts/tuning/tabular_studies/` and resumes matching completed studies automatically.
 - The low-CPU tabular optimization is intentionally narrow: only `svm` gets new outer concurrency, with regime-level HPO fanout and repeat-level train fanout; `log_reg` stays serial but uses a moderate BLAS cap.
+- AutoGluon tabular training now disables DyStack explicitly to avoid the Ray-subprocess failure mode seen on this host, and skips optional model families when AutoGluon's own compatibility checks fail.
 - `evaluate calibrate` now uses grouped cross-validation on `op_id`, so repeated prediction rows for the same case are kept together during isotonic calibration.
 - The refactor now excludes operations with `op_len <= 0` upstream, which is an intentional cleanup relative to the legacy scripts.
 - The refactor now treats infinite intraop feature values as invalid and fails the stage instead of silently carrying them forward.
@@ -30,7 +31,7 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 As of March 24, 2026, the refactor is in a strong but not fully validated state.
 
 - The synthetic refactor test suite is green:
-  - `pytest -q` currently passes with `89` tests.
+  - `pytest -q` currently passes with `91` tests.
 - The real-data refactor preprocessing path has been exercised on the mounted INSPIRE volume through:
   - `preprocess preop`
   - `preprocess intraop`
@@ -88,7 +89,7 @@ sudo apt-get update
 sudo apt-get install -y python3-venv graphviz
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip setuptools wheel
+python -m pip install --upgrade pip 'setuptools<81' wheel
 pip install -r requirements.txt
 pip install -e .
 ```

@@ -2,6 +2,7 @@
 # This file mirrors the pip-managed portion of that environment.
 
 typer>=0.12,<1.0
+setuptools>=69,<81
 PyYAML>=6.0,<7.0
 tabulate>=0.9,<1.0
 autogluon.tabular[all]==1.2

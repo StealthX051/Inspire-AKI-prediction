@@ -5,6 +5,7 @@ dependencies:
   - python=3.10.12
   - pip
   - graphviz
+  - setuptools<81
   - pip:
       - -r requirements.txt
       - -e .

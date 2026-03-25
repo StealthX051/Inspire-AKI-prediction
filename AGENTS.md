@@ -40,7 +40,7 @@ This file is the short agent-facing operating contract for `Inspire-AKI-predicti
 
 As of March 25, 2026:
 
-- the synthetic refactor suite passes with `89` tests
+- the synthetic refactor suite passes with `90` tests
 - the refactor now has:
   - live `run all` and stage progress logging
   - grouped calibration CV on `op_id`, which fixes repeated-row leakage during calibration

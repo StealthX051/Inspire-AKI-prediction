@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import importlib
+import importlib.util
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -118,6 +120,40 @@ def selected_tabular_dataset_regimes() -> list[str]:
 def _autogluon_num_gpus(config: dict[str, Any]) -> int | str:
     num_gpus = config["models"]["autogluon"].get("num_gpus", "auto")
     return "auto" if num_gpus == "auto" else int(float(num_gpus))
+
+
+def _module_available(module_name: str) -> bool:
+    return importlib.util.find_spec(module_name) is not None
+
+
+def _autogluon_model_type_available(model_type: str, module_name: str, checker_name: str) -> bool:
+    if not _module_available(module_name):
+        return False
+    try:
+        try_import_module = importlib.import_module("autogluon.common.utils.try_import")
+        getattr(try_import_module, checker_name)()
+    except (ImportError, ModuleNotFoundError, AttributeError):
+        return False
+    return True
+
+
+def _autogluon_excluded_model_types() -> list[str]:
+    excluded: list[str] = []
+    optional_model_modules = {
+        "CAT": ("catboost", "try_import_catboost"),
+        "FASTAI": ("fastai", "try_import_fastai"),
+        "XGB": ("xgboost", "try_import_xgboost"),
+    }
+    for model_type, (module_name, checker_name) in optional_model_modules.items():
+        if not _autogluon_model_type_available(model_type, module_name, checker_name):
+            excluded.append(model_type)
+    return excluded
+
+
+def _as_float32_array(frame: pd.DataFrame | np.ndarray) -> np.ndarray:
+    if isinstance(frame, pd.DataFrame):
+        return frame.to_numpy(dtype=np.float32, copy=False)
+    return np.asarray(frame, dtype=np.float32)
 
 
 if nn is not None:
@@ -322,19 +358,26 @@ def fit_tabular_model(
         train_ag = train_df[feature_cols + [target]].copy()
         train_ag[_AUTOGLUON_SAMPLE_WEIGHT_COLUMN] = balance_weight_series(train_ag[target].astype(int))
         ag_cfg = config["models"]["autogluon"]
+        fit_kwargs: dict[str, Any] = {
+            "train_data": train_ag,
+            "time_limit": ag_cfg["time_limit_seconds"],
+            "presets": ag_cfg["presets"],
+            "num_cpus": training_workers if ag_cfg.get("num_cpus", "auto") == "auto" else ag_cfg["num_cpus"],
+            "num_gpus": _autogluon_num_gpus(config),
+            # DyStack launches a Ray sub-fit and has been the unstable failure point on this host.
+            "dynamic_stacking": False,
+            "fit_strategy": "sequential",
+        }
+        excluded_model_types = _autogluon_excluded_model_types()
+        if excluded_model_types:
+            fit_kwargs["excluded_model_types"] = excluded_model_types
         model = TabularPredictor(
             label=target,
             eval_metric="balanced_accuracy",
             path=str(model_output_dir),
             sample_weight=_AUTOGLUON_SAMPLE_WEIGHT_COLUMN,
         )
-        model.fit(
-            train_data=train_ag,
-            time_limit=ag_cfg["time_limit_seconds"],
-            presets=ag_cfg["presets"],
-            num_cpus=training_workers if ag_cfg.get("num_cpus", "auto") == "auto" else ag_cfg["num_cpus"],
-            num_gpus=_autogluon_num_gpus(config),
-        )
+        model.fit(**fit_kwargs)
     elif model_key == "asa_rule":
         model = None
     else:
@@ -390,7 +433,7 @@ def predict_tabular_bundle(
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         bundle.model.eval()
         with torch.no_grad():
-            x_test_tensor = torch.FloatTensor(x_test).to(device)
+            x_test_tensor = torch.from_numpy(_as_float32_array(x_test)).to(device)
             y_prob = torch.sigmoid(bundle.model(x_test_tensor)).cpu().numpy().flatten()
         y_pred = (y_prob >= 0.5).astype(int)
     elif bundle.model_key == "asa_rule":
