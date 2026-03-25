@@ -19,6 +19,7 @@ Current behavior to keep in mind:
 - `run all` executes preprocessing, tuning, training, evaluation, and `report manuscript`
 - `run all` now emits immediate stage start/end lines plus `artifacts/logs/run_all_events.jsonl`
 - long-running `tune_*` and `train_*` stages now append JSONL progress logs under `artifacts/logs/`
+- interrupting a direct stage command or `run all` with `Ctrl-C` now exits cleanly with code `130`; overlapped child stages are terminated before the parent exits
 - in `runtime.orchestration.mode: overlap`, `run all` overlaps `tune sequence` with `train tabular` after `tune tabular`
 - `run all` does not call `compat export-legacy`
 - SHAP can be run explicitly with `explain shap`, but `report manuscript` also includes SHAP when configured
@@ -44,7 +45,7 @@ Current behavior to keep in mind:
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
 | `tune tabular` | `pipelines/tune.py:run_tune_tabular` | labeled preop, intraop, and combined tabular datasets | `datasets/splits/hpo_{preop,intraop,combined}.parquet`, `tuning/tabular_best_params.json`, `tuning/tabular_trials.parquet`, `tuning/tabular_studies/*` | Searches only the models enabled in `models.tabular_hpo_enabled`; current HPO objective is validation `balanced_accuracy`; matching completed per-study outputs resume automatically |
-| `tune sequence` | `pipelines/tune.py:run_tune_sequence` | `datasets/sequence/lstm_trainable.pkl` | `datasets/splits/hpo_sequence.parquet`, `tuning/sequence_best_params.json`, `tuning/sequence_trials.parquet` | Searches only the models enabled in `models.sequence_hpo_enabled`; current HPO objective is validation `balanced_accuracy` |
+| `tune sequence` | `pipelines/tune.py:run_tune_sequence` | `datasets/sequence/lstm_trainable.pkl` | `datasets/splits/hpo_sequence.parquet`, `tuning/sequence_best_params.json`, `tuning/sequence_trials.parquet` | Searches only the models enabled in `models.sequence_hpo_enabled`; current HPO objective is validation `balanced_accuracy`; patience-based early stopping completes a trial, while only true Optuna pruning marks it `PRUNED` |
 
 ### Train
 
@@ -112,6 +113,7 @@ inspire-aki report ...
 - `configs/aki/default.yaml` now defaults to `runtime.profile: throughput`
 - `configs/aki/default.yaml` now defaults to `runtime.orchestration.mode: overlap`
 - `configs/aki/smoke.yaml` and `configs/aki/smoke_hpo.yaml` pin `runtime.orchestration.mode: serial`
-- `models.hpo.sequence_batch_size` controls the sequence-HPO batch size; the main default is `1024`
+- `models.hpo.sequence_batch_size` controls the sequence-HPO batch size; the main default is `4096`
+- `models.sequence_defaults.batch_size` controls final sequence training batch size; the main default is `4096`
 - if the model-selection policy changes, resume the pipeline from `tune ...` rather than `train ...`
 - the default low-CPU execution policy is intentionally narrow: `svm` gets outer concurrency, while `log_reg` stays serial with a moderate BLAS cap

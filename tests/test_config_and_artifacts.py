@@ -38,7 +38,7 @@ def test_default_config_validates() -> None:
     assert config["runtime"]["profile"] == "throughput"
     assert config["runtime"]["orchestration"]["mode"] == "overlap"
     assert config["runtime"]["progress_interval_seconds"] == 60
-    assert config["models"]["hpo"]["sequence_batch_size"] == 1024
+    assert config["models"]["hpo"]["sequence_batch_size"] == 4096
     assert config["models"]["autogluon"]["num_gpus"] == "auto"
 
 

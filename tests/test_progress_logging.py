@@ -97,6 +97,31 @@ def test_run_all_failure_writes_stage_error_event(monkeypatch, synthetic_config:
     assert events[-1]["status"] == "error"
 
 
+def test_run_all_keyboard_interrupt_writes_aborted_events(monkeypatch, synthetic_config: Path) -> None:
+    runner = CliRunner()
+    config = load_config(synthetic_config)
+
+    def _interrupt(_cfg):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(cli_module, "_cfg", lambda _path: config)
+    monkeypatch.setattr(cli_module, "run_preop", _interrupt)
+
+    result = runner.invoke(app, ["run", "all", "--config", str(synthetic_config)])
+
+    assert result.exit_code == 130
+    events_path = synthetic_config.parent / "artifacts" / "logs" / "run_all_events.jsonl"
+    events = _read_jsonl(events_path)
+    assert any(
+        event["event_type"] == "stage_error"
+        and event["stage"] == "preprocess_preop"
+        and event["status"] == "aborted"
+        for event in events
+    )
+    assert events[-1]["event_type"] == "run_end"
+    assert events[-1]["status"] == "aborted"
+
+
 def test_tune_tabular_writes_trial_progress_log(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_tabular_inputs(synthetic_config)
     config["models"]["tabular_hpo_enabled"] = ["log_reg"]

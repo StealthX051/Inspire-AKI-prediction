@@ -3,13 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from typer.testing import CliRunner
 
 import inspire_aki.cli as cli_module
 import inspire_aki.orchestration as orchestration_module
 from inspire_aki.cli import app
 from inspire_aki.config import load_config
-from inspire_aki.orchestration import StageSubprocessResult, run_overlap_stages
+from inspire_aki.orchestration import OverlapInterruptedError, StageSubprocessResult, run_overlap_stages
 
 
 class _FakeProcess:
@@ -85,6 +86,42 @@ def test_run_overlap_stages_terminates_remaining_stage_on_failure(monkeypatch, t
     assert results["tune_sequence"].returncode == 1
     assert results["train_tabular"].returncode == -15
     assert terminated == ["train_tabular"]
+
+
+def test_run_overlap_stages_interrupt_terminates_all_running_stages(monkeypatch, tmp_path: Path) -> None:
+    terminated: list[str] = []
+
+    def fake_launch(stage: str, *, config_path: str | None, log_path: Path):
+        process = _FakeProcess([None, None], 0)
+        return SimpleNamespace(stage=stage, process=process, log_path=log_path, log_handle=None, started_at=0.0)
+
+    def fake_finalize(handle):
+        return StageSubprocessResult(
+            stage=handle.stage,
+            returncode=handle.process.wait(),
+            wall_time_seconds=1.0,
+            log_path=handle.log_path,
+            payload={"stage": handle.stage},
+        )
+
+    def fake_terminate(handle):
+        terminated.append(handle.stage)
+        handle.process._wait_return = -15
+
+    def fake_sleep(_seconds: float) -> None:
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(orchestration_module, "launch_stage_subprocess", fake_launch)
+    monkeypatch.setattr(orchestration_module, "finalize_stage_subprocess", fake_finalize)
+    monkeypatch.setattr(orchestration_module, "terminate_stage_subprocess", fake_terminate)
+    monkeypatch.setattr(orchestration_module, "sleep", fake_sleep)
+
+    with pytest.raises(OverlapInterruptedError) as exc_info:
+        run_overlap_stages(["tune_sequence", "train_tabular"], config_path="config.yaml", log_dir=tmp_path)
+
+    assert sorted(terminated) == ["train_tabular", "tune_sequence"]
+    assert exc_info.value.results["tune_sequence"].returncode == -15
+    assert exc_info.value.results["train_tabular"].returncode == -15
 
 
 def test_run_all_overlap_executes_parallel_branch_before_tail(monkeypatch, synthetic_config: Path) -> None:

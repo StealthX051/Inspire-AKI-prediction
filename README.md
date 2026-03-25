@@ -13,7 +13,10 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 - `inspire-aki report manuscript` is now the report-level command that includes SHAP, rather than requiring a separate SHAP call.
 - The refactor defaults now point at the mounted volume path `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` for raw INSPIRE inputs.
 - On the current 32-CPU / A100 node, the default `throughput` runtime profile now targets roughly `30` usable CPUs for CPU-bound stages, keeps tensor-backed sequence loaders at `0` workers by default, and leaves GPU-native sequence work on the GPU.
+- On the current 32-CPU / A100 node, the main default config now uses `4096` for both sequence HPO batch size and final sequence training batch size.
+- Sequence HPO now distinguishes true Optuna pruning from patience-based early stopping, so early-stopped trials still complete and contribute best params.
 - `inspire-aki run all` now emits live stage progress to stdout and `artifacts/logs/run_all_events.jsonl`, with dedicated JSONL progress logs for `tune_*` and `train_*`.
+- Interrupting a direct stage command or `run all` with `Ctrl-C` now exits cleanly with code `130`; overlapped child stages are terminated before the parent exits.
 - In `throughput` mode, `run all` now overlaps `tune sequence` with `train tabular` after `tune tabular` completes.
 - `inspire-aki runtime benchmark` now writes machine-readable summaries under `artifacts/benchmarks/`.
 - `tune tabular` now commits durable per-study artifacts under `artifacts/tuning/tabular_studies/` and resumes matching completed studies automatically.
@@ -27,7 +30,7 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 As of March 24, 2026, the refactor is in a strong but not fully validated state.
 
 - The synthetic refactor test suite is green:
-  - `pytest -q` currently passes with `82` tests.
+  - `pytest -q` currently passes with `89` tests.
 - The real-data refactor preprocessing path has been exercised on the mounted INSPIRE volume through:
   - `preprocess preop`
   - `preprocess intraop`

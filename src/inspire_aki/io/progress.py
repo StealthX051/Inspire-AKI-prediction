@@ -96,15 +96,17 @@ class ProgressLogger:
         stage: str,
         *,
         error: str,
+        status: str = "error",
         wall_time_seconds: float | None = None,
         stdout_message: str | None = None,
         **payload: Any,
     ) -> dict[str, Any]:
-        default_stdout = stdout_message or f"[{_timestamp_utc()}] ERROR {stage}: {error}"
+        label = "ABORT" if status == "aborted" else "ERROR"
+        default_stdout = stdout_message or f"[{_timestamp_utc()}] {label} {stage}: {error}"
         return self.emit_event(
             event_type="stage_error",
             stage=stage,
-            status="error",
+            status=status,
             message=error,
             wall_time_seconds=wall_time_seconds,
             stdout_message=default_stdout,

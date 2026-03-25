@@ -122,6 +122,177 @@ def test_sequence_hpo_uses_configured_batch_size(monkeypatch, synthetic_config) 
     assert captured_batch_sizes[:2] == [123, 123]
 
 
+def test_sequence_hpo_progress_callback_handles_pruned_first_trial(monkeypatch, synthetic_config) -> None:
+    config = _prepare_sequence_inputs(synthetic_config)
+    config["models"]["sequence_hpo_enabled"] = ["lstm_only"]
+    config["models"]["hpo"] = {"n_trials": 2, "tabular_mlp_epochs": 1, "sequence_epochs": 1, "sequence_patience": 1}
+
+    artifacts = ArtifactManager(config)
+    sequence_df = artifacts.read_pickle("datasets", "sequence", "lstm_trainable.pkl")
+    manifest = build_hpo_split_manifest(
+        sequence_df,
+        target=config["models"]["target"],
+        dataset_regime="sequence",
+        population_id="sequence_common",
+        random_state=config["splits"]["random_state"],
+        holdout_fraction=config["splits"]["holdout_fraction"],
+        validation_fraction_within_train=config["splits"]["hpo_validation_fraction_within_train"],
+    )
+    progress_events: list[dict[str, object]] = []
+
+    class _FakeLogging:
+        WARNING = "WARNING"
+
+        @staticmethod
+        def set_verbosity(_value) -> None:
+            return None
+
+    class FakeStudy:
+        def __init__(self) -> None:
+            self.best_params = {"lr": 0.001, "dropout_rate": 0.2, "lstm_hidden_size": 8, "lstm_num_layers": 1}
+            self._best_value: float | None = None
+            self.trials: list[types.SimpleNamespace] = []
+
+        @property
+        def best_value(self):
+            if self._best_value is None:
+                raise ValueError("No trials are completed yet.")
+            return self._best_value
+
+        def optimize(self, _objective, *, n_trials: int, show_progress_bar: bool, callbacks=None) -> None:
+            assert n_trials == 2
+            assert show_progress_bar is False
+            pruned = types.SimpleNamespace(number=0, value=None, params={}, state=types.SimpleNamespace(name="PRUNED"))
+            self.trials.append(pruned)
+            for callback in callbacks or []:
+                callback(self, pruned)
+            complete = types.SimpleNamespace(number=1, value=0.5, params={}, state=types.SimpleNamespace(name="COMPLETE"))
+            self._best_value = 0.5
+            self.trials.append(complete)
+            for callback in callbacks or []:
+                callback(self, complete)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "optuna",
+        types.SimpleNamespace(logging=_FakeLogging(), create_study=lambda **_kwargs: FakeStudy()),
+    )
+
+    results, trials_df = tune_sequence_dataset(
+        sequence_df,
+        manifest,
+        config,
+        progress_callback=lambda **payload: progress_events.append(payload),
+    )
+
+    assert results["lstm_only"]["lr"] == 0.001
+    assert progress_events[0]["state"] == "PRUNED"
+    assert progress_events[0]["best_value"] is None
+    assert progress_events[1]["state"] == "COMPLETE"
+    assert progress_events[1]["best_value"] == pytest.approx(0.5)
+    assert set(trials_df["state"]) == {"PRUNED", "COMPLETE"}
+
+
+def test_sequence_hpo_patience_early_stop_completes_trial(monkeypatch, synthetic_config) -> None:
+    torch = pytest.importorskip("torch")
+
+    config = _prepare_sequence_inputs(synthetic_config)
+    config["models"]["sequence_hpo_enabled"] = ["lstm_only"]
+    config["models"]["hpo"] = {
+        "n_trials": 1,
+        "tabular_mlp_epochs": 1,
+        "sequence_epochs": 3,
+        "sequence_patience": 1,
+        "sequence_batch_size": 16,
+    }
+
+    artifacts = ArtifactManager(config)
+    sequence_df = artifacts.read_pickle("datasets", "sequence", "lstm_trainable.pkl")
+    manifest = build_hpo_split_manifest(
+        sequence_df,
+        target=config["models"]["target"],
+        dataset_regime="sequence",
+        population_id="sequence_common",
+        random_state=config["splits"]["random_state"],
+        holdout_fraction=config["splits"]["holdout_fraction"],
+        validation_fraction_within_train=config["splits"]["hpo_validation_fraction_within_train"],
+    )
+
+    progress_events: list[dict[str, object]] = []
+
+    class _FakeLogging:
+        WARNING = "WARNING"
+
+        @staticmethod
+        def set_verbosity(_value) -> None:
+            return None
+
+    class _FakeTrial:
+        number = 0
+        params: dict[str, object] = {}
+        value: float | None = None
+        state = types.SimpleNamespace(name="COMPLETE")
+
+        def suggest_float(self, name, low, high, log=False):
+            value = low
+            self.params[name] = value
+            return value
+
+        def suggest_int(self, name, low, high):
+            value = low
+            self.params[name] = value
+            return value
+
+        def report(self, _value, _step) -> None:
+            return None
+
+        def should_prune(self) -> bool:
+            return False
+
+    class _FakeStudy:
+        def __init__(self) -> None:
+            self.trials: list[types.SimpleNamespace] = []
+            self.best_params: dict[str, object] = {}
+            self._best_value: float | None = None
+
+        @property
+        def best_value(self):
+            if self._best_value is None:
+                raise ValueError("No trials are completed yet.")
+            return self._best_value
+
+        def optimize(self, objective, *, n_trials: int, show_progress_bar: bool, callbacks=None) -> None:
+            assert n_trials == 1
+            assert show_progress_bar is False
+            trial = _FakeTrial()
+            trial.value = float(objective(trial))
+            self.best_params = dict(trial.params)
+            self._best_value = trial.value
+            self.trials.append(trial)
+            for callback in callbacks or []:
+                callback(self, trial)
+
+    monkeypatch.setattr("inspire_aki.models.hpo.safe_balanced_accuracy", lambda _y_true, _y_pred: 0.5)
+    monkeypatch.setitem(
+        sys.modules,
+        "optuna",
+        types.SimpleNamespace(logging=_FakeLogging(), create_study=lambda **_kwargs: _FakeStudy(), exceptions=types.SimpleNamespace(TrialPruned=RuntimeError)),
+    )
+
+    results, trials_df = tune_sequence_dataset(
+        sequence_df,
+        manifest,
+        config,
+        progress_callback=lambda **payload: progress_events.append(payload),
+    )
+
+    assert results["lstm_only"]["lr"] == pytest.approx(config["models"]["sequence_hpo_search_spaces"]["lstm_only"]["lr"][0])
+    assert not trials_df.empty
+    assert list(trials_df["state"]) == ["COMPLETE"]
+    assert progress_events[-1]["state"] == "COMPLETE"
+    assert progress_events[-1]["best_value"] == pytest.approx(0.5)
+
+
 def test_enable_sequence_cuda_benchmark_sets_cudnn_flag(monkeypatch) -> None:
     fake_torch = types.SimpleNamespace(backends=types.SimpleNamespace(cudnn=types.SimpleNamespace(benchmark=False)))
     monkeypatch.setattr(sequence_module, "torch", fake_torch)

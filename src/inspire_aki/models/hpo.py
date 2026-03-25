@@ -44,6 +44,15 @@ def _has_completed_trials(study: Any) -> bool:
     return any(_trial_state_name(getattr(trial, "state", None)) == "COMPLETE" for trial in getattr(study, "trials", []))
 
 
+def _safe_study_best_value(study: Any) -> float | None:
+    if not _has_completed_trials(study):
+        return None
+    try:
+        return study.best_value
+    except (AttributeError, RuntimeError, ValueError):
+        return None
+
+
 def _stable_study_seed(config: dict, dataset_regime: str, model_key: str) -> int:
     seed_input = f"{dataset_regime}::{model_key}".encode("utf-8")
     stable_hash = int(hashlib.sha256(seed_input).hexdigest()[:8], 16)
@@ -218,7 +227,7 @@ def tune_tabular_model(
             trial_number=int(trial.number),
             state=_trial_state_name(getattr(trial, "state", None)),
             value=trial.value,
-            best_value=getattr(study, "best_value", None),
+            best_value=_safe_study_best_value(study),
             elapsed_seconds=perf_counter() - model_start,
         )
 
@@ -403,8 +412,10 @@ def tune_sequence_dataset(
                 else:
                     patience_counter += 1
                 trial.report(best_val_metric, epoch)
-                if trial.should_prune() or patience_counter >= int(hpo_cfg.get("sequence_patience", 15)):
+                if trial.should_prune():
                     raise optuna.exceptions.TrialPruned()
+                if patience_counter >= int(hpo_cfg.get("sequence_patience", 15)):
+                    return best_val_metric
             return best_val_metric
 
         return objective
@@ -422,7 +433,7 @@ def tune_sequence_dataset(
                 trial_number=int(trial.number),
                 state=_trial_state_name(getattr(trial, "state", None)),
                 value=trial.value,
-                best_value=getattr(study, "best_value", None),
+                best_value=_safe_study_best_value(study),
                 elapsed_seconds=perf_counter() - model_start,
             )
 

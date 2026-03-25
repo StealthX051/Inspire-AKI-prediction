@@ -36,6 +36,12 @@ class StageSubprocessResult:
     payload: dict[str, Any]
 
 
+class OverlapInterruptedError(KeyboardInterrupt):
+    def __init__(self, results: dict[str, StageSubprocessResult]) -> None:
+        super().__init__("Overlapped subprocess stages interrupted.")
+        self.results = results
+
+
 def _stage_command(stage: str, config_path: str | None) -> list[str]:
     if stage not in _STAGE_COMMANDS:
         raise ValueError(f"Unsupported subprocess stage '{stage}'.")
@@ -108,20 +114,26 @@ def run_overlap_stages(stages: list[str], *, config_path: str | None, log_dir: P
         for stage in stages
     }
     results: dict[str, StageSubprocessResult] = {}
-
-    while handles:
-        completed = [stage for stage, handle in handles.items() if handle.process.poll() is not None]
-        if not completed:
-            sleep(0.1)
-            continue
-        for stage in completed:
-            handle = handles.pop(stage)
-            result = finalize_stage_subprocess(handle)
-            results[stage] = result
-            if result.returncode != 0:
-                for remaining_stage, remaining_handle in list(handles.items()):
-                    terminate_stage_subprocess(remaining_handle)
-                    results[remaining_stage] = finalize_stage_subprocess(remaining_handle)
-                    handles.pop(remaining_stage)
-                return results
-    return results
+    try:
+        while handles:
+            completed = [stage for stage, handle in handles.items() if handle.process.poll() is not None]
+            if not completed:
+                sleep(0.1)
+                continue
+            for stage in completed:
+                handle = handles.pop(stage)
+                result = finalize_stage_subprocess(handle)
+                results[stage] = result
+                if result.returncode != 0:
+                    for remaining_stage, remaining_handle in list(handles.items()):
+                        terminate_stage_subprocess(remaining_handle)
+                        results[remaining_stage] = finalize_stage_subprocess(remaining_handle)
+                        handles.pop(remaining_stage)
+                    return results
+        return results
+    except KeyboardInterrupt as exc:
+        for remaining_stage, remaining_handle in list(handles.items()):
+            terminate_stage_subprocess(remaining_handle)
+            results[remaining_stage] = finalize_stage_subprocess(remaining_handle)
+            handles.pop(remaining_stage)
+        raise OverlapInterruptedError(results) from exc

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+import inspire_aki.cli as cli_module
 from inspire_aki.cli import app
 
 
@@ -18,3 +19,16 @@ def test_run_all_smoke(synthetic_config: Path) -> None:
     assert (artifacts_dir / "reports" / "tables" / "performance_table.csv").exists()
     assert (artifacts_dir / "reports" / "figures" / "roc_curves_preop.png").exists()
 
+
+def test_stage_command_keyboard_interrupt_exits_cleanly(monkeypatch, synthetic_config: Path) -> None:
+    runner = CliRunner()
+
+    def _interrupt(_cfg):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(cli_module, "run_tune_sequence", _interrupt)
+
+    result = runner.invoke(app, ["tune", "sequence", "--config", str(synthetic_config)])
+
+    assert result.exit_code == 130
+    assert "Interrupted tune_sequence; exiting cleanly (130)." in result.output

@@ -176,7 +176,7 @@ models:
     tabular_mlp_epochs: 100
     sequence_epochs: 150
     sequence_patience: 15
-    sequence_batch_size: 1024
+    sequence_batch_size: 4096
   autogluon:
     time_limit_seconds: 600
     presets: best_quality
@@ -218,7 +218,7 @@ models:
   sequence_defaults:
     learning_rate: 0.001
     epochs: 1000
-    batch_size: 1024
+    batch_size: 4096
     patience: 20
     es_check_interval: 5
     lr_scheduler_patience: 7

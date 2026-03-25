@@ -21,7 +21,7 @@ from inspire_aki.pipelines.train import run_train_sequence, run_train_tabular
 from inspire_aki.pipelines.tune import run_tune_sequence, run_tune_tabular
 from inspire_aki.reporting.manuscript import generate_manuscript_outputs
 from inspire_aki.datasets.splits import build_hpo_split_manifest
-from inspire_aki.models.hpo import _has_completed_trials, tune_sequence_dataset, tune_tabular_dataset
+from inspire_aki.models.hpo import _has_completed_trials, _safe_study_best_value, tune_sequence_dataset, tune_tabular_dataset
 from inspire_aki.models.tabular import tabular_execution_policy
 from inspire_aki.models.weighting import safe_balanced_accuracy
 
@@ -426,6 +426,18 @@ def test_has_completed_trials_accepts_enum_like_state_name() -> None:
     assert _has_completed_trials(study) is True
 
 
+def test_safe_study_best_value_returns_none_without_completed_trials() -> None:
+    class FakeStudy:
+        def __init__(self) -> None:
+            self.trials = [types.SimpleNamespace(state=types.SimpleNamespace(name="PRUNED"))]
+
+        @property
+        def best_value(self):
+            raise ValueError("No trials are completed yet.")
+
+    assert _safe_study_best_value(FakeStudy()) is None
+
+
 def test_tabular_hpo_uses_configured_trial_count(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_training_inputs(synthetic_config)
     config["models"]["tabular_hpo_enabled"] = ["log_reg", "xgb", "rf", "svm", "mlp", "knn"]
@@ -453,6 +465,74 @@ def test_tabular_hpo_uses_configured_trial_count(monkeypatch, synthetic_config: 
     assert trials_df["model_key"].tolist() == ["log_reg", "xgb", "rf", "svm", "mlp", "knn"]
     assert set(trials_df["state"]) == {"COMPLETE"}
     assert captured_trials == [3, 3, 3, 3, 3, 3]
+
+
+def test_tabular_hpo_progress_callback_handles_pruned_first_trial(monkeypatch, synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config)
+    config["models"]["tabular_hpo_enabled"] = ["svm"]
+    config["models"]["hpo"] = {"n_trials": 2, "tabular_mlp_epochs": 1, "sequence_epochs": 1, "sequence_patience": 1}
+
+    artifacts = ArtifactManager(config)
+    dataset_df = pd.read_csv(artifacts.paths.artifact_path("datasets", "tabular", "tabular_preop_labeled.csv"))
+    manifest = build_hpo_split_manifest(
+        dataset_df,
+        target=config["models"]["target"],
+        dataset_regime="preop",
+        population_id="preop",
+        random_state=config["splits"]["random_state"],
+        holdout_fraction=config["splits"]["holdout_fraction"],
+        validation_fraction_within_train=config["splits"]["hpo_validation_fraction_within_train"],
+    )
+    progress_events: list[dict[str, object]] = []
+
+    class _FakeLogging:
+        WARNING = "WARNING"
+
+        @staticmethod
+        def set_verbosity(_value) -> None:
+            return None
+
+    class FakeStudy:
+        def __init__(self) -> None:
+            self.best_params = {"C": 1.0}
+            self._best_value: float | None = None
+            self.trials: list[types.SimpleNamespace] = []
+
+        @property
+        def best_value(self):
+            if self._best_value is None:
+                raise ValueError("No trials are completed yet.")
+            return self._best_value
+
+        def optimize(self, _objective, *, n_trials: int, show_progress_bar: bool, callbacks=None) -> None:
+            assert n_trials == 2
+            assert show_progress_bar is False
+            pruned = types.SimpleNamespace(number=0, value=None, params={"C": 0.5}, state=types.SimpleNamespace(name="PRUNED"))
+            self.trials.append(pruned)
+            for callback in callbacks or []:
+                callback(self, pruned)
+            complete = types.SimpleNamespace(number=1, value=0.8, params={"C": 1.0}, state=types.SimpleNamespace(name="COMPLETE"))
+            self._best_value = 0.8
+            self.trials.append(complete)
+            for callback in callbacks or []:
+                callback(self, complete)
+
+    monkeypatch.setitem(sys.modules, "optuna", types.SimpleNamespace(logging=_FakeLogging(), create_study=lambda **_kwargs: FakeStudy()))
+
+    results, trials_df = tune_tabular_dataset(
+        dataset_df,
+        "preop",
+        manifest,
+        config,
+        progress_callback=lambda **payload: progress_events.append(payload),
+    )
+
+    assert results == {"svm": {"C": 1.0}}
+    assert progress_events[0]["state"] == "PRUNED"
+    assert progress_events[0]["best_value"] is None
+    assert progress_events[1]["state"] == "COMPLETE"
+    assert progress_events[1]["best_value"] == pytest.approx(0.8)
+    assert set(trials_df["state"]) == {"PRUNED", "COMPLETE"}
 
 
 def test_tabular_hpo_log_reg_uses_balanced_accuracy_and_balance_weights(monkeypatch, synthetic_config: Path) -> None:
