@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from itertools import product
 
 import numpy as np
@@ -8,6 +9,14 @@ from joblib import Parallel, delayed
 from scipy.stats import norm
 
 from inspire_aki.runtime import build_stage_runtime_plan
+
+
+@dataclass
+class DeLongResult:
+    matrix: pd.DataFrame
+    long: pd.DataFrame
+    corrected_matrix: pd.DataFrame
+    corrected_long: pd.DataFrame
 
 
 def _structural_components(y_true: np.ndarray, scores: np.ndarray) -> tuple[float, np.ndarray, np.ndarray]:
@@ -47,7 +56,37 @@ def delong_test(y_true: np.ndarray, scores1: np.ndarray, scores2: np.ndarray) ->
     return auc1, auc2, float(p_value)
 
 
-def delong_comparison_table(predictions_df: pd.DataFrame, config: dict | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _benjamini_hochberg(p_values: np.ndarray) -> np.ndarray:
+    if p_values.size == 0:
+        return p_values
+    order = np.argsort(p_values)
+    ordered = p_values[order]
+    n = float(len(ordered))
+    adjusted = np.empty_like(ordered, dtype=float)
+    running_min = 1.0
+    for idx in range(len(ordered) - 1, -1, -1):
+        rank = idx + 1
+        candidate = ordered[idx] * n / rank
+        running_min = min(running_min, candidate)
+        adjusted[idx] = running_min
+    inverse = np.empty_like(order)
+    inverse[order] = np.arange(len(order))
+    return np.clip(adjusted[inverse], 0.0, 1.0)
+
+
+def _apply_fdr_correction(matrix: pd.DataFrame, long_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if long_df.empty:
+        return matrix.copy(), long_df.copy()
+    corrected_long = long_df.copy()
+    corrected_values = _benjamini_hochberg(corrected_long["p_value"].to_numpy(dtype=float))
+    corrected_long["p_value"] = corrected_values
+    corrected_matrix = matrix.copy()
+    for _, row in corrected_long.iterrows():
+        corrected_matrix.loc[str(row["model_left"]), str(row["model_right"])] = float(row["p_value"])
+    return corrected_matrix, corrected_long
+
+
+def delong_comparison_outputs(predictions_df: pd.DataFrame, config: dict | None = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     group_cols = ["dataset_regime", "population_id", "model_key"]
     prepared: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     for (dataset_regime, population_id, model_key), group_df in predictions_df.groupby(group_cols, sort=False):
@@ -90,4 +129,11 @@ def delong_comparison_table(predictions_df: pd.DataFrame, config: dict | None = 
         matrix.loc[left_name, right_name] = value
         if row is not None:
             long_rows.append(row)
-    return matrix, pd.DataFrame(long_rows)
+    long_df = pd.DataFrame(long_rows)
+    corrected_matrix, corrected_long = _apply_fdr_correction(matrix, long_df)
+    return matrix, long_df, corrected_matrix, corrected_long
+
+
+def delong_comparison_table(predictions_df: pd.DataFrame, config: dict | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    matrix, long_df, _, _ = delong_comparison_outputs(predictions_df, config)
+    return matrix, long_df

@@ -10,6 +10,7 @@ from inspire_aki.datasets.splits import subset_from_manifest
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.models.tabular import load_tabular_bundle
 from inspire_aki.registry import SUPPORTED_SHAP_MODELS
+from inspire_aki.reporting.rendering import FigureExportSpec, save_figure_variants
 from inspire_aki.runtime import build_stage_runtime_plan
 
 
@@ -104,11 +105,16 @@ def _generate_shap_job(config: dict, dataset_regime: str, model_key: str) -> lis
 
     plt.figure()
     shap.summary_plot(values, x_explain, show=False, max_display=config["reports"]["max_display_features"])
-    png_path = artifacts.resolve("reports", "figures", f"shap_beeswarm_{dataset_regime}_{model_key}.png")
+    figure = plt.gcf()
     plt.tight_layout()
-    plt.savefig(png_path, dpi=config["reports"]["figure_dpi"], bbox_inches="tight")
+    figure_outputs = save_figure_variants(
+        figure,
+        artifacts,
+        FigureExportSpec(stem=f"shap_beeswarm_{dataset_regime}_{model_key}"),
+        config,
+    )
     plt.close()
-    return [str(csv_path), str(png_path)]
+    return [str(csv_path), *[str(path) for path in figure_outputs]]
 
 
 def generate_shap_outputs(artifacts: ArtifactManager, config: dict) -> list[Path]:

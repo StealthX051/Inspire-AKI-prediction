@@ -159,6 +159,7 @@ def test_run_all_overlap_executes_parallel_branch_before_tail(monkeypatch, synth
         "evaluate_metrics",
         "evaluate_delong",
         "evaluate_dca",
+        "evaluate_reclassification",
         "report_manuscript",
     ]
 
@@ -194,5 +195,6 @@ def test_run_all_serial_mode_preserves_stage_order(monkeypatch, synthetic_config
         "evaluate_metrics",
         "evaluate_delong",
         "evaluate_dca",
+        "evaluate_reclassification",
         "report_manuscript",
     ]

@@ -11,9 +11,18 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 - The refactor now uses a centralized runtime planner in `src/inspire_aki/runtime.py` instead of ad hoc worker counts.
 - Raw refactor predictions are now written as stage partitions plus a deterministic combined `raw_predictions.parquet` view.
 - `inspire-aki report manuscript` is now the report-level command that includes SHAP, rather than requiring a separate SHAP call.
+- The manuscript report layer now targets legacy-style presentation on top of corrected refactor artifacts:
+  - performance tables are rebuilt from fold/run metrics rather than pooled `metrics_summary.csv`
+  - HTML performance tables now keep a fixed manuscript model order, restrict `ASA Rule` to the preop section, and use gentle monochrome column-wise gradients plus bold best-in-column values
+  - the consort figure now renders as a top-down branched manuscript-style Graphviz flow with explicit exclusion summaries and final AKI / non-AKI terminal boxes
+  - every report table is emitted as `html`, `md`, and `csv`
+  - every report figure is emitted as high-resolution `png` plus `svg`
+  - `evaluate reclassification` now produces a dedicated stage-owned artifact consumed by `report manuscript`
+  - rerunning `report ...` or `report manuscript` overwrites the canonical files under `reports/` in place; manual deletion is not required before regeneration
 - The refactor defaults now point at the mounted volume path `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` for raw INSPIRE inputs.
 - The shipped configs now also place refactor artifacts on the mounted volume under `/media/volume/ncs_inspire_data/ncs_aki/artifacts/`.
 - On the current 32-CPU / A100 node, the default `throughput` runtime profile now targets roughly `30` usable CPUs for CPU-bound stages, keeps tensor-backed sequence loaders at `0` workers by default, and leaves GPU-native sequence work on the GPU.
+- The shipped default config now also raises the stage worker caps for CPU-heavy preprocessing, evaluation, report, and SHAP stages so the default path uses more of the host without changing the central runtime planner or BLAS safety limits.
 - On the current 32-CPU / A100 node, the main default config now pins AutoGluon `num_cpus` to `32`, so AutoGluon can use the full host CPU count instead of the runtime-capped generic training-worker budget.
 - On the current 32-CPU / A100 node, the main default config now uses `4096` for both sequence HPO batch size and final sequence training batch size.
 - Sequence HPO now distinguishes true Optuna pruning from patience-based early stopping, so early-stopped trials still complete and contribute best params.
@@ -30,44 +39,43 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 
 ## Current Validation Status
 
-As of March 24, 2026, the refactor is in a strong but not fully validated state.
+As of March 26, 2026, the refactor is in a strong and materially validated state on both synthetic tests and the main mounted-volume default path.
 
 - The synthetic refactor test suite is green:
-  - `pytest -q` currently passes with `91` tests.
-- The real-data refactor preprocessing path has been exercised on the mounted INSPIRE volume through:
-  - `preprocess preop`
-  - `preprocess intraop`
-  - `preprocess tabular`
-  - `preprocess labels`
-  - `preprocess timeseries`
-  - `preprocess sequence`
-- The real-data HPO smoke path has also now completed both tuning stages after fixing Optuna `4.x` trial-state handling:
-  - `tune tabular`
-  - `tune sequence`
-- The full real-data `configs/aki/smoke_hpo.yaml` run has **not** yet been validated end to end in one uninterrupted pass through:
-  - training
-  - calibration
-  - metrics
-  - DeLong
-  - DCA
-  - manuscript reporting
-- Treat the current refactor as:
-  - contract-tested on synthetic data
-  - partially validated on real INSPIRE data
-  - still awaiting one clean end-to-end HPO smoke run
+  - `pytest -q` currently passes with `95` tests.
+- The main real-data default config at `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default` has completed end to end through manuscript reporting:
+  - `train_tabular.json` written at `2026-03-25 20:11:28 UTC`
+  - `train_sequence.json` written at `2026-03-25 22:46:56 UTC`
+  - `evaluate_calibration.json` written at `2026-03-26 00:39:58 UTC`
+  - `evaluate_metrics.json` written at `2026-03-26 00:58:21 UTC`
+  - `evaluate_delong.json` written at `2026-03-26 00:58:37 UTC`
+  - `evaluate_dca.json` written at `2026-03-26 01:00:20 UTC`
+  - `report_manuscript.json` written at `2026-03-26 02:40:51 UTC`
+- The completed default manuscript report currently records `141` emitted outputs in [`report_manuscript.json`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/default/manifests/report_manuscript.json).
+- The observed default completion appears to have been reached through resumed stage commands rather than one preserved `run all` event log; `run_all_events.jsonl` was not present for that completed run.
+- The lighter `configs/aki/smoke_hpo.yaml` path is still useful for cheaper regression runs, but it is no longer the only downstream validation target.
 
-If another coder is resuming this work, the current recommended continuation point is:
+If another coder is resuming this work now, the most useful continuation points are usually report iteration or explicit downstream reruns on the default config:
 
 ```bash
 source .venv/bin/activate
 
-inspire-aki train tabular --config configs/aki/smoke_hpo.yaml
-inspire-aki train sequence --config configs/aki/smoke_hpo.yaml
-inspire-aki evaluate calibrate --config configs/aki/smoke_hpo.yaml
-inspire-aki evaluate metrics --config configs/aki/smoke_hpo.yaml
-inspire-aki evaluate delong --config configs/aki/smoke_hpo.yaml
-inspire-aki evaluate dca --config configs/aki/smoke_hpo.yaml
-inspire-aki report manuscript --config configs/aki/smoke_hpo.yaml
+inspire-aki report consort --config configs/aki/default.yaml
+inspire-aki report tables --config configs/aki/default.yaml
+inspire-aki report manuscript --config configs/aki/default.yaml
+```
+
+If the downstream evaluation artifacts need to be rebuilt before manuscript rerendering:
+
+```bash
+source .venv/bin/activate
+
+inspire-aki evaluate calibrate --config configs/aki/default.yaml
+inspire-aki evaluate metrics --config configs/aki/default.yaml
+inspire-aki evaluate delong --config configs/aki/default.yaml
+inspire-aki evaluate dca --config configs/aki/default.yaml
+inspire-aki evaluate reclassification --config configs/aki/default.yaml
+inspire-aki report manuscript --config configs/aki/default.yaml
 ```
 
 ## Environment Setup
@@ -264,7 +272,7 @@ Treat this repository as a research archive with a partially modernized pipeline
 6. `inspire-aki preprocess sequence`
 7. `inspire-aki tune tabular|sequence`
 8. `inspire-aki train tabular|sequence`
-9. `inspire-aki evaluate calibrate|metrics|delong|dca`
+9. `inspire-aki evaluate calibrate|metrics|delong|dca|reclassification`
 10. `inspire-aki explain shap`
 11. `inspire-aki report consort|tables|curves|manuscript`
 12. `inspire-aki compat export-legacy`
@@ -428,6 +436,26 @@ The checked-in outputs suggest the repo was used to create:
   - reclassification report
   - DeLong comparison tables
 
+The current refactor now reproduces that manuscript-facing surface under `artifacts/.../reports/` with these canonical contracts:
+
+- tables:
+  - `performance_table.*`
+  - `performance_table_calibrated.*`
+  - `cohort_characteristics.*`
+  - `fill_rate_table.*`
+  - `consort_audit.*`
+  - `metrics_ci.*`
+  - `delong_raw.*`
+  - `delong_fdr_corrected.*`
+  - `reclassification_report.*`
+- figures:
+  - `consort.{png,svg}`
+  - `roc_curves_<dataset>.{png,svg}`
+  - `pr_curves_<dataset>.{png,svg}`
+  - `calibration_curves_<dataset>.{png,svg}`
+  - `dca_curve_<dataset>_<model>*.{png,svg}`
+  - `dca_datasource_comparison_<model>.{png,svg}`
+
 The checked-in performance tables support the manuscript-level story:
 
 - preop structured data is already very strong
@@ -466,7 +494,7 @@ Project coordination:
 
 - Do not assume the current repo can be executed end-to-end as-is on a fresh machine.
 - Do not assume every notebook is canonical; many are exploratory or legacy.
-- Do not assume manuscript counts and current code outputs are fully aligned.
+- Do not assume corrected refactor results will numerically equal the historical checked-in markdown tables; grouped calibration and other leakage fixes are intentionally preserved.
 - Use `environment.yml` as the main setup file; `requirements.txt` mirrors its pip-managed dependencies.
 - Some portability fixes in the refactor intentionally differ from brittle legacy behavior; see [docs/refactor/behavior_drift.md](docs/refactor/behavior_drift.md).
 

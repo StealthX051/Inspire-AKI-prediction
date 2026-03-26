@@ -211,6 +211,7 @@ def test_run_all_relies_on_report_manuscript_instead_of_run_shap(monkeypatch, sy
     monkeypatch.setattr(cli_module, "run_metrics", _stub("run_metrics"))
     monkeypatch.setattr(cli_module, "run_delong", _stub("run_delong"))
     monkeypatch.setattr(cli_module, "run_dca", _stub("run_dca"))
+    monkeypatch.setattr(cli_module, "run_reclassification", _stub("run_reclassification"))
     monkeypatch.setattr(cli_module, "run_manuscript", _stub("run_manuscript"))
     monkeypatch.setattr(cli_module, "run_shap", lambda _cfg: (_ for _ in ()).throw(AssertionError("run_shap should not be called by run all")))
 

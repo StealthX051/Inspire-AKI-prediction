@@ -13,7 +13,7 @@ from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.io.compat import export_legacy_datasets
 from inspire_aki.io.progress import ProgressLogger
 from inspire_aki.orchestration import OverlapInterruptedError, run_overlap_stages
-from inspire_aki.pipelines.evaluate import run_calibration, run_dca, run_delong, run_metrics
+from inspire_aki.pipelines.evaluate import run_calibration, run_dca, run_delong, run_metrics, run_reclassification
 from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop, run_sequence, run_tabular, run_timeseries
 from inspire_aki.pipelines.report import run_consort, run_curves, run_manuscript, run_shap, run_tables
 from inspire_aki.pipelines.train import run_train_sequence, run_train_tabular
@@ -229,6 +229,11 @@ def evaluate_dca(config: str | None = typer.Option(None, "--config")) -> None:
     _run_command(stage_name="evaluate_dca", config_path=config, runner=run_dca)
 
 
+@evaluate_app.command("reclassification")
+def evaluate_reclassification(config: str | None = typer.Option(None, "--config")) -> None:
+    _run_command(stage_name="evaluate_reclassification", config_path=config, runner=run_reclassification)
+
+
 @explain_app.command("shap")
 def explain_shap(config: str | None = typer.Option(None, "--config")) -> None:
     _run_command(stage_name="explain_shap", config_path=config, runner=run_shap)
@@ -342,6 +347,7 @@ def run_all(config: str | None = typer.Option(None, "--config")) -> None:
             ("evaluate_metrics", run_metrics),
             ("evaluate_delong", run_delong),
             ("evaluate_dca", run_dca),
+            ("evaluate_reclassification", run_reclassification),
             ("report_manuscript", run_manuscript),
         ]
         for stage_name, runner in tail_stages:

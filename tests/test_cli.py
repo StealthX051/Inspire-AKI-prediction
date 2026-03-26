@@ -16,8 +16,12 @@ def test_run_all_smoke(synthetic_config: Path) -> None:
     artifacts_dir = synthetic_config.parent / "artifacts"
     assert (artifacts_dir / "predictions" / "calibrated_predictions.parquet").exists()
     assert (artifacts_dir / "evaluation" / "metrics_summary.csv").exists()
+    assert (artifacts_dir / "evaluation" / "reclassification_summary.csv").exists()
     assert (artifacts_dir / "reports" / "tables" / "performance_table.csv").exists()
+    assert (artifacts_dir / "reports" / "tables" / "performance_table_calibrated.html").exists()
+    assert (artifacts_dir / "reports" / "tables" / "reclassification_report.html").exists()
     assert (artifacts_dir / "reports" / "figures" / "roc_curves_preop.png").exists()
+    assert (artifacts_dir / "reports" / "figures" / "roc_curves_preop.svg").exists()
 
 
 def test_stage_command_keyboard_interrupt_exits_cleanly(monkeypatch, synthetic_config: Path) -> None:

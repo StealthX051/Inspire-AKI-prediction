@@ -24,7 +24,10 @@ def test_balanced_runtime_plan_matches_expected_32_cpu_host(monkeypatch, loaded_
     )
     monkeypatch.setattr("inspire_aki.runtime.detect_system_resources", lambda: resources)
 
-    plan = build_stage_runtime_plan(loaded_synthetic_config, "preprocess_timeseries")
+    config = copy.deepcopy(loaded_synthetic_config)
+    config["runtime"]["stages"] = {}
+
+    plan = build_stage_runtime_plan(config, "preprocess_timeseries")
 
     assert isinstance(plan, StageRuntimePlan)
     assert plan.profile == "balanced"
@@ -61,7 +64,10 @@ def test_runtime_plan_downscales_on_small_cpu_only_host(monkeypatch, loaded_synt
     )
     monkeypatch.setattr("inspire_aki.runtime.detect_system_resources", lambda: resources)
 
-    plan = build_stage_runtime_plan(loaded_synthetic_config, "train_tabular")
+    config = copy.deepcopy(loaded_synthetic_config)
+    config["runtime"]["stages"] = {}
+
+    plan = build_stage_runtime_plan(config, "train_tabular")
 
     assert plan.usable_cpus == 4
     assert plan.csv_read_threads == 2
@@ -84,14 +90,16 @@ def test_throughput_runtime_plan_scales_up_cpu_bound_stages(monkeypatch, loaded_
     )
     monkeypatch.setattr("inspire_aki.runtime.detect_system_resources", lambda: resources)
 
-    throughput_config = copy.deepcopy(loaded_synthetic_config)
+    baseline_config = copy.deepcopy(loaded_synthetic_config)
+    baseline_config["runtime"]["stages"] = {}
+    throughput_config = copy.deepcopy(baseline_config)
     throughput_config["runtime"]["profile"] = "throughput"
     throughput_config["runtime"]["cpu_reserve_fraction"] = 0.0625
     throughput_config["runtime"]["cpu_reserve_min"] = 2
     throughput_config["runtime"]["ram_reserve_fraction"] = 0.1
     throughput_config["runtime"]["ram_reserve_gb_min"] = 8
 
-    balanced_plan = build_stage_runtime_plan(loaded_synthetic_config, "train_tabular")
+    balanced_plan = build_stage_runtime_plan(baseline_config, "train_tabular")
     throughput_plan = build_stage_runtime_plan(throughput_config, "train_tabular")
     throughput_sequence_plan = build_stage_runtime_plan(throughput_config, "tune_sequence")
 
@@ -101,6 +109,29 @@ def test_throughput_runtime_plan_scales_up_cpu_bound_stages(monkeypatch, loaded_
     assert throughput_plan.hpo_model_threads > balanced_plan.hpo_model_threads
     assert throughput_plan.tabular_column_workers > balanced_plan.tabular_column_workers
     assert throughput_sequence_plan.dataloader_workers == 0
+
+
+def test_runtime_stage_caps_are_clipped_to_usable_cpus(monkeypatch, loaded_synthetic_config) -> None:
+    resources = SystemResources(
+        cpu_count=8,
+        total_ram_gb=32,
+        available_ram_gb=28,
+        gpu_available=False,
+        gpu_name=None,
+        gpu_total_memory_gb=None,
+        gpu_free_memory_gb=None,
+    )
+    monkeypatch.setattr("inspire_aki.runtime.detect_system_resources", lambda: resources)
+
+    plan = build_stage_runtime_plan(loaded_synthetic_config, "train_tabular")
+
+    assert plan.usable_cpus == 4
+    assert plan.csv_read_threads == 4
+    assert plan.tabular_column_workers == 4
+    assert plan.evaluation_workers == 4
+    assert plan.bootstrap_workers == 4
+    assert plan.report_workers == 4
+    assert plan.shap_workers == 4
 
 
 def test_runtime_summary_contains_system_and_stage_plans(monkeypatch, loaded_synthetic_config) -> None:

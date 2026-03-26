@@ -37,8 +37,26 @@ MODEL_COLORS = {
 }
 
 DATASET_REGIMES = ("preop", "intraop", "combined")
-MANUSCRIPT_SECTIONS = ("consort", "tables", "curves", "shap")
+MANUSCRIPT_SECTIONS = ("consort", "tables", "curves", "statistics", "reclassification", "shap")
 SUPPORTED_SHAP_MODELS = ("xgb", "rf", "log_reg")
+MANUSCRIPT_MODEL_ORDER = (
+    "asa_rule",
+    "autogluon",
+    "xgb",
+    "knn",
+    "log_reg",
+    "lstm_only",
+    "lstm",
+    "mlp",
+    "hybrid",
+    "rf",
+    "svm",
+)
+LEGACY_DELONG_EXCLUSIONS = (
+    "preop_ASA Rule",
+    "combined_ASA Rule",
+    "combined_Hybrid (MLP + LSTM)",
+)
 SEQUENCE_MODEL_DATASET = {
     "lstm_only": "intraop",
     "hybrid": "combined",

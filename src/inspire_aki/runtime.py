@@ -77,6 +77,11 @@ def _resolve_bool(value: Any, default: bool) -> bool:
     return bool(value)
 
 
+def _resolve_capped_int(value: Any, default: int, *, max_allowed: int, minimum: int = 1) -> int:
+    resolved = _resolve_int(value, default)
+    return max(minimum, min(int(max_allowed), resolved))
+
+
 def _stage_overrides(runtime_cfg: dict[str, Any], stage: str) -> dict[str, Any]:
     raw_stage_cfg = runtime_cfg.get("stages", {})
     if not isinstance(raw_stage_cfg, dict):
@@ -237,7 +242,7 @@ def build_stage_runtime_plan(config: dict[str, Any], stage: str, workload_hint: 
     if group_count >= 4 and profile != "throughput":
         bootstrap_workers = 1
 
-    nested_blas_threads = max(1, int(runtime_cfg.get("nested_blas_threads", 1)))
+    nested_blas_threads = _resolve_capped_int(runtime_cfg.get("nested_blas_threads", 1), 1, max_allowed=usable_cpus)
     gpu_enabled = _resolve_bool(gpu_cfg.get("enabled", "auto"), resources.gpu_available)
     sequence_use_gpu = gpu_enabled and _resolve_bool(gpu_cfg.get("sequence_use_gpu", "auto"), resources.gpu_available)
     xgb_use_gpu = gpu_enabled and _resolve_bool(gpu_cfg.get("xgb_use_gpu", False), False)
@@ -248,21 +253,21 @@ def build_stage_runtime_plan(config: dict[str, Any], stage: str, workload_hint: 
         profile=profile,
         usable_cpus=usable_cpus,
         usable_ram_gb=usable_ram_gb,
-        csv_read_threads=_resolve_int(stage_cfg.get("csv_read_threads", "auto"), csv_read_threads),
-        preop_feature_workers=_resolve_int(stage_cfg.get("preop_feature_workers", "auto"), preop_feature_workers),
-        tabular_column_workers=_resolve_int(stage_cfg.get("tabular_column_workers", "auto"), tabular_column_workers),
-        timeseries_workers=_resolve_int(stage_cfg.get("timeseries_workers", "auto"), timeseries_workers),
+        csv_read_threads=_resolve_capped_int(stage_cfg.get("csv_read_threads", "auto"), csv_read_threads, max_allowed=usable_cpus),
+        preop_feature_workers=_resolve_capped_int(stage_cfg.get("preop_feature_workers", "auto"), preop_feature_workers, max_allowed=usable_cpus),
+        tabular_column_workers=_resolve_capped_int(stage_cfg.get("tabular_column_workers", "auto"), tabular_column_workers, max_allowed=usable_cpus),
+        timeseries_workers=_resolve_capped_int(stage_cfg.get("timeseries_workers", "auto"), timeseries_workers, max_allowed=usable_cpus),
         timeseries_partitions=_resolve_int(stage_cfg.get("timeseries_partitions", "auto"), timeseries_partitions),
-        sequence_workers=_resolve_int(stage_cfg.get("sequence_workers", "auto"), sequence_workers),
+        sequence_workers=_resolve_capped_int(stage_cfg.get("sequence_workers", "auto"), sequence_workers, max_allowed=usable_cpus),
         sequence_partitions=_resolve_int(stage_cfg.get("sequence_partitions", "auto"), sequence_partitions),
-        evaluation_workers=_resolve_int(stage_cfg.get("evaluation_workers", "auto"), evaluation_workers),
-        bootstrap_workers=_resolve_int(stage_cfg.get("bootstrap_workers", "auto"), bootstrap_workers),
-        report_workers=_resolve_int(stage_cfg.get("report_workers", "auto"), report_workers),
-        shap_workers=_resolve_int(stage_cfg.get("shap_workers", "auto"), shap_workers),
-        train_model_threads=_resolve_int(stage_cfg.get("train_model_threads", "auto"), train_model_threads),
-        hpo_model_threads=_resolve_int(stage_cfg.get("hpo_model_threads", "auto"), hpo_model_threads),
-        dataloader_workers=_resolve_int(stage_cfg.get("dataloader_workers", "auto"), dataloader_workers),
-        torch_num_threads=_resolve_int(stage_cfg.get("torch_num_threads", "auto"), torch_num_threads),
+        evaluation_workers=_resolve_capped_int(stage_cfg.get("evaluation_workers", "auto"), evaluation_workers, max_allowed=usable_cpus),
+        bootstrap_workers=_resolve_capped_int(stage_cfg.get("bootstrap_workers", "auto"), bootstrap_workers, max_allowed=usable_cpus),
+        report_workers=_resolve_capped_int(stage_cfg.get("report_workers", "auto"), report_workers, max_allowed=usable_cpus),
+        shap_workers=_resolve_capped_int(stage_cfg.get("shap_workers", "auto"), shap_workers, max_allowed=usable_cpus),
+        train_model_threads=_resolve_capped_int(stage_cfg.get("train_model_threads", "auto"), train_model_threads, max_allowed=usable_cpus),
+        hpo_model_threads=_resolve_capped_int(stage_cfg.get("hpo_model_threads", "auto"), hpo_model_threads, max_allowed=usable_cpus),
+        dataloader_workers=_resolve_capped_int(stage_cfg.get("dataloader_workers", "auto"), dataloader_workers, max_allowed=usable_cpus, minimum=0),
+        torch_num_threads=_resolve_capped_int(stage_cfg.get("torch_num_threads", "auto"), torch_num_threads, max_allowed=usable_cpus),
         nested_blas_threads=nested_blas_threads,
         gpu_enabled=gpu_enabled,
         sequence_use_gpu=sequence_use_gpu,

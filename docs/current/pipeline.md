@@ -17,6 +17,7 @@ For the legacy numbered-script path, use [../legacy/README.md](../legacy/README.
 Current behavior to keep in mind:
 
 - `run all` executes preprocessing, tuning, training, evaluation, and `report manuscript`
+- as of March 26, 2026, the main default artifact root `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default` has completed end to end through `report manuscript`
 - `run all` now emits immediate stage start/end lines plus `<artifacts_dir>/logs/run_all_events.jsonl`
 - long-running `tune_*` and `train_*` stages now append JSONL progress logs under `<artifacts_dir>/logs/`
 - interrupting a direct stage command or `run all` with `Ctrl-C` now exits cleanly with code `130`; overlapped child stages are terminated before the parent exits
@@ -60,8 +61,9 @@ Current behavior to keep in mind:
 | --- | --- | --- | --- | --- |
 | `evaluate calibrate` | `pipelines/evaluate.py:run_calibration` | `predictions/raw_predictions.parquet` | `predictions/calibrated_predictions.parquet`, `evaluation/thresholds.csv` | Calibrates prediction groups and stores decision thresholds; repeated rows for the same `op_id` stay together through grouped calibration CV |
 | `evaluate metrics` | `pipelines/evaluate.py:run_metrics` | calibrated predictions | `evaluation/metrics_by_fold.csv`, `evaluation/metrics_summary.csv`, `evaluation/metrics_bootstrap_ci.csv` | Bootstrap CI output is conditional on config and may be omitted |
-| `evaluate delong` | `pipelines/evaluate.py:run_delong` | calibrated predictions | `evaluation/delong_matrix.csv`, `evaluation/delong_long.csv` | Pairwise AUROC comparison tables |
-| `evaluate dca` | `pipelines/evaluate.py:run_dca` | calibrated predictions | `evaluation/dca_curves.csv` | Decision-curve rows for downstream plots/reporting |
+| `evaluate delong` | `pipelines/evaluate.py:run_delong` | calibrated predictions | `evaluation/delong_matrix.csv`, `evaluation/delong_long.csv`, `evaluation/delong_fdr_corrected.csv`, `evaluation/delong_fdr_corrected_long.csv` | Pairwise AUROC comparison tables, including FDR-corrected artifacts |
+| `evaluate dca` | `pipelines/evaluate.py:run_dca` | calibrated predictions | `evaluation/dca_curves.csv`, `evaluation/dca_bootstrap_ci.csv` | Decision-curve rows plus long-form bootstrap CI bands for downstream manuscript plots |
+| `evaluate reclassification` | `pipelines/evaluate.py:run_reclassification` | calibrated predictions | `evaluation/reclassification_summary.csv` | Stage-owned reclassification summary used by manuscript reporting |
 
 ### Explain
 
@@ -73,10 +75,10 @@ Current behavior to keep in mind:
 
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
-| `report consort` | `pipelines/report.py:run_consort` | cohort and audit artifacts | consort tables and graph source | Standalone consort output stage |
-| `report tables` | `pipelines/report.py:run_tables` | tabular, label, and evaluation artifacts | manuscript-facing CSV, HTML, and Markdown tables | Includes cohort characteristics and performance tables |
-| `report curves` | `pipelines/report.py:run_curves` | evaluation artifacts | ROC, PR, calibration, and DCA figures | Pure report-generation stage |
-| `report manuscript` | `pipelines/report.py:run_manuscript` | report config and all upstream artifacts | combined report outputs under `reports/` | Dispatches sections from `reports.manuscript_sections` and includes SHAP when configured |
+| `report consort` | `pipelines/report.py:run_consort` | cohort and audit artifacts | `consort_audit.{html,md,csv}`, `consort.dot`, `consort.{png,svg}` | Standalone consort output stage; renders a top-down branched manuscript-style Graphviz flow with explicit exclusion summaries and final AKI / non-AKI terminal nodes |
+| `report tables` | `pipelines/report.py:run_tables` | tabular, label, and evaluation artifacts | manuscript-facing core tables in `html`, `md`, and `csv` | Includes legacy-style uncalibrated and calibrated performance tables plus descriptive tables; HTML performance tables keep a fixed manuscript order, restrict `ASA Rule` to preop, and use gentle monochrome column-wise gradients |
+| `report curves` | `pipelines/report.py:run_curves` | evaluation artifacts | ROC, PR, calibration, DCA, and comparison figures in `png` and `svg` | Uses fold/run aggregation for ROC and PR uncertainty bands |
+| `report manuscript` | `pipelines/report.py:run_manuscript` | report config and all upstream artifacts | combined report outputs under `reports/` | Dispatches `consort`, `tables`, `curves`, `statistics`, `reclassification`, and `shap` from `reports.manuscript_sections` |
 
 ### Compat and Runtime
 
@@ -108,11 +110,40 @@ inspire-aki evaluate ...
 inspire-aki report ...
 ```
 
+### Rapid Manuscript Iteration
+
+```bash
+source .venv/bin/activate
+inspire-aki report consort --config configs/aki/default.yaml
+inspire-aki report tables --config configs/aki/default.yaml
+inspire-aki report manuscript --config configs/aki/default.yaml
+```
+
+Notes:
+
+- `report consort` is the fastest loop for Graphviz consort-layout iteration
+- `report tables` is the tightest loop for manuscript table styling and ordering, but it still recomputes fold/run performance summaries from the saved prediction artifacts
+
 ## Runtime Notes
 
 - `configs/aki/default.yaml` now defaults to `runtime.profile: throughput`
 - `configs/aki/default.yaml` now defaults to `runtime.orchestration.mode: overlap`
 - `configs/aki/smoke.yaml` and `configs/aki/smoke_hpo.yaml` pin `runtime.orchestration.mode: serial`
+- the shipped default config now raises the heavy-stage worker caps above the planner's generic throughput defaults:
+  - `csv_read_threads: 24`
+  - `tabular_column_workers: 24`
+  - `timeseries_workers: 24`
+  - `sequence_workers: 24`
+  - `evaluation_workers: 24`
+  - `bootstrap_workers: 24`
+  - `report_workers: 16`
+  - `shap_workers: 6`
+- report defaults now target manuscript export directly:
+  - `reports.table_formats: [html, md, csv]`
+  - `reports.figure_formats: [png, svg]`
+  - `reports.figure_png_dpi: 600`
+  - `reports.manuscript_sections: [consort, tables, curves, statistics, reclassification, shap]`
+- rerunning `report ...` stages writes to the same canonical filenames under `reports/`; existing files with the same stems are replaced automatically
 - `models.hpo.sequence_batch_size` controls the sequence-HPO batch size; the main default is `4096`
 - `models.sequence_defaults.batch_size` controls final sequence training batch size; the main default is `4096`
 - `models.autogluon.num_cpus` is pinned to `32` in `configs/aki/default.yaml` on the current host so AutoGluon can use the full machine CPU count

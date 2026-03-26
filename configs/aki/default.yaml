@@ -263,12 +263,19 @@ evaluation:
   dca_threshold_max: 0.305
   dca_threshold_step: 0.005
 reports:
-  figure_dpi: 300
+  table_formats: [html, md, csv]
+  figure_formats: [png, svg]
+  figure_png_dpi: 600
+  style_variant: legacy_manuscript
+  highlight_best_values: true
+  generate_supplemental_outputs: true
   max_display_features: 20
   manuscript_sections:
     - consort
     - tables
     - curves
+    - statistics
+    - reclassification
     - shap
   shap_jobs:
     - {run_name: XGBoost_Combined, model_key: xgb, dataset_regime: combined}
@@ -297,17 +304,17 @@ runtime:
     sequence_use_gpu: auto
     xgb_use_gpu: false
   stages:
-    csv_read_threads: auto
+    csv_read_threads: 24
     preop_feature_workers: auto
-    tabular_column_workers: auto
-    timeseries_workers: auto
+    tabular_column_workers: 24
+    timeseries_workers: 24
     timeseries_partitions: auto
-    sequence_workers: auto
+    sequence_workers: 24
     sequence_partitions: auto
-    evaluation_workers: auto
-    bootstrap_workers: auto
-    report_workers: auto
-    shap_workers: auto
+    evaluation_workers: 24
+    bootstrap_workers: 24
+    report_workers: 16
+    shap_workers: 6
     train_model_threads: auto
     hpo_model_threads: auto
     dataloader_workers: auto

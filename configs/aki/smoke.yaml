@@ -40,12 +40,19 @@ evaluation:
   dca_threshold_step: 0.01
 
 reports:
-  figure_dpi: 120
+  table_formats: [html, md, csv]
+  figure_formats: [png, svg]
+  figure_png_dpi: 600
+  style_variant: legacy_manuscript
+  highlight_best_values: true
+  generate_supplemental_outputs: true
   max_display_features: 10
   manuscript_sections:
     - consort
     - tables
     - curves
+    - statistics
+    - reclassification
     - shap
   shap_jobs:
     - {run_name: LogReg_Combined_Smoke, model_key: log_reg, dataset_regime: combined}

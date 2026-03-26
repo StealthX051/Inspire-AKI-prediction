@@ -130,10 +130,14 @@ The combined raw prediction view is deduplicated and sorted so stage reruns are 
 | Bootstrap CI metrics | `evaluation/metrics_bootstrap_ci.csv` | `inspire-aki evaluate metrics` | Bootstrap summaries when configured |
 | DeLong matrix | `evaluation/delong_matrix.csv` | `inspire-aki evaluate delong` | Pairwise AUROC comparison matrix |
 | DeLong long table | `evaluation/delong_long.csv` | `inspire-aki evaluate delong` | Long-form pairwise results |
-| DCA curves | `evaluation/dca_curves.csv` | `inspire-aki evaluate dca` | Decision-curve analysis rows |
+| DeLong FDR-corrected matrix | `evaluation/delong_fdr_corrected.csv` | `inspire-aki evaluate delong` | Benjamini-Hochberg corrected pairwise AUROC comparison matrix |
+| DeLong FDR-corrected long table | `evaluation/delong_fdr_corrected_long.csv` | `inspire-aki evaluate delong` | Long-form corrected pairwise results |
+| DCA curves | `evaluation/dca_curves.csv` | `inspire-aki evaluate dca` | Decision-curve point-estimate rows |
+| DCA bootstrap CI | `evaluation/dca_bootstrap_ci.csv` | `inspire-aki evaluate dca` | Long-form DCA rows with 95% CI bounds and `tau_star` |
+| Reclassification summary | `evaluation/reclassification_summary.csv` | `inspire-aki evaluate reclassification` | Stage-owned patient reclassification summary |
 | SHAP importance CSVs | `explainability/shap_importance_<dataset>_<model>.csv` | `inspire-aki explain shap` or `report manuscript` | Only for supported SHAP models |
-| Report figures | `reports/figures/*` | `inspire-aki report ...` | ROC, PR, calibration, DCA, SHAP, consort outputs |
-| Report tables | `reports/tables/*` | `inspire-aki report ...` | Markdown, CSV, HTML manuscript-facing tables |
+| Report figures | `reports/figures/*` | `inspire-aki report ...` | ROC, PR, calibration, DCA, SHAP, consort outputs in `png` and `svg` |
+| Report tables | `reports/tables/*` | `inspire-aki report ...` | Every manuscript-facing table is emitted as `html`, `md`, and `csv` |
 
 Refactor reporting note:
 
@@ -145,12 +149,38 @@ Refactor reporting note:
 - `inspire-aki report manuscript` is the top-level manuscript report path
 - manuscript section composition is controlled by:
   - `reports.manuscript_sections`
+- manuscript supplemental section generation is controlled by:
+  - `reports.generate_supplemental_outputs`
+- report output formats are controlled by:
+  - `reports.table_formats`
+  - `reports.figure_formats`
+  - `reports.figure_png_dpi`
 - SHAP batch composition is controlled by:
   - `reports.shap_jobs`
 - legacy alias exports are explicit through:
   - `inspire-aki compat export-legacy`
 
 The refactor does **not** export legacy aliases automatically during `run all`.
+
+Current canonical manuscript-facing outputs include:
+
+- tables:
+  - `performance_table.*`
+  - `performance_table_calibrated.*`
+  - `cohort_characteristics.*`
+  - `fill_rate_table.*`
+  - `consort_audit.*`
+  - `metrics_ci.*`
+  - `delong_raw.*`
+  - `delong_fdr_corrected.*`
+  - `reclassification_report.*`
+- figures:
+  - `consort.{png,svg}`
+  - `roc_curves_<dataset>.{png,svg}`
+  - `pr_curves_<dataset>.{png,svg}`
+  - `calibration_curves_<dataset>.{png,svg}`
+  - `dca_curve_<dataset>_<model>*.{png,svg}`
+  - `dca_datasource_comparison_<model>.{png,svg}`
 
 ## Private raw inputs expected by the current refactor defaults
 

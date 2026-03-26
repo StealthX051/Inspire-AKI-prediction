@@ -40,6 +40,16 @@ def _normalize_config(config: dict[str, Any]) -> dict[str, Any]:
         reports_cfg["shap_jobs"] = copy.deepcopy(reports_cfg.pop("batch_shap_jobs"))
     else:
         reports_cfg.pop("batch_shap_jobs", None)
+    legacy_figure_dpi = reports_cfg.get("figure_dpi")
+    if "figure_png_dpi" not in reports_cfg and legacy_figure_dpi is not None:
+        reports_cfg["figure_png_dpi"] = legacy_figure_dpi
+    reports_cfg.setdefault("figure_png_dpi", 600)
+    reports_cfg["figure_dpi"] = reports_cfg["figure_png_dpi"]
+    reports_cfg.setdefault("table_formats", ["html", "md", "csv"])
+    reports_cfg.setdefault("figure_formats", ["png", "svg"])
+    reports_cfg.setdefault("style_variant", "legacy_manuscript")
+    reports_cfg.setdefault("highlight_best_values", True)
+    reports_cfg.setdefault("generate_supplemental_outputs", True)
     reports_cfg.setdefault("shap_jobs", [])
     reports_cfg.setdefault("manuscript_sections", list(MANUSCRIPT_SECTIONS))
 
@@ -105,6 +115,16 @@ def validate_config(config: dict[str, Any]) -> None:
     unknown_sections = sorted(set(report_sections) - set(MANUSCRIPT_SECTIONS))
     if unknown_sections:
         raise ValueError(f"Unknown reports.manuscript_sections values: {unknown_sections}")
+    table_formats = config.get("reports", {}).get("table_formats", [])
+    unknown_table_formats = sorted(set(table_formats) - {"html", "md", "csv"})
+    if unknown_table_formats:
+        raise ValueError(f"Unknown reports.table_formats values: {unknown_table_formats}")
+    figure_formats = config.get("reports", {}).get("figure_formats", [])
+    unknown_figure_formats = sorted(set(figure_formats) - {"png", "svg"})
+    if unknown_figure_formats:
+        raise ValueError(f"Unknown reports.figure_formats values: {unknown_figure_formats}")
+    if int(config.get("reports", {}).get("figure_png_dpi", 600)) < 72:
+        raise ValueError("reports.figure_png_dpi must be at least 72.")
 
     shap_jobs = config.get("reports", {}).get("shap_jobs", [])
     for job in shap_jobs:

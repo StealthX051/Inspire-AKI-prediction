@@ -62,6 +62,7 @@ def test_run_all_emits_stage_progress_and_writes_run_events(monkeypatch, synthet
     monkeypatch.setattr(cli_module, "run_metrics", _stub("run_metrics", calls))
     monkeypatch.setattr(cli_module, "run_delong", _stub("run_delong", calls))
     monkeypatch.setattr(cli_module, "run_dca", _stub("run_dca", calls))
+    monkeypatch.setattr(cli_module, "run_reclassification", _stub("run_reclassification", calls))
     monkeypatch.setattr(cli_module, "run_manuscript", _stub("run_manuscript", calls))
 
     result = runner.invoke(app, ["run", "all", "--config", str(synthetic_config)])

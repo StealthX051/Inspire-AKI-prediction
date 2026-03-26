@@ -34,3 +34,37 @@ The manuscript brief is directionally accurate, but the repo must be documented 
 - the current checked-in combined tabular result is stronger than the hybrid deep result
 
 For refactor-specific portability fixes that do not intentionally change the manuscript-facing scientific logic, see [../refactor/behavior_drift.md](../refactor/behavior_drift.md).
+
+## Current Refactor Manuscript Contract
+
+The refactor now aims for legacy manuscript parity at the report layer while keeping the scientific fixes that were introduced during the package migration.
+
+Presentation now restored in the refactor:
+
+- performance tables are rebuilt from fold/run metrics and emitted as:
+  - `performance_table.{html,md,csv}`
+  - `performance_table_calibrated.{html,md,csv}`
+  - HTML performance tables keep a fixed manuscript-oriented model order, restrict `ASA Rule` to the preop section, and use gentle monochrome column-wise gradients while still bolding the best value per metric
+- report tables are emitted in all three manuscript-facing formats:
+  - `html`
+  - `md`
+  - `csv`
+- report figures are emitted in both:
+  - high-resolution `png`
+  - `svg`
+- the consort figure now follows a manuscript-style top-down Graphviz layout with explicit exclusion summaries and direct orthogonal terminal arrows to the final `AKI` / `non-AKI` split
+- manuscript reporting now includes:
+  - consort audit + figure
+  - legacy-style ROC / PR / calibration figures
+  - per-model DCA figures and cross-dataset DCA comparisons
+  - bootstrap CI tables
+  - raw and FDR-corrected DeLong tables
+  - reclassification reporting
+- rerunning `report manuscript` overwrites the canonical filenames under `reports/`; manual cleanup is only needed if you want to remove stale legacy-named leftovers from older runs
+- the main default-config real-data path has now completed end to end through manuscript reporting under `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default`
+
+Intentional scientific differences retained relative to the legacy notebook path:
+
+- grouped isotonic calibration still keeps repeated rows for the same `op_id` together
+- manuscript tables now label `Balanced Accuracy` correctly instead of using the legacy `Accuracy` heading for that metric
+- exact historical point estimates can still drift because the refactor keeps the leakage fixes and other upstream corrections

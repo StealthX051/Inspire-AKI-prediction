@@ -27,7 +27,10 @@ def test_load_config_normalizes_legacy_shap_key_and_removes_dead_compat(syntheti
     config = load_config(synthetic_config)
     assert "batch_shap_jobs" not in config["reports"]
     assert config["reports"]["shap_jobs"] == []
-    assert config["reports"]["manuscript_sections"] == ["consort", "tables", "curves", "shap"]
+    assert config["reports"]["manuscript_sections"] == ["consort", "tables", "curves", "statistics", "reclassification", "shap"]
+    assert config["reports"]["table_formats"] == ["html", "md", "csv"]
+    assert config["reports"]["figure_formats"] == ["png", "svg"]
+    assert config["reports"]["figure_png_dpi"] == 600
     assert "compat" not in config or "export_legacy_aliases" not in config.get("compat", {})
 
 
@@ -35,7 +38,8 @@ def test_default_config_validates() -> None:
     config = load_config()
     assert config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/default"
     assert config["reports"]["shap_jobs"]
-    assert config["reports"]["manuscript_sections"] == ["consort", "tables", "curves", "shap"]
+    assert config["reports"]["manuscript_sections"] == ["consort", "tables", "curves", "statistics", "reclassification", "shap"]
+    assert config["reports"]["figure_png_dpi"] == 600
     assert config["runtime"]["profile"] == "throughput"
     assert config["runtime"]["orchestration"]["mode"] == "overlap"
     assert config["runtime"]["progress_interval_seconds"] == 60

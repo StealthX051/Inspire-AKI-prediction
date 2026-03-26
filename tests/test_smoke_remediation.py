@@ -114,10 +114,10 @@ def test_cohort_characteristics_use_unnormalized_units(synthetic_config: Path) -
 
     run_manuscript(config)
     table = pd.read_csv(artifacts.paths.artifact_path("reports", "tables", "cohort_characteristics.csv"))
-    bmi_row = table.loc[table["feature"] == "BMI"].iloc[0]
+    bmi_row = table.loc[table["characteristic"].astype(str).str.contains("BMI", regex=False)].iloc[0]
 
-    assert "-0." not in str(bmi_row["overall"])
-    numeric_mean = float(str(bmi_row["overall"]).split(" +/- ")[0])
+    assert "-0." not in str(bmi_row["finding"])
+    numeric_mean = float(str(bmi_row["finding"]).split(" +/- ")[0])
     assert numeric_mean > 10.0
 
 
