@@ -38,6 +38,22 @@ def test_stage_command_keyboard_interrupt_exits_cleanly(monkeypatch, synthetic_c
     assert "Interrupted tune_sequence; exiting cleanly (130)." in result.output
 
 
+def test_evaluate_generate_command_invokes_backend(monkeypatch, synthetic_config: Path) -> None:
+    runner = CliRunner()
+    calls: list[str] = []
+
+    def _fake_generate(_cfg):
+        calls.append("evaluate_generate")
+        return {"ok": True}
+
+    monkeypatch.setattr(cli_module, "run_evaluate_generate", _fake_generate)
+
+    result = runner.invoke(app, ["evaluate", "generate", "--config", str(synthetic_config)])
+
+    assert result.exit_code == 0, result.stdout
+    assert calls == ["evaluate_generate"]
+
+
 def test_runtime_benchmark_relative_output_dir_uses_artifact_root(monkeypatch, synthetic_config: Path) -> None:
     runner = CliRunner()
     captured: dict[str, Path] = {}

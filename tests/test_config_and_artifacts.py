@@ -25,6 +25,7 @@ def test_config_hash_changes_with_override(synthetic_config) -> None:
 
 def test_load_config_normalizes_legacy_shap_key_and_removes_dead_compat(synthetic_config) -> None:
     config = load_config(synthetic_config)
+    assert config["evaluation_mode"] == "legacy_repeated_cv"
     assert "batch_shap_jobs" not in config["reports"]
     assert config["reports"]["shap_jobs"] == []
     assert config["reports"]["manuscript_sections"] == ["consort", "tables", "curves", "statistics", "reclassification", "shap"]
@@ -87,6 +88,12 @@ def test_validate_config_rejects_invalid_bootstrap_ratio(loaded_synthetic_config
     loaded_synthetic_config["splits"]["n_bootstrap_iterations"] = 5
     loaded_synthetic_config["splits"]["n_cv_folds"] = 2
     with pytest.raises(ValueError, match="n_bootstrap_iterations"):
+        validate_config(loaded_synthetic_config)
+
+
+def test_validate_config_rejects_invalid_evaluation_mode(loaded_synthetic_config) -> None:
+    loaded_synthetic_config["evaluation_mode"] = "invalid"
+    with pytest.raises(ValueError, match="evaluation_mode"):
         validate_config(loaded_synthetic_config)
 
 

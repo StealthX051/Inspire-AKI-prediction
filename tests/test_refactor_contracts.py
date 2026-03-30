@@ -55,6 +55,49 @@ def test_train_tabular_is_idempotent(synthetic_config: Path) -> None:
     assert not second_combined.duplicated(PREDICTION_PRIMARY_KEY).any()
 
 
+def test_train_tabular_requires_grouped_manifest_when_configured(synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config)
+    config["evaluation_mode"] = "grouped_nested_cv"
+
+    with pytest.raises(FileNotFoundError, match="evaluate generate"):
+        run_train_tabular(config)
+
+
+def test_train_tabular_uses_precomputed_grouped_manifest_when_configured(monkeypatch, synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config)
+    artifacts = ArtifactManager(config)
+    config["evaluation_mode"] = "grouped_nested_cv"
+    target = config["models"]["target"]
+
+    for dataset_regime in ["preop", "intraop", "combined"]:
+        dataset_df = pd.read_csv(artifacts.paths.artifact_path("datasets", "tabular", f"tabular_{dataset_regime}_labeled.csv"))
+        train_ids = dataset_df["op_id"].iloc[::2].tolist()
+        test_ids = dataset_df["op_id"].iloc[1::2].tolist()
+        manifest = pd.DataFrame(
+            [
+                {"op_id": op_id, "repeat_id": 0, "fold_id": 0, "split_name": "train"}
+                for op_id in train_ids
+            ]
+            + [
+                {"op_id": op_id, "repeat_id": 0, "fold_id": 0, "split_name": "test"}
+                for op_id in test_ids
+            ]
+        )
+        artifacts.write_dataframe(manifest, "datasets", "splits", f"grouped_nested_cv_{dataset_regime}.parquet")
+
+    monkeypatch.setattr(
+        "inspire_aki.pipelines.train.build_bootstrap_split_manifest",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("bootstrap manifest builder should not run")),
+    )
+
+    run_train_tabular(config)
+
+    assert artifacts.paths.artifact_path("predictions", "raw", "tabular.parquet").exists()
+    assert not artifacts.paths.artifact_path("datasets", "splits", "bootstrap_preop.parquet").exists()
+    manifest_payload = artifacts.read_json("manifests", "train_tabular.json")
+    assert artifacts.relative(artifacts.paths.artifact_path("datasets", "splits", "grouped_nested_cv_preop.parquet")) in manifest_payload["inputs"]
+
+
 def test_train_tabular_uses_repeat_executor_for_svm(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_training_inputs(synthetic_config)
     config["models"]["tabular_enabled"] = ["svm"]

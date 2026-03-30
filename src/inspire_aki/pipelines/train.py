@@ -75,6 +75,45 @@ def _sequence_params(config: dict, artifacts: ArtifactManager, model_key: str) -
     return params
 
 
+def _precomputed_manifest_path(artifacts: ArtifactManager, config: dict, dataset_regime: str) -> Path | None:
+    evaluation_mode = config.get("evaluation_mode", "legacy_repeated_cv")
+    if evaluation_mode == "legacy_repeated_cv":
+        return None
+    return artifacts.paths.artifact_path("datasets", "splits", f"{evaluation_mode}_{dataset_regime}.parquet")
+
+
+def _load_or_build_training_manifest(
+    *,
+    artifacts: ArtifactManager,
+    config: dict,
+    dataset_df: pd.DataFrame,
+    target: str,
+    dataset_regime: str,
+    population_id: str,
+) -> tuple[pd.DataFrame, Path, bool]:
+    precomputed_path = _precomputed_manifest_path(artifacts, config, dataset_regime)
+    if precomputed_path is not None:
+        if not precomputed_path.exists():
+            raise FileNotFoundError(
+                f"Expected grouped evaluation manifest was not found: {precomputed_path}. "
+                "Run `inspire-aki evaluate generate --config ...` before training."
+            )
+        return pd.read_parquet(precomputed_path), precomputed_path, False
+
+    manifest = build_bootstrap_split_manifest(
+        dataset_df,
+        target=target,
+        dataset_regime=dataset_regime,
+        population_id=population_id,
+        random_state=config["splits"]["random_state"],
+        n_iterations=config["splits"]["n_bootstrap_iterations"],
+        n_cv_folds=config["splits"]["n_cv_folds"],
+        use_bootstrapping=config["splits"]["use_bootstrapping"],
+    )
+    manifest_path = artifacts.write_dataframe(manifest, "datasets", "splits", f"bootstrap_{dataset_regime}.parquet")
+    return manifest, manifest_path, True
+
+
 def _run_svm_repeat_worker(task: TabularRepeatTask, config: dict) -> dict[str, object]:
     artifacts = ArtifactManager(config)
     dataset_df = pd.read_csv(task.dataset_path)
@@ -151,6 +190,7 @@ def run_train_tabular(config: dict) -> dict[str, str]:
     progress.stage_start(stage_name, message="tabular training started")
     prediction_frames: list[pd.DataFrame] = []
     dataset_inputs: list[str] = []
+    split_inputs: list[str] = []
     split_outputs: list[str] = []
     selected_models = selected_tabular_models(config, "train")
     dataset_regimes = selected_tabular_dataset_regimes()
@@ -160,19 +200,19 @@ def run_train_tabular(config: dict) -> dict[str, str]:
         dataset_path = artifacts.paths.artifact_path("datasets", "tabular", f"tabular_{dataset_regime}_labeled.csv")
         dataset_df = pd.read_csv(dataset_path)
         target = config["models"]["target"]
-        manifest = build_bootstrap_split_manifest(
-            dataset_df,
+        manifest, manifest_path, manifest_generated = _load_or_build_training_manifest(
+            artifacts=artifacts,
+            config=config,
+            dataset_df=dataset_df,
             target=target,
             dataset_regime=dataset_regime,
             population_id=dataset_regime,
-            random_state=config["splits"]["random_state"],
-            n_iterations=config["splits"]["n_bootstrap_iterations"],
-            n_cv_folds=config["splits"]["n_cv_folds"],
-            use_bootstrapping=config["splits"]["use_bootstrapping"],
         )
-        manifest_path = artifacts.write_dataframe(manifest, "datasets", "splits", f"bootstrap_{dataset_regime}.parquet")
         dataset_inputs.append(artifacts.relative(dataset_path))
-        split_outputs.append(artifacts.relative(manifest_path))
+        if manifest_generated:
+            split_outputs.append(artifacts.relative(manifest_path))
+        else:
+            split_inputs.append(artifacts.relative(manifest_path))
         feature_cols = tabular_feature_columns(dataset_df, target)
         split_keys = manifest[["repeat_id", "fold_id"]].drop_duplicates().sort_values(["repeat_id", "fold_id"])
         serial_models = [model_key for model_key in selected_models if model_key != "svm" or not svm_policy.train_parallel_by_repeat]
@@ -258,8 +298,8 @@ def run_train_tabular(config: dict) -> dict[str, str]:
         artifacts.write_manifest(
             f"train_tabular_{dataset_regime}",
             ["manifests", f"train_tabular_{dataset_regime}.json"],
-            inputs=[artifacts.relative(dataset_path)],
-            outputs=[artifacts.relative(manifest_path)],
+            inputs=[artifacts.relative(dataset_path)] + ([] if manifest_generated else [artifacts.relative(manifest_path)]),
+            outputs=([artifacts.relative(manifest_path)] if manifest_generated else []),
             metadata={"n_models": len(selected_models)},
             stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
             wall_time_seconds=perf_counter() - start,
@@ -271,7 +311,7 @@ def run_train_tabular(config: dict) -> dict[str, str]:
     artifacts.write_manifest(
         "train_tabular",
         ["manifests", "train_tabular.json"],
-        inputs=dataset_inputs,
+        inputs=dataset_inputs + split_inputs,
         outputs=split_outputs + [artifacts.relative(partition_path), artifacts.relative(out_path)],
         metadata={"dataset_regimes": dataset_regimes, "n_models": len(selected_models)},
         stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
@@ -297,17 +337,14 @@ def run_train_sequence(config: dict) -> dict[str, str]:
 
     sequence_df = artifacts.read_pickle("datasets", "sequence", "lstm_trainable.pkl")
     target = config["models"]["target"]
-    manifest = build_bootstrap_split_manifest(
-        sequence_df,
+    manifest, manifest_path, manifest_generated = _load_or_build_training_manifest(
+        artifacts=artifacts,
+        config=config,
+        dataset_df=sequence_df,
         target=target,
         dataset_regime="sequence",
         population_id="sequence_common",
-        random_state=config["splits"]["random_state"],
-        n_iterations=config["splits"]["n_bootstrap_iterations"],
-        n_cv_folds=config["splits"]["n_cv_folds"],
-        use_bootstrapping=config["splits"]["use_bootstrapping"],
     )
-    manifest_path = artifacts.write_dataframe(manifest, "datasets", "splits", "bootstrap_sequence.parquet")
     split_keys = manifest[["repeat_id", "fold_id"]].drop_duplicates().sort_values(["repeat_id", "fold_id"])
     feature_cols_tab = [col for col in sequence_df.columns if col not in ["op_id", "time_tensors", "seq_len", target]]
     prediction_frames: list[pd.DataFrame] = []
@@ -361,8 +398,8 @@ def run_train_sequence(config: dict) -> dict[str, str]:
     artifacts.write_manifest(
         "train_sequence",
         ["manifests", "train_sequence.json"],
-        inputs=[artifacts.relative(sequence_path)],
-        outputs=[artifacts.relative(manifest_path), artifacts.relative(partition_path), artifacts.relative(out_path)],
+        inputs=[artifacts.relative(sequence_path)] + ([] if manifest_generated else [artifacts.relative(manifest_path)]),
+        outputs=([artifacts.relative(manifest_path)] if manifest_generated else []) + [artifacts.relative(partition_path), artifacts.relative(out_path)],
         metadata={"n_models": len(config["models"]["sequence_enabled"])},
         stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
         wall_time_seconds=perf_counter() - start,

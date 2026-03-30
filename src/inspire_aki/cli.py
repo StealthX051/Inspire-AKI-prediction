@@ -13,6 +13,7 @@ from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.io.compat import export_legacy_datasets
 from inspire_aki.io.progress import ProgressLogger
 from inspire_aki.orchestration import OverlapInterruptedError, run_overlap_stages
+from inspire_aki.pipelines.evaluate_generate import run_evaluate_generate
 from inspire_aki.pipelines.evaluate import run_calibration, run_dca, run_delong, run_metrics, run_reclassification
 from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop, run_sequence, run_tabular, run_timeseries
 from inspire_aki.pipelines.report import run_consort, run_curves, run_manuscript, run_shap, run_tables
@@ -212,6 +213,11 @@ def train_sequence(config: str | None = typer.Option(None, "--config")) -> None:
 @evaluate_app.command("calibrate")
 def evaluate_calibrate(config: str | None = typer.Option(None, "--config")) -> None:
     _run_command(stage_name="evaluate_calibrate", config_path=config, runner=run_calibration)
+
+
+@evaluate_app.command("generate")
+def evaluate_generate(config: str | None = typer.Option(None, "--config")) -> None:
+    _run_command(stage_name="evaluate_generate", config_path=config, runner=run_evaluate_generate)
 
 
 @evaluate_app.command("metrics")
