@@ -13,8 +13,10 @@ import inspire_aki.cli as cli_module
 from inspire_aki.cli import app
 from inspire_aki.config import load_config
 from inspire_aki.datasets.tabular import build_tabular_datasets
+from inspire_aki.evaluation.split_manager import evaluation_runs, subset_generated_manifest
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.io.predictions import PREDICTION_PRIMARY_KEY
+from inspire_aki.pipelines.evaluate_generate import run_evaluate_generate
 from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop, run_sequence, run_tabular, run_timeseries
 from inspire_aki.pipelines.report import run_manuscript
 from inspire_aki.pipelines.train import run_train_sequence, run_train_tabular
@@ -53,6 +55,58 @@ def test_train_tabular_is_idempotent(synthetic_config: Path) -> None:
     pd.testing.assert_frame_equal(first_partition, second_partition)
     pd.testing.assert_frame_equal(first_combined, second_combined)
     assert not second_combined.duplicated(PREDICTION_PRIMARY_KEY).any()
+
+
+def test_train_tabular_requires_grouped_manifest_when_configured(synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config)
+    config["evaluation_mode"] = "grouped_nested_cv"
+
+    with pytest.raises(FileNotFoundError, match="evaluate generate"):
+        run_train_tabular(config)
+
+
+def test_train_tabular_uses_precomputed_grouped_manifest_when_configured(monkeypatch, synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config)
+    artifacts = ArtifactManager(config)
+    config["evaluation_mode"] = "grouped_nested_cv"
+    run_evaluate_generate(config)
+
+    monkeypatch.setattr(
+        "inspire_aki.pipelines.train.build_bootstrap_split_manifest",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("bootstrap manifest builder should not run")),
+    )
+
+    run_train_tabular(config)
+
+    assert artifacts.paths.artifact_path("predictions", "raw", "tabular.parquet").exists()
+    assert not artifacts.paths.artifact_path("datasets", "splits", "bootstrap_preop.parquet").exists()
+    manifest_payload = artifacts.read_json("manifests", "train_tabular.json")
+    assert artifacts.relative(artifacts.paths.artifact_path("datasets", "splits", "grouped_nested_cv_preop.parquet")) in manifest_payload["inputs"]
+
+
+def test_train_sequence_uses_precomputed_grouped_manifest_when_configured(monkeypatch, synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config, include_sequence=True)
+    config["evaluation_mode"] = "grouped_nested_cv"
+    config["models"]["sequence_enabled"] = ["lstm_only"]
+    artifacts = ArtifactManager(config)
+    run_evaluate_generate(config)
+
+    monkeypatch.setattr(
+        "inspire_aki.pipelines.train.build_bootstrap_split_manifest",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("bootstrap manifest builder should not run")),
+    )
+    monkeypatch.setattr("inspire_aki.pipelines.train.fit_sequence_model", lambda **_kwargs: object())
+    monkeypatch.setattr(
+        "inspire_aki.pipelines.train.predict_sequence_bundle",
+        lambda _bundle, test_df: ((np.arange(len(test_df)) % 2).astype(int), np.linspace(0.2, 0.8, len(test_df), dtype=float)),
+    )
+
+    run_train_sequence(config)
+
+    assert artifacts.paths.artifact_path("predictions", "raw", "sequence.parquet").exists()
+    assert not artifacts.paths.artifact_path("datasets", "splits", "bootstrap_sequence.parquet").exists()
+    manifest_payload = artifacts.read_json("manifests", "train_sequence.json")
+    assert artifacts.relative(artifacts.paths.artifact_path("datasets", "splits", "grouped_nested_cv_sequence.parquet")) in manifest_payload["inputs"]
 
 
 def test_train_tabular_uses_repeat_executor_for_svm(monkeypatch, synthetic_config: Path) -> None:
@@ -264,6 +318,73 @@ def test_tune_tabular_uses_pipeline_written_hpo_manifests(monkeypatch, synthetic
     assert len([output for output in aggregate_manifest["outputs"] if output.endswith(".parquet")]) == 4
 
 
+def test_evaluate_generate_builds_grouped_manifests_from_patient_lookup(synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config)
+    artifacts = ArtifactManager(config)
+    config["evaluation_mode"] = "grouped_nested_cv"
+
+    outputs = run_evaluate_generate(config)
+
+    assert "split_audit" in outputs
+    manifest = pd.read_parquet(artifacts.paths.artifact_path("datasets", "splits", "grouped_nested_cv_preop.parquet"))
+    assert {"patient_id", "split_scope", "outer_fold_id", "inner_fold_id"}.issubset(manifest.columns)
+    assert set(manifest["split_scope"]) == {"outer", "inner"}
+
+
+def test_tune_tabular_requires_grouped_manifest_when_configured(synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config)
+    config["evaluation_mode"] = "grouped_nested_cv"
+    config["models"]["tabular_hpo_enabled"] = ["log_reg"]
+
+    with pytest.raises(FileNotFoundError, match="evaluate generate"):
+        run_tune_tabular(config)
+
+
+def test_tune_tabular_runs_grouped_nested_hpo_per_run_id(monkeypatch, synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config)
+    config["models"]["tabular_hpo_enabled"] = ["log_reg"]
+    config["evaluation_mode"] = "grouped_nested_cv"
+    artifacts = ArtifactManager(config)
+    captured_source_op_ids: list[set[int]] = []
+    run_evaluate_generate(config)
+
+    def fake_tune_tabular_dataset(_dataset_df, _dataset_regime, manifest, _config, **_kwargs):
+        return {"log_reg": {"C": 1.0}}, pd.DataFrame(
+            [{"model_key": "log_reg", "trial_number": 0, "value": 0.9, "params": {"C": 1.0}, "state": "COMPLETE"}]
+        )
+
+    def fake_build_hpo_manifest(source_df, _config, **_kwargs):
+        captured_source_op_ids.append(set(source_df["op_id"].astype(int).tolist()))
+        op_ids = source_df["op_id"].astype(int).tolist()
+        return pd.DataFrame(
+            {
+                "op_id": op_ids,
+                "repeat_id": [0] * len(op_ids),
+                "fold_id": [0] * len(op_ids),
+                "split_name": ["train"] * len(op_ids),
+            }
+        )
+
+    monkeypatch.setenv("INSPIRE_AKI_DATASET_REGIMES", "preop")
+    monkeypatch.setattr("inspire_aki.pipelines.tune._build_hpo_manifest", fake_build_hpo_manifest)
+    monkeypatch.setattr("inspire_aki.pipelines.tune.tune_tabular_dataset", fake_tune_tabular_dataset)
+
+    run_tune_tabular(config)
+
+    evaluation_manifest = pd.read_parquet(artifacts.paths.artifact_path("datasets", "splits", "grouped_nested_cv_preop.parquet"))
+    dataset_df = pd.read_csv(artifacts.paths.artifact_path("datasets", "tabular", "tabular_preop_labeled.csv"))
+    expected_source_op_ids = [
+        set(subset_generated_manifest(dataset_df, evaluation_manifest, split_name="train", run_id=run.run_id)["op_id"].astype(int).tolist())
+        for run in evaluation_runs(evaluation_manifest)
+    ]
+
+    assert captured_source_op_ids == expected_source_op_ids
+    assert artifacts.paths.artifact_path("datasets", "splits", "hpo_preop_run_0.parquet").exists()
+    assert artifacts.paths.artifact_path("datasets", "splits", "hpo_preop_run_1.parquet").exists()
+    best_params = artifacts.read_json("tuning", "tabular_best_params.json")
+    assert set(best_params) == {"run_0", "run_1"}
+
+
 def test_tune_tabular_resumes_completed_per_study_outputs(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_training_inputs(synthetic_config)
     config["models"]["tabular_hpo_enabled"] = ["log_reg"]
@@ -371,6 +492,7 @@ def test_tune_tabular_uses_regime_executor_for_svm(monkeypatch, synthetic_config
 
 def test_tune_sequence_uses_pipeline_written_hpo_manifest(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_training_inputs(synthetic_config, include_sequence=True)
+    config["models"]["sequence_hpo_enabled"] = ["lstm_only"]
     artifacts = ArtifactManager(config)
     captured: dict[str, pd.DataFrame] = {}
 
@@ -383,6 +505,48 @@ def test_tune_sequence_uses_pipeline_written_hpo_manifest(monkeypatch, synthetic
 
     assert set(captured["sequence"]["split_name"]) == {"train", "val", "holdout"}
     assert artifacts.paths.artifact_path("datasets", "splits", "hpo_sequence.parquet").exists()
+
+
+def test_tune_sequence_runs_grouped_nested_hpo_per_run_id(monkeypatch, synthetic_config: Path) -> None:
+    config = _prepare_training_inputs(synthetic_config, include_sequence=True)
+    config["evaluation_mode"] = "grouped_nested_cv"
+    config["models"]["sequence_hpo_enabled"] = ["lstm_only"]
+    artifacts = ArtifactManager(config)
+    captured_source_op_ids: list[set[int]] = []
+    run_evaluate_generate(config)
+
+    def fake_tune_sequence_dataset(_sequence_df, manifest, _config, **_kwargs):
+        return {}, pd.DataFrame()
+
+    def fake_build_hpo_manifest(source_df, _config, **_kwargs):
+        captured_source_op_ids.append(set(source_df["op_id"].astype(int).tolist()))
+        op_ids = source_df["op_id"].astype(int).tolist()
+        return pd.DataFrame(
+            {
+                "op_id": op_ids,
+                "repeat_id": [0] * len(op_ids),
+                "fold_id": [0] * len(op_ids),
+                "split_name": ["train"] * len(op_ids),
+            }
+        )
+
+    monkeypatch.setattr("inspire_aki.pipelines.tune._build_hpo_manifest", fake_build_hpo_manifest)
+    monkeypatch.setattr("inspire_aki.pipelines.tune.tune_sequence_dataset", fake_tune_sequence_dataset)
+
+    run_tune_sequence(config)
+
+    sequence_df = artifacts.read_pickle("datasets", "sequence", "lstm_trainable.pkl")
+    evaluation_manifest = pd.read_parquet(artifacts.paths.artifact_path("datasets", "splits", "grouped_nested_cv_sequence.parquet"))
+    expected_source_op_ids = [
+        set(subset_generated_manifest(sequence_df, evaluation_manifest, split_name="train", run_id=run.run_id)["op_id"].astype(int).tolist())
+        for run in evaluation_runs(evaluation_manifest)
+    ]
+
+    assert captured_source_op_ids == expected_source_op_ids
+    assert artifacts.paths.artifact_path("datasets", "splits", "hpo_sequence_run_0.parquet").exists()
+    assert artifacts.paths.artifact_path("datasets", "splits", "hpo_sequence_run_1.parquet").exists()
+    best_params = artifacts.read_json("tuning", "sequence_best_params.json")
+    assert set(best_params) == {"run_0", "run_1"}
 
 
 def _fake_optuna_module(captured_trials: list[int], *, trial_state: object = "1") -> types.SimpleNamespace:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from pandas.errors import EmptyDataError
 
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.reporting.rendering import CellFormatRule, ColumnSpec, TableSection, TableSpec, write_table_outputs
@@ -74,7 +75,12 @@ def _reclassification_spec(summary_df: pd.DataFrame) -> TableSpec:
 def generate_reclassification_outputs(artifacts: ArtifactManager) -> list[Path]:
     config = artifacts.config
     path = artifacts.paths.artifact_path("evaluation", "reclassification_summary.csv")
-    if not path.exists():
+    if not path.exists() or path.stat().st_size == 0:
         return []
-    summary_df = pd.read_csv(path)
+    try:
+        summary_df = pd.read_csv(path)
+    except EmptyDataError:
+        return []
+    if summary_df.empty:
+        return []
     return write_table_outputs(artifacts, _reclassification_spec(summary_df), config)

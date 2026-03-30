@@ -16,13 +16,14 @@ For the legacy numbered-script path, use [../legacy/README.md](../legacy/README.
 
 Current behavior to keep in mind:
 
-- `run all` executes preprocessing, tuning, training, evaluation, and `report manuscript`
+- `run all` executes preprocessing, grouped split generation when needed, tuning, training, evaluation, and `report manuscript`
 - as of March 26, 2026, the main default artifact root `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default` has completed end to end through `report manuscript`
 - `run all` now emits immediate stage start/end lines plus `<artifacts_dir>/logs/run_all_events.jsonl`
 - long-running `tune_*` and `train_*` stages now append JSONL progress logs under `<artifacts_dir>/logs/`
 - interrupting a direct stage command or `run all` with `Ctrl-C` now exits cleanly with code `130`; overlapped child stages are terminated before the parent exits
 - in `runtime.orchestration.mode: overlap`, `run all` overlaps `tune sequence` with `train tabular` after `tune tabular`
 - `run all` does not call `compat export-legacy`
+- for `evaluation_mode: grouped_holdout` or `grouped_nested_cv`, `run all` inserts `evaluate generate` automatically before tuning
 - SHAP can be run explicitly with `explain shap`, but `report manuscript` also includes SHAP when configured
 - the current refactor optimization policy uses validation `balanced_accuracy` for HPO and early-stopping monitors
 - trainable models use explicit inverse-frequency `balance_weight`-style weighting; `knn` applies the same weighting intent through deterministic weighted resampling because `sklearn` KNN does not accept `sample_weight`
@@ -45,25 +46,26 @@ Current behavior to keep in mind:
 
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
-| `tune tabular` | `pipelines/tune.py:run_tune_tabular` | labeled preop, intraop, and combined tabular datasets | `datasets/splits/hpo_{preop,intraop,combined}.parquet`, `tuning/tabular_best_params.json`, `tuning/tabular_trials.parquet`, `tuning/tabular_studies/*` | Searches only the models enabled in `models.tabular_hpo_enabled`; current HPO objective is validation `balanced_accuracy`; matching completed per-study outputs resume automatically |
-| `tune sequence` | `pipelines/tune.py:run_tune_sequence` | `datasets/sequence/lstm_trainable.pkl` | `datasets/splits/hpo_sequence.parquet`, `tuning/sequence_best_params.json`, `tuning/sequence_trials.parquet` | Searches only the models enabled in `models.sequence_hpo_enabled`; current HPO objective is validation `balanced_accuracy`; patience-based early stopping completes a trial, while only true Optuna pruning marks it `PRUNED` |
+| `tune tabular` | `pipelines/tune.py:run_tune_tabular` | labeled preop, intraop, and combined tabular datasets | `datasets/splits/hpo_{preop,intraop,combined}.parquet` in legacy mode, `datasets/splits/hpo_{preop,intraop,combined}_run_<id>.parquet` in grouped modes, `tuning/tabular_best_params.json`, `tuning/tabular_trials.parquet`, `tuning/tabular_studies/*` | Searches only the models enabled in `models.tabular_hpo_enabled`; current HPO objective is validation `balanced_accuracy`; matching completed per-study outputs resume automatically; for grouped evaluation modes it requires `evaluate generate` first and writes one HPO manifest plus run-scoped best params per generated outer run |
+| `tune sequence` | `pipelines/tune.py:run_tune_sequence` | `datasets/sequence/lstm_trainable.pkl` | `datasets/splits/hpo_sequence.parquet` in legacy mode, `datasets/splits/hpo_sequence_run_<id>.parquet` in grouped modes, `tuning/sequence_best_params.json`, `tuning/sequence_trials.parquet` | Searches only the models enabled in `models.sequence_hpo_enabled`; current HPO objective is validation `balanced_accuracy`; patience-based early stopping completes a trial, while only true Optuna pruning marks it `PRUNED`; for grouped evaluation modes it requires `evaluate generate` first and writes one HPO manifest plus run-scoped best params per generated outer run |
 
 ### Train
 
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
-| `train tabular` | `pipelines/train.py:run_train_tabular` | labeled tabular datasets | `datasets/splits/bootstrap_{preop,intraop,combined}.parquet`, `models/tabular/...`, `predictions/raw/tabular.parquet`, `predictions/raw_predictions.parquet` | Trains every model in `models.tabular_enabled` across each tabular regime; tuned params override configured defaults when present; trainable models use explicit inverse-frequency balance weights; in the default optimized policy only `svm` fans out across repeats; AutoGluon disables DyStack and skips optional model families when AutoGluon's compatibility checks fail |
-| `train sequence` | `pipelines/train.py:run_train_sequence` | `datasets/sequence/lstm_trainable.pkl` | `datasets/splits/bootstrap_sequence.parquet`, `models/sequence/...`, `predictions/raw/sequence.parquet`, `predictions/raw_predictions.parquet` | Trains every model in `models.sequence_enabled`; tuned params override configured defaults when present; sequence early stopping now follows validation `balanced_accuracy` |
+| `train tabular` | `pipelines/train.py:run_train_tabular` | labeled tabular datasets | `datasets/splits/bootstrap_{preop,intraop,combined}.parquet`, `models/tabular/...`, `predictions/raw/tabular.parquet`, `predictions/raw_predictions.parquet` | Trains every model in `models.tabular_enabled` across each tabular regime; tuned params override configured defaults when present; trainable models use explicit inverse-frequency balance weights; in the default optimized policy only `svm` fans out across repeats; AutoGluon disables DyStack and skips optional model families when AutoGluon's compatibility checks fail; for grouped evaluation modes it requires `evaluate generate` first and trains from the grouped outer train/test folds instead of writing new bootstrap manifests |
+| `train sequence` | `pipelines/train.py:run_train_sequence` | `datasets/sequence/lstm_trainable.pkl` | `datasets/splits/bootstrap_sequence.parquet`, `models/sequence/...`, `predictions/raw/sequence.parquet`, `predictions/raw_predictions.parquet` | Trains every model in `models.sequence_enabled`; tuned params override configured defaults when present; sequence early stopping now follows validation `balanced_accuracy`; for grouped evaluation modes it requires `evaluate generate` first and trains from the grouped outer train/test folds instead of writing a new bootstrap manifest |
 
 ### Evaluate
 
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
+| `evaluate generate` | `pipelines/evaluate_generate.py:run_evaluate_generate` | labeled tabular datasets, optional sequence dataset, preop features for patient lookup | grouped split manifests under `datasets/splits/` plus `evaluation/split_audit*.csv` | Only needed for `evaluation_mode: grouped_holdout` or `grouped_nested_cv`; resolves `patient_id` from preop `subject_id` when the modeling datasets do not carry it directly |
 | `evaluate calibrate` | `pipelines/evaluate.py:run_calibration` | `predictions/raw_predictions.parquet` | `predictions/calibrated_predictions.parquet`, `evaluation/thresholds.csv` | Calibrates prediction groups and stores decision thresholds; repeated rows for the same `op_id` stay together through grouped calibration CV |
 | `evaluate metrics` | `pipelines/evaluate.py:run_metrics` | calibrated predictions | `evaluation/metrics_by_fold.csv`, `evaluation/metrics_summary.csv`, `evaluation/metrics_bootstrap_ci.csv` | Bootstrap CI output is conditional on config and may be omitted |
 | `evaluate delong` | `pipelines/evaluate.py:run_delong` | calibrated predictions | `evaluation/delong_matrix.csv`, `evaluation/delong_long.csv`, `evaluation/delong_fdr_corrected.csv`, `evaluation/delong_fdr_corrected_long.csv` | Pairwise AUROC comparison tables, including FDR-corrected artifacts |
 | `evaluate dca` | `pipelines/evaluate.py:run_dca` | calibrated predictions | `evaluation/dca_curves.csv`, `evaluation/dca_bootstrap_ci.csv` | Decision-curve rows plus long-form bootstrap CI bands for downstream manuscript plots |
-| `evaluate reclassification` | `pipelines/evaluate.py:run_reclassification` | calibrated predictions | `evaluation/reclassification_summary.csv` | Stage-owned reclassification summary used by manuscript reporting |
+| `evaluate reclassification` | `pipelines/evaluate.py:run_reclassification` | calibrated predictions | `evaluation/reclassification_summary.csv` | Stage-owned reclassification summary used by manuscript reporting; if the summary is empty, reporting skips the reclassification table instead of failing |
 
 ### Explain
 

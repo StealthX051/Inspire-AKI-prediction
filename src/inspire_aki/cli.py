@@ -13,6 +13,7 @@ from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.io.compat import export_legacy_datasets
 from inspire_aki.io.progress import ProgressLogger
 from inspire_aki.orchestration import OverlapInterruptedError, run_overlap_stages
+from inspire_aki.pipelines.evaluate_generate import run_evaluate_generate
 from inspire_aki.pipelines.evaluate import run_calibration, run_dca, run_delong, run_metrics, run_reclassification
 from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop, run_sequence, run_tabular, run_timeseries
 from inspire_aki.pipelines.report import run_consort, run_curves, run_manuscript, run_shap, run_tables
@@ -68,6 +69,10 @@ def _progress_logger(config: dict[str, Any], *, stdout: bool = True) -> Progress
     if "paths" not in config:
         return None
     return ProgressLogger(ArtifactManager(config), ("logs", "run_all_events.jsonl"), stdout=stdout)
+
+
+def _requires_generated_evaluation(config: dict[str, Any]) -> bool:
+    return config.get("evaluation_mode", "legacy_repeated_cv") != "legacy_repeated_cv"
 
 
 def _aborted_stdout_message(stage_name: str) -> str:
@@ -214,6 +219,11 @@ def evaluate_calibrate(config: str | None = typer.Option(None, "--config")) -> N
     _run_command(stage_name="evaluate_calibrate", config_path=config, runner=run_calibration)
 
 
+@evaluate_app.command("generate")
+def evaluate_generate(config: str | None = typer.Option(None, "--config")) -> None:
+    _run_command(stage_name="evaluate_generate", config_path=config, runner=run_evaluate_generate)
+
+
 @evaluate_app.command("metrics")
 def evaluate_metrics(config: str | None = typer.Option(None, "--config")) -> None:
     _run_command(stage_name="evaluate_metrics", config_path=config, runner=run_metrics)
@@ -317,12 +327,24 @@ def run_all(config: str | None = typer.Option(None, "--config")) -> None:
         ("preprocess_labels", run_labels),
         ("preprocess_timeseries", run_timeseries),
         ("preprocess_sequence", run_sequence),
-        ("tune_tabular", run_tune_tabular),
     ]
     outputs: dict[str, Any] = {}
     try:
         for stage_name, runner in stage_order:
             outputs[stage_name] = _run_stage(stage_name=stage_name, runner=runner, config=cfg, progress=progress)
+        if _requires_generated_evaluation(cfg):
+            outputs["evaluate_generate"] = _run_stage(
+                stage_name="evaluate_generate",
+                runner=run_evaluate_generate,
+                config=cfg,
+                progress=progress,
+            )
+        outputs["tune_tabular"] = _run_stage(
+            stage_name="tune_tabular",
+            runner=run_tune_tabular,
+            config=cfg,
+            progress=progress,
+        )
 
         orchestration_mode = cfg.get("runtime", {}).get("orchestration", {}).get("mode", "serial")
         if orchestration_mode == "overlap":

@@ -17,7 +17,7 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
   - the consort figure now renders as a top-down branched manuscript-style Graphviz flow with explicit exclusion summaries and final AKI / non-AKI terminal boxes
   - every report table is emitted as `html`, `md`, and `csv`
   - every report figure is emitted as high-resolution `png` plus `svg`
-  - `evaluate reclassification` now produces a dedicated stage-owned artifact consumed by `report manuscript`
+- `evaluate reclassification` now produces a dedicated stage-owned artifact consumed by `report manuscript`; empty smoke-style summaries are skipped cleanly during report rendering
   - rerunning `report ...` or `report manuscript` overwrites the canonical files under `reports/` in place; manual deletion is not required before regeneration
 - The refactor defaults now point at the mounted volume path `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` for raw INSPIRE inputs.
 - The shipped configs now also place refactor artifacts on the mounted volume under `/media/volume/ncs_inspire_data/ncs_aki/artifacts/`.
@@ -270,14 +270,16 @@ Treat this repository as a research archive with a partially modernized pipeline
 4. `inspire-aki preprocess labels`
 5. `inspire-aki preprocess timeseries`
 6. `inspire-aki preprocess sequence`
-7. `inspire-aki tune tabular|sequence`
-8. `inspire-aki train tabular|sequence`
-9. `inspire-aki evaluate calibrate|metrics|delong|dca|reclassification`
-10. `inspire-aki explain shap`
-11. `inspire-aki report consort|tables|curves|manuscript`
-12. `inspire-aki compat export-legacy`
+7. `inspire-aki evaluate generate` for non-legacy grouped evaluation modes
+8. `inspire-aki tune tabular|sequence`
+9. `inspire-aki train tabular|sequence`
+10. `inspire-aki evaluate calibrate|metrics|delong|dca|reclassification`
+11. `inspire-aki explain shap`
+12. `inspire-aki report consort|tables|curves|manuscript`
+13. `inspire-aki compat export-legacy`
 
 The refactor writes stage outputs and manifests under the configured artifact root instead of relying on implicit handoffs through `/home/server/...`.
+For `evaluation_mode: grouped_holdout` or `grouped_nested_cv`, run `inspire-aki evaluate generate --config ...` before `tune ...` or `train ...`; `inspire-aki run all` now inserts that stage automatically for grouped modes. Grouped tuning writes per-run HPO manifests and run-scoped best params from the generated outer train folds, and grouped training consumes the generated outer train/test folds directly instead of rebuilding legacy bootstrap manifests.
 The training path is idempotent at the artifact level:
 
 - `train tabular` refreshes `<artifacts_dir>/predictions/raw/tabular.parquet`

@@ -79,6 +79,42 @@ def test_run_all_emits_stage_progress_and_writes_run_events(monkeypatch, synthet
     assert calls[-1] == "run_manuscript"
 
 
+def test_run_all_grouped_mode_logs_evaluate_generate_stage(monkeypatch, synthetic_config: Path) -> None:
+    runner = CliRunner()
+    config = load_config(synthetic_config)
+    config["evaluation_mode"] = "grouped_nested_cv"
+    calls: list[str] = []
+
+    monkeypatch.setattr(cli_module, "_cfg", lambda _path: config)
+    monkeypatch.setattr(cli_module, "run_preop", _stub("run_preop", calls))
+    monkeypatch.setattr(cli_module, "run_intraop", _stub("run_intraop", calls))
+    monkeypatch.setattr(cli_module, "run_tabular", _stub("run_tabular", calls))
+    monkeypatch.setattr(cli_module, "run_labels", _stub("run_labels", calls))
+    monkeypatch.setattr(cli_module, "run_timeseries", _stub("run_timeseries", calls))
+    monkeypatch.setattr(cli_module, "run_sequence", _stub("run_sequence", calls))
+    monkeypatch.setattr(cli_module, "run_evaluate_generate", _stub("run_evaluate_generate", calls))
+    monkeypatch.setattr(cli_module, "run_tune_tabular", _stub("run_tune_tabular", calls))
+    monkeypatch.setattr(cli_module, "run_tune_sequence", _stub("run_tune_sequence", calls))
+    monkeypatch.setattr(cli_module, "run_train_tabular", _stub("run_train_tabular", calls))
+    monkeypatch.setattr(cli_module, "run_train_sequence", _stub("run_train_sequence", calls))
+    monkeypatch.setattr(cli_module, "run_calibration", _stub("run_calibration", calls))
+    monkeypatch.setattr(cli_module, "run_metrics", _stub("run_metrics", calls))
+    monkeypatch.setattr(cli_module, "run_delong", _stub("run_delong", calls))
+    monkeypatch.setattr(cli_module, "run_dca", _stub("run_dca", calls))
+    monkeypatch.setattr(cli_module, "run_reclassification", _stub("run_reclassification", calls))
+    monkeypatch.setattr(cli_module, "run_manuscript", _stub("run_manuscript", calls))
+
+    result = runner.invoke(app, ["run", "all", "--config", str(synthetic_config)])
+
+    assert result.exit_code == 0, result.stdout
+    events_path = synthetic_config.parent / "artifacts" / "logs" / "run_all_events.jsonl"
+    events = _read_jsonl(events_path)
+    assert any(event["event_type"] == "stage_start" and event["stage"] == "evaluate_generate" for event in events)
+    assert any(event["event_type"] == "stage_end" and event["stage"] == "evaluate_generate" for event in events)
+    assert "run_evaluate_generate" in calls
+    assert calls.index("run_evaluate_generate") < calls.index("run_tune_tabular")
+
+
 def test_run_all_failure_writes_stage_error_event(monkeypatch, synthetic_config: Path) -> None:
     runner = CliRunner()
     config = load_config(synthetic_config)
@@ -151,6 +187,7 @@ def test_tune_tabular_writes_trial_progress_log(monkeypatch, synthetic_config: P
 
 def test_tune_sequence_writes_trial_progress_log(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_sequence_inputs(synthetic_config)
+    config["models"]["sequence_hpo_enabled"] = ["lstm_only"]
 
     def fake_tune_sequence_dataset(sequence_df, manifest, _config, *, progress_callback=None):
         if progress_callback is not None:

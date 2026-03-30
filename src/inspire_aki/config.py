@@ -35,6 +35,7 @@ def load_yaml(path: Path) -> dict[str, Any]:
 
 def _normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(config)
+    normalized.setdefault("evaluation_mode", "legacy_repeated_cv")
     reports_cfg = normalized.setdefault("reports", {})
     if "batch_shap_jobs" in reports_cfg:
         reports_cfg["shap_jobs"] = copy.deepcopy(reports_cfg.pop("batch_shap_jobs"))
@@ -63,6 +64,10 @@ def _normalize_config(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def validate_config(config: dict[str, Any]) -> None:
+    evaluation_mode = config.get("evaluation_mode", "legacy_repeated_cv")
+    if evaluation_mode not in {"legacy_repeated_cv", "grouped_holdout", "grouped_nested_cv"}:
+        raise ValueError("evaluation_mode must be one of: legacy_repeated_cv, grouped_holdout, grouped_nested_cv.")
+
     splits_cfg = config["splits"]
     if splits_cfg["use_bootstrapping"] and (splits_cfg["n_bootstrap_iterations"] % splits_cfg["n_cv_folds"]) != 0:
         raise ValueError("When bootstrapping is enabled, splits.n_bootstrap_iterations must be divisible by splits.n_cv_folds.")
