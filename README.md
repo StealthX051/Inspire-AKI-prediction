@@ -270,14 +270,16 @@ Treat this repository as a research archive with a partially modernized pipeline
 4. `inspire-aki preprocess labels`
 5. `inspire-aki preprocess timeseries`
 6. `inspire-aki preprocess sequence`
-7. `inspire-aki tune tabular|sequence`
-8. `inspire-aki train tabular|sequence`
-9. `inspire-aki evaluate calibrate|metrics|delong|dca|reclassification`
-10. `inspire-aki explain shap`
-11. `inspire-aki report consort|tables|curves|manuscript`
-12. `inspire-aki compat export-legacy`
+7. `inspire-aki evaluate generate` for non-legacy grouped evaluation modes
+8. `inspire-aki tune tabular|sequence`
+9. `inspire-aki train tabular|sequence`
+10. `inspire-aki evaluate calibrate|metrics|delong|dca|reclassification`
+11. `inspire-aki explain shap`
+12. `inspire-aki report consort|tables|curves|manuscript`
+13. `inspire-aki compat export-legacy`
 
 The refactor writes stage outputs and manifests under the configured artifact root instead of relying on implicit handoffs through `/home/server/...`.
+For `evaluation_mode: grouped_holdout` or `grouped_nested_cv`, run `inspire-aki evaluate generate --config ...` before `tune ...` or `train ...`; those stages now consume the grouped split artifacts rather than rebuilding legacy bootstrap manifests.
 The training path is idempotent at the artifact level:
 
 - `train tabular` refreshes `<artifacts_dir>/predictions/raw/tabular.parquet`

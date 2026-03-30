@@ -7,7 +7,7 @@ from time import perf_counter
 
 import pandas as pd
 
-from inspire_aki.datasets.splits import build_bootstrap_split_manifest, subset_from_manifest
+from inspire_aki.datasets.splits import build_bootstrap_split_manifest, grouped_manifest_to_training_manifest, subset_from_manifest
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.io.predictions import materialize_raw_predictions, write_prediction_partition
 from inspire_aki.io.progress import ProgressLogger
@@ -98,7 +98,8 @@ def _load_or_build_training_manifest(
                 f"Expected grouped evaluation manifest was not found: {precomputed_path}. "
                 "Run `inspire-aki evaluate generate --config ...` before training."
             )
-        return pd.read_parquet(precomputed_path), precomputed_path, False
+        manifest = pd.read_parquet(precomputed_path)
+        return grouped_manifest_to_training_manifest(manifest), precomputed_path, False
 
     manifest = build_bootstrap_split_manifest(
         dataset_df,

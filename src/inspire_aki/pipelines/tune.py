@@ -11,7 +11,7 @@ from typing import Any
 import pandas as pd
 
 from inspire_aki.config import config_hash
-from inspire_aki.datasets.splits import build_hpo_split_manifest
+from inspire_aki.datasets.splits import build_hpo_split_manifest, grouped_manifest_to_hpo_manifest
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.io.manifest import build_manifest
 from inspire_aki.io.progress import ProgressLogger
@@ -56,6 +56,53 @@ def _atomic_write_dataframe(path: Path, df: pd.DataFrame) -> Path:
         df.to_parquet(temp_path, index=False)
     temp_path.replace(path)
     return path
+
+
+def _grouped_evaluation_manifest_path(artifacts: ArtifactManager, config: dict, dataset_regime: str) -> Path | None:
+    evaluation_mode = config.get("evaluation_mode", "legacy_repeated_cv")
+    if evaluation_mode == "legacy_repeated_cv":
+        return None
+    return artifacts.paths.artifact_path("datasets", "splits", f"{evaluation_mode}_{dataset_regime}.parquet")
+
+
+def _load_or_build_hpo_manifest(
+    *,
+    artifacts: ArtifactManager,
+    config: dict,
+    dataset_df: pd.DataFrame,
+    target: str,
+    dataset_regime: str,
+    population_id: str,
+    output_name: str,
+) -> tuple[pd.DataFrame, Path, list[str]]:
+    grouped_manifest_path = _grouped_evaluation_manifest_path(artifacts, config, dataset_regime)
+    output_path = artifacts.paths.artifact_path("datasets", "splits", output_name)
+    if grouped_manifest_path is None:
+        manifest = build_hpo_split_manifest(
+            dataset_df,
+            target=target,
+            dataset_regime=dataset_regime,
+            population_id=population_id,
+            random_state=config["splits"]["random_state"],
+            holdout_fraction=config["splits"]["holdout_fraction"],
+            validation_fraction_within_train=config["splits"]["hpo_validation_fraction_within_train"],
+        )
+        manifest_path = artifacts.write_dataframe(manifest, "datasets", "splits", output_name)
+        return manifest, manifest_path, []
+
+    if not grouped_manifest_path.exists():
+        raise FileNotFoundError(
+            f"Expected grouped evaluation manifest was not found: {grouped_manifest_path}. "
+            "Run `inspire-aki evaluate generate --config ...` before tuning."
+        )
+    grouped_manifest = pd.read_parquet(grouped_manifest_path)
+    manifest = grouped_manifest_to_hpo_manifest(
+        grouped_manifest,
+        dataset_regime=dataset_regime,
+        population_id=population_id,
+    )
+    manifest_path = _atomic_write_dataframe(output_path, manifest)
+    return manifest, manifest_path, [artifacts.relative(grouped_manifest_path)]
 
 
 def _tabular_study_paths(artifacts: ArtifactManager, dataset_regime: str, model_key: str) -> TabularStudyPaths:
@@ -183,19 +230,19 @@ def run_tune_tabular(config: dict) -> dict[str, str]:
     for dataset_regime in dataset_regimes:
         dataset_path = artifacts.paths.artifact_path("datasets", "tabular", f"tabular_{dataset_regime}_labeled.csv")
         dataset_df = pd.read_csv(dataset_path)
-        manifest = build_hpo_split_manifest(
-            dataset_df,
+        manifest, manifest_path, extra_inputs = _load_or_build_hpo_manifest(
+            artifacts=artifacts,
+            config=config,
+            dataset_df=dataset_df,
             target=config["models"]["target"],
             dataset_regime=dataset_regime,
             population_id=dataset_regime,
-            random_state=config["splits"]["random_state"],
-            holdout_fraction=config["splits"]["holdout_fraction"],
-            validation_fraction_within_train=config["splits"]["hpo_validation_fraction_within_train"],
+            output_name=f"hpo_{dataset_regime}.parquet",
         )
-        manifest_path = artifacts.write_dataframe(manifest, "datasets", "splits", f"hpo_{dataset_regime}.parquet")
         per_dataset_records[dataset_regime] = {
             "dataset_path": dataset_path,
             "manifest_path": manifest_path,
+            "extra_inputs": extra_inputs,
             "trial_count": 0,
             "models": [],
         }
@@ -292,12 +339,13 @@ def run_tune_tabular(config: dict) -> dict[str, str]:
     for dataset_regime in dataset_regimes:
         record = per_dataset_records[dataset_regime]
         dataset_inputs.append(artifacts.relative(record["dataset_path"]))
+        dataset_inputs.extend(record["extra_inputs"])
         split_outputs.append(artifacts.relative(record["manifest_path"]))
         manifest_outputs = [artifacts.relative(record["manifest_path"])] + output_paths
         artifacts.write_manifest(
             f"tune_tabular_{dataset_regime}",
             ["manifests", f"tune_tabular_{dataset_regime}.json"],
-            inputs=[artifacts.relative(record["dataset_path"])],
+            inputs=[artifacts.relative(record["dataset_path"])] + record["extra_inputs"],
             outputs=manifest_outputs,
             metadata={"n_trials": record["trial_count"], "models": record["models"]},
             stage_runtime_plan=stage_runtime_plan,
@@ -327,16 +375,15 @@ def run_tune_sequence(config: dict) -> dict[str, str]:
         progress.stage_end(stage_name, wall_time_seconds=perf_counter() - start, message="sequence HPO skipped; no sequence dataset")
         return {}
     sequence_df = artifacts.read_pickle("datasets", "sequence", "lstm_trainable.pkl")
-    manifest = build_hpo_split_manifest(
-        sequence_df,
+    manifest, manifest_path, extra_inputs = _load_or_build_hpo_manifest(
+        artifacts=artifacts,
+        config=config,
+        dataset_df=sequence_df,
         target=config["models"]["target"],
         dataset_regime="sequence",
         population_id="sequence_common",
-        random_state=config["splits"]["random_state"],
-        holdout_fraction=config["splits"]["holdout_fraction"],
-        validation_fraction_within_train=config["splits"]["hpo_validation_fraction_within_train"],
+        output_name="hpo_sequence.parquet",
     )
-    manifest_path = artifacts.write_dataframe(manifest, "datasets", "splits", "hpo_sequence.parquet")
     params, trials_df = tune_sequence_dataset(
         sequence_df,
         manifest,
@@ -356,7 +403,7 @@ def run_tune_sequence(config: dict) -> dict[str, str]:
     artifacts.write_manifest(
         "tune_sequence",
         ["manifests", "tune_sequence.json"],
-        inputs=[artifacts.relative(sequence_path)],
+        inputs=[artifacts.relative(sequence_path)] + extra_inputs,
         outputs=[artifacts.relative(manifest_path), artifacts.relative(best_path)]
         + ([artifacts.relative(artifacts.paths.artifact_path("tuning", "sequence_trials.parquet"))] if "trials" in outputs else []),
         metadata={"models": list(params)},

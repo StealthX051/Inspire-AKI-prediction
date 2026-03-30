@@ -3,6 +3,9 @@ from __future__ import annotations
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
+_LEGACY_SPLIT_COLUMNS = ["op_id", "repeat_id", "fold_id", "split_name"]
+_HPO_SPLIT_COLUMNS = ["op_id", "dataset_regime", "population_id", "repeat_id", "fold_id", "split_name"]
+
 
 def build_bootstrap_split_manifest(
     df: pd.DataFrame,
@@ -95,6 +98,127 @@ def build_hpo_split_manifest(
                 "split_name": split_name,
             })
     return pd.DataFrame(records)
+
+
+def grouped_manifest_to_training_manifest(manifest: pd.DataFrame) -> pd.DataFrame:
+    if "split_scope" not in manifest.columns and set(_LEGACY_SPLIT_COLUMNS).issubset(manifest.columns):
+        adapted = manifest[_LEGACY_SPLIT_COLUMNS].copy()
+        return adapted.sort_values(["repeat_id", "fold_id", "split_name", "op_id"], kind="stable").reset_index(drop=True)
+
+    required = {"op_id", "outer_repeat_id", "outer_fold_id", "split_scope", "split_name"}
+    missing = sorted(required - set(manifest.columns))
+    if missing:
+        raise ValueError(f"Grouped training manifest adaptation requires columns {missing}.")
+
+    outer = manifest[manifest["split_scope"] == "outer"].copy()
+    if outer.empty:
+        raise ValueError("Grouped training manifest adaptation requires outer train/test rows.")
+
+    adapted = outer[["op_id", "outer_repeat_id", "outer_fold_id", "split_name"]].rename(
+        columns={"outer_repeat_id": "repeat_id", "outer_fold_id": "fold_id"}
+    )
+    adapted["repeat_id"] = adapted["repeat_id"].astype(int)
+    adapted["fold_id"] = adapted["fold_id"].astype(int)
+    return adapted.sort_values(["repeat_id", "fold_id", "split_name", "op_id"], kind="stable").reset_index(drop=True)
+
+
+def grouped_manifest_to_hpo_manifest(
+    manifest: pd.DataFrame,
+    *,
+    dataset_regime: str,
+    population_id: str,
+) -> pd.DataFrame:
+    if "split_scope" not in manifest.columns and set(_LEGACY_SPLIT_COLUMNS).issubset(manifest.columns):
+        split_names = set(manifest["split_name"].astype(str))
+        if {"train", "val", "holdout"}.issubset(split_names):
+            adapted = manifest.copy()
+            if "dataset_regime" not in adapted.columns:
+                adapted["dataset_regime"] = dataset_regime
+            if "population_id" not in adapted.columns:
+                adapted["population_id"] = population_id
+            return adapted[_HPO_SPLIT_COLUMNS].sort_values(["repeat_id", "fold_id", "split_name", "op_id"], kind="stable").reset_index(drop=True)
+        raise ValueError(
+            "Grouped HPO manifest adaptation requires grouped manifests with inner train/val rows or a legacy "
+            "HPO manifest with train/val/holdout splits."
+        )
+
+    required = {
+        "op_id",
+        "outer_repeat_id",
+        "outer_fold_id",
+        "inner_repeat_id",
+        "inner_fold_id",
+        "split_scope",
+        "split_name",
+    }
+    missing = sorted(required - set(manifest.columns))
+    if missing:
+        raise ValueError(f"Grouped HPO manifest adaptation requires columns {missing}.")
+
+    outer = manifest[manifest["split_scope"] == "outer"].copy()
+    inner = manifest[manifest["split_scope"] == "inner"].copy()
+    if outer.empty or inner.empty:
+        raise ValueError("Grouped HPO manifest adaptation requires both outer and inner split rows.")
+
+    outer_keys = (
+        outer[["outer_repeat_id", "outer_fold_id"]]
+        .drop_duplicates()
+        .sort_values(["outer_repeat_id", "outer_fold_id"], kind="stable")
+        .reset_index(drop=True)
+    )
+    selected_outer = outer_keys.iloc[0]
+    outer_repeat_id = int(selected_outer["outer_repeat_id"])
+    outer_fold_id = int(selected_outer["outer_fold_id"])
+
+    outer_selected = outer[
+        (outer["outer_repeat_id"] == outer_repeat_id)
+        & (outer["outer_fold_id"] == outer_fold_id)
+    ]
+    inner_candidates = inner[
+        (inner["outer_repeat_id"] == outer_repeat_id)
+        & (inner["outer_fold_id"] == outer_fold_id)
+    ]
+    inner_keys = (
+        inner_candidates[["inner_repeat_id", "inner_fold_id"]]
+        .drop_duplicates()
+        .sort_values(["inner_repeat_id", "inner_fold_id"], kind="stable")
+        .reset_index(drop=True)
+    )
+    if inner_keys.empty:
+        raise ValueError(
+            f"Grouped HPO manifest adaptation found no inner folds for outer_repeat_id={outer_repeat_id}, "
+            f"outer_fold_id={outer_fold_id}."
+        )
+    selected_inner = inner_keys.iloc[0]
+    inner_repeat_id = int(selected_inner["inner_repeat_id"])
+    inner_fold_id = int(selected_inner["inner_fold_id"])
+    inner_selected = inner_candidates[
+        (inner_candidates["inner_repeat_id"] == inner_repeat_id)
+        & (inner_candidates["inner_fold_id"] == inner_fold_id)
+    ]
+
+    split_frames = {
+        "train": inner_selected[inner_selected["split_name"] == "train"],
+        "val": inner_selected[inner_selected["split_name"] == "val"],
+        "holdout": outer_selected[outer_selected["split_name"] == "test"],
+    }
+    records: list[dict[str, object]] = []
+    for split_name, split_df in split_frames.items():
+        if split_df.empty:
+            raise ValueError(f"Grouped HPO manifest adaptation requires a non-empty '{split_name}' split.")
+        for op_id in split_df["op_id"].drop_duplicates().tolist():
+            records.append(
+                {
+                    "op_id": int(op_id),
+                    "dataset_regime": dataset_regime,
+                    "population_id": population_id,
+                    "repeat_id": 0,
+                    "fold_id": 0,
+                    "split_name": split_name,
+                }
+            )
+    adapted = pd.DataFrame(records, columns=_HPO_SPLIT_COLUMNS)
+    return adapted.sort_values(["repeat_id", "fold_id", "split_name", "op_id"], kind="stable").reset_index(drop=True)
 
 
 def subset_from_manifest(

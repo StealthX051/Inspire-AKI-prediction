@@ -11,12 +11,33 @@ from inspire_aki.models.tabular import selected_tabular_dataset_regimes
 from inspire_aki.runtime import build_stage_runtime_plan
 
 
+def _patient_lookup(artifacts: ArtifactManager) -> pd.DataFrame:
+    preop_path = artifacts.paths.artifact_path("features", "preop", "preop_features.csv")
+    lookup = pd.read_csv(preop_path, usecols=["op_id", "subject_id"]).rename(columns={"subject_id": "patient_id"})
+    return lookup.drop_duplicates(subset="op_id", keep="last").reset_index(drop=True)
+
+
+def _dataset_with_patient_id(dataset_df: pd.DataFrame, patient_lookup: pd.DataFrame) -> pd.DataFrame:
+    if "patient_id" in dataset_df.columns:
+        return dataset_df
+    if "subject_id" in dataset_df.columns:
+        return dataset_df.rename(columns={"subject_id": "patient_id"})
+    if "op_id" not in dataset_df.columns:
+        raise ValueError("Grouped evaluation manifest generation requires an op_id column.")
+
+    merged = dataset_df.merge(patient_lookup, on="op_id", how="left")
+    if merged["patient_id"].isna().any():
+        raise ValueError("Grouped evaluation manifest generation could not resolve patient_id for every op_id.")
+    return merged
+
+
 def run_evaluate_generate(config: dict) -> dict[str, str]:
     stage_name = "evaluate_generate"
     start = perf_counter()
     artifacts = ArtifactManager(config)
     backend = build_evaluation_backend(config)
     target = config["models"]["target"]
+    patient_lookup = _patient_lookup(artifacts) if backend.mode != "legacy_repeated_cv" else pd.DataFrame()
 
     manifest_paths: list[str] = []
     audit_frames: list[pd.DataFrame] = []
@@ -27,10 +48,13 @@ def run_evaluate_generate(config: dict) -> dict[str, str]:
         if not dataset_path.exists():
             continue
         dataset_df = pd.read_csv(dataset_path)
+        if backend.mode != "legacy_repeated_cv":
+            dataset_df = _dataset_with_patient_id(dataset_df, patient_lookup)
         result = backend.build(dataset_df, target=target, dataset_family=dataset_regime)
         manifest_path = artifacts.write_dataframe(result.manifest, "datasets", "splits", f"{backend.mode}_{dataset_regime}.parquet")
         audit_df = result.overlap_audit.copy()
-        audit_df.insert(0, "dataset_family", dataset_regime)
+        if "dataset_family" not in audit_df.columns:
+            audit_df.insert(0, "dataset_family", dataset_regime)
         artifacts.write_dataframe(audit_df, "evaluation", f"split_audit_{dataset_regime}.csv")
         manifest_paths.append(str(manifest_path))
         audit_frames.append(audit_df)
@@ -39,10 +63,13 @@ def run_evaluate_generate(config: dict) -> dict[str, str]:
     sequence_path = artifacts.paths.artifact_path("datasets", "sequence", "lstm_trainable.pkl")
     if sequence_path.exists():
         sequence_df = artifacts.read_pickle("datasets", "sequence", "lstm_trainable.pkl")
+        if backend.mode != "legacy_repeated_cv":
+            sequence_df = _dataset_with_patient_id(sequence_df, patient_lookup)
         result = backend.build(sequence_df, target=target, dataset_family="sequence")
         manifest_path = artifacts.write_dataframe(result.manifest, "datasets", "splits", f"{backend.mode}_sequence.parquet")
         audit_df = result.overlap_audit.copy()
-        audit_df.insert(0, "dataset_family", "sequence")
+        if "dataset_family" not in audit_df.columns:
+            audit_df.insert(0, "dataset_family", "sequence")
         artifacts.write_dataframe(audit_df, "evaluation", "split_audit_sequence.csv")
         manifest_paths.append(str(manifest_path))
         audit_frames.append(audit_df)
