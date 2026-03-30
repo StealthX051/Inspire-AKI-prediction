@@ -64,7 +64,7 @@ Current behavior to keep in mind:
 | `evaluate metrics` | `pipelines/evaluate.py:run_metrics` | calibrated predictions | `evaluation/metrics_by_fold.csv`, `evaluation/metrics_summary.csv`, `evaluation/metrics_bootstrap_ci.csv` | Bootstrap CI output is conditional on config and may be omitted |
 | `evaluate delong` | `pipelines/evaluate.py:run_delong` | calibrated predictions | `evaluation/delong_matrix.csv`, `evaluation/delong_long.csv`, `evaluation/delong_fdr_corrected.csv`, `evaluation/delong_fdr_corrected_long.csv` | Pairwise AUROC comparison tables, including FDR-corrected artifacts |
 | `evaluate dca` | `pipelines/evaluate.py:run_dca` | calibrated predictions | `evaluation/dca_curves.csv`, `evaluation/dca_bootstrap_ci.csv` | Decision-curve rows plus long-form bootstrap CI bands for downstream manuscript plots |
-| `evaluate reclassification` | `pipelines/evaluate.py:run_reclassification` | calibrated predictions | `evaluation/reclassification_summary.csv` | Stage-owned reclassification summary used by manuscript reporting |
+| `evaluate reclassification` | `pipelines/evaluate.py:run_reclassification` | calibrated predictions | `evaluation/reclassification_summary.csv` | Stage-owned reclassification summary used by manuscript reporting; if the summary is empty, reporting skips the reclassification table instead of failing |
 
 ### Explain
 

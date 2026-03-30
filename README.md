@@ -17,7 +17,7 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
   - the consort figure now renders as a top-down branched manuscript-style Graphviz flow with explicit exclusion summaries and final AKI / non-AKI terminal boxes
   - every report table is emitted as `html`, `md`, and `csv`
   - every report figure is emitted as high-resolution `png` plus `svg`
-  - `evaluate reclassification` now produces a dedicated stage-owned artifact consumed by `report manuscript`
+- `evaluate reclassification` now produces a dedicated stage-owned artifact consumed by `report manuscript`; empty smoke-style summaries are skipped cleanly during report rendering
   - rerunning `report ...` or `report manuscript` overwrites the canonical files under `reports/` in place; manual deletion is not required before regeneration
 - The refactor defaults now point at the mounted volume path `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` for raw INSPIRE inputs.
 - The shipped configs now also place refactor artifacts on the mounted volume under `/media/volume/ncs_inspire_data/ncs_aki/artifacts/`.
