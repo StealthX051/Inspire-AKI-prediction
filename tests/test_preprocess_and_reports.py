@@ -17,7 +17,7 @@ from inspire_aki.pipelines.train import run_train_tabular
 from inspire_aki.pipelines.tune import run_tune_tabular
 from inspire_aki.reporting.consort import generate_consort_outputs
 from inspire_aki.reporting.curves import generate_curve_outputs
-from inspire_aki.reporting.tables import _performance_table_spec
+from inspire_aki.reporting.tables import _performance_summary_frame, _performance_table_spec, generate_table_outputs
 from inspire_aki.reporting.rendering import write_table_outputs
 
 
@@ -242,6 +242,74 @@ def test_macce_grouped_holdout_smoke_pipeline(synthetic_config) -> None:
     assert cohort_table["characteristic"].astype(str).str.contains("30-day MACCE", regex=False).any()
 
 
+def test_cohort_characteristics_use_legacy_sex_encoding_and_deduped_departments(loaded_synthetic_config) -> None:
+    artifacts = ArtifactManager(loaded_synthetic_config)
+    combined_df = pd.DataFrame(
+        [
+            {
+                "op_id": 1,
+                "age": 50.0,
+                "sex": False,
+                "height": 160.0,
+                "weight": 60.0,
+                "asa": 2.0,
+                "BSA": 1.6,
+                "BMI": 23.4,
+                "booking_case_length": 120.0,
+                "num_card_events": 0.0,
+                "department_GS": 1,
+                "department_UR": 0,
+            },
+            {
+                "op_id": 2,
+                "age": 60.0,
+                "sex": True,
+                "height": 170.0,
+                "weight": 70.0,
+                "asa": 3.0,
+                "BSA": 1.8,
+                "BMI": 24.2,
+                "booking_case_length": 150.0,
+                "num_card_events": 1.0,
+                "department_GS": 0,
+                "department_UR": 1,
+            },
+            {
+                "op_id": 3,
+                "age": 55.0,
+                "sex": False,
+                "height": 165.0,
+                "weight": 65.0,
+                "asa": 1.0,
+                "BSA": 1.7,
+                "BMI": 23.9,
+                "booking_case_length": 90.0,
+                "num_card_events": 0.0,
+                "department_GS": 1,
+                "department_UR": 0,
+            },
+        ]
+    )
+    preop_df = combined_df[["op_id", "sex", "department_GS", "department_UR"]].copy()
+    labels_df = pd.DataFrame({"op_id": [1, 2, 3], "aki_boolean": [1, 0, 0]})
+
+    artifacts.write_dataframe(combined_df, "datasets", "tabular", "tabular_combined_unnormalized.csv")
+    artifacts.write_dataframe(preop_df, "features", "preop", "preop_features.csv")
+    artifacts.write_dataframe(labels_df, "cohort", "labels.csv")
+
+    generate_table_outputs(artifacts)
+
+    cohort_table = pd.read_csv(artifacts.paths.artifact_path("reports", "tables", "cohort_characteristics.csv"))
+    female_row = cohort_table.loc[cohort_table["characteristic"] == "Female sex, n (%)"].iloc[0]
+    department_rows = cohort_table[cohort_table["characteristic"].isin(["General Surgery", "Urology"])]
+
+    assert female_row["finding"] == "2 (66.67%)"
+    assert len(department_rows) == 2
+    assert not cohort_table["characteristic"].astype(str).str.contains("preop", case=False).any()
+    assert "GS" not in cohort_table["characteristic"].tolist()
+    assert "UR" not in cohort_table["characteristic"].tolist()
+
+
 def test_performance_tables_filter_asa_rule_and_render_column_gradients(loaded_synthetic_config) -> None:
     artifacts = ArtifactManager(loaded_synthetic_config)
     summary_df = pd.DataFrame(
@@ -427,3 +495,45 @@ def test_performance_tables_filter_asa_rule_and_render_column_gradients(loaded_s
     assert "asa_rule" not in combined_section.csv_df["model_key"].tolist()
     assert html_path in outputs
     assert 'style="background: linear-gradient(180deg, rgb(' in html_path.read_text(encoding="utf-8")
+
+
+def test_grouped_holdout_performance_summary_uses_bootstrap_ci(loaded_synthetic_config) -> None:
+    config = copy.deepcopy(loaded_synthetic_config)
+    config["evaluation_mode"] = "grouped_holdout"
+    config["evaluation"]["bootstrap_reps"] = 25
+
+    rows = []
+    for idx in range(60):
+        y_true = 1 if idx % 6 == 0 else 0
+        y_prob = 0.82 if y_true else 0.12 + (idx % 5) * 0.03
+        rows.append(
+            {
+                "op_id": idx + 1,
+                "dataset_regime": "combined",
+                "population_id": "combined",
+                "repeat_id": 0,
+                "fold_id": 0,
+                "split_name": "test",
+                "model_key": "log_reg",
+                "target": "aki_boolean",
+                "y_true": y_true,
+                "y_prob_raw": y_prob,
+                "y_prob_calibrated": y_prob,
+                "y_pred": int(y_prob >= 0.5),
+                "threshold": 0.5,
+                "calibration_method": "identity",
+                "run_id": "combined:log_reg:0",
+            }
+        )
+
+    summary_df = _performance_summary_frame(
+        pd.DataFrame(rows),
+        prob_col="y_prob_calibrated",
+        config=config,
+        use_existing_threshold=True,
+    )
+
+    row = summary_df.iloc[0]
+    assert row["auroc_ci_display"] != "N/A"
+    assert row["auprc_ci_display"] != "N/A"
+    assert row["balanced_accuracy_ci_display"] != "N/A"

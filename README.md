@@ -13,7 +13,9 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 - `inspire-aki report manuscript` is now the report-level command that includes SHAP, rather than requiring a separate SHAP call.
 - The manuscript report layer now targets legacy-style presentation on top of corrected refactor artifacts:
   - performance tables are rebuilt from fold/run metrics rather than pooled `metrics_summary.csv`
+  - for grouped-holdout manuscript tables, confidence intervals are now bootstrap intervals computed directly from the saved prediction artifacts with the same metric definitions the tables display
   - HTML performance tables now keep a fixed manuscript model order, restrict `ASA Rule` to the preop section, and use gentle monochrome column-wise gradients plus bold best-in-column values
+  - cohort characteristics tables now prefer the combined unnormalized cohort artifact, restore the legacy `False = female` encoding, and emit one full-name department row per service instead of duplicated merged `*_preop` rows
   - the consort figure now renders as a top-down branched manuscript-style Graphviz flow with explicit exclusion summaries and final active-outcome negative / positive terminal boxes
   - every report table is emitted as `html`, `md`, and `csv`
   - every report figure is emitted as high-resolution `png` plus `svg`

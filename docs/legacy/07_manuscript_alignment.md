@@ -44,7 +44,9 @@ Presentation now restored in the refactor:
 - performance tables are rebuilt from fold/run metrics and emitted as:
   - `performance_table.{html,md,csv}`
   - `performance_table_calibrated.{html,md,csv}`
+  - grouped-holdout runs now fill manuscript-table confidence intervals with bootstrap intervals computed from the saved prediction artifacts using the same table-level metric definitions, rather than leaving those cells as `N/A`
   - HTML performance tables keep a fixed manuscript-oriented model order, restrict `ASA Rule` to the preop section, and use gentle monochrome column-wise gradients while still bolding the best value per metric
+- cohort-characteristics tables now prefer the combined unnormalized cohort artifact, count female patients with the legacy `False = female` encoding, and emit one full-name department row per service instead of duplicated merged `*_preop` rows
 - report tables are emitted in all three manuscript-facing formats:
   - `html`
   - `md`

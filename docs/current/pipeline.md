@@ -80,7 +80,7 @@ Current behavior to keep in mind:
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
 | `report consort` | `pipelines/report.py:run_consort` | cohort and audit artifacts | `consort_audit.{html,md,csv}`, `consort.dot`, `consort.{png,svg}` | Standalone consort output stage; renders a top-down branched manuscript-style Graphviz flow with explicit exclusion summaries and final active-outcome negative / positive terminal nodes |
-| `report tables` | `pipelines/report.py:run_tables` | tabular, label, and evaluation artifacts | manuscript-facing core tables in `html`, `md`, and `csv` | Includes legacy-style uncalibrated and calibrated performance tables plus descriptive tables; cohort summaries now use the active outcome display label rather than AKI-only wording; HTML performance tables keep a fixed manuscript order, restrict `ASA Rule` to preop, and use gentle monochrome column-wise gradients |
+| `report tables` | `pipelines/report.py:run_tables` | tabular, label, and evaluation artifacts | manuscript-facing core tables in `html`, `md`, and `csv` | Includes legacy-style uncalibrated and calibrated performance tables plus descriptive tables; cohort summaries now use the active outcome display label rather than AKI-only wording, prefer the combined unnormalized cohort artifact when available, restore the legacy `False = female` sex encoding, and emit deduplicated full-name department rows; HTML performance tables keep a fixed manuscript order, restrict `ASA Rule` to preop, and use gentle monochrome column-wise gradients; grouped-holdout performance tables derive bootstrap CIs directly from the saved prediction artifacts using the same manuscript metric definitions shown in the table |
 | `report curves` | `pipelines/report.py:run_curves` | evaluation artifacts | ROC, PR, calibration, DCA, and comparison figures in `png` and `svg` | Uses fold/run aggregation for ROC and PR uncertainty bands |
 | `report manuscript` | `pipelines/report.py:run_manuscript` | report config and all upstream artifacts | combined report outputs under `reports/` | Dispatches `consort`, `tables`, `curves`, `statistics`, `reclassification`, and `shap` from `reports.manuscript_sections` |
 
@@ -135,6 +135,7 @@ Notes:
 
 - `report consort` is the fastest loop for Graphviz consort-layout iteration
 - `report tables` is the tightest loop for manuscript table styling and ordering, but it still recomputes fold/run performance summaries from the saved prediction artifacts
+- in grouped-holdout mode, rerunning `report tables` also recomputes the manuscript-table bootstrap intervals from those saved predictions
 
 ## Runtime Notes
 

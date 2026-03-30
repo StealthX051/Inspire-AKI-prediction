@@ -51,6 +51,11 @@ Relevant implementation surfaces:
 - active real-data artifact root for the shipped MACCE config:
   - [`/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default)
 - `inspire-aki runtime inspect --config configs/macce/default.yaml` resolves cleanly on the current host class
+- as of March 30, 2026, `report tables` has been rerun for the MACCE artifact root so:
+  - [`performance_table.html`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default/reports/tables/performance_table.html) now shows grouped-holdout bootstrap CIs instead of `N/A`
+  - [`performance_table_calibrated.html`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default/reports/tables/performance_table_calibrated.html) now shows grouped-holdout bootstrap CIs instead of `N/A`
+  - the manuscript-table CI path now bootstraps directly from saved prediction artifacts using the same table-level metric definitions, rather than reusing the broader evaluation bootstrap artifact
+  - [`cohort_characteristics.html`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default/reports/tables/cohort_characteristics.html) now restores the legacy `False = female` encoding, removes duplicated merged department rows, and emits full department names
 - current observed run-state snapshot:
   - [`preprocess_preop.json`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default/manifests/preprocess_preop.json) is present under `manifests/`
   - `logs/` exists under the same artifact root and is where `run_all_events.jsonl` and the `tune_*` / `train_*` progress logs will appear once those stages execute
@@ -126,6 +131,15 @@ inspire-aki evaluate delong --config configs/macce/default.yaml
 inspire-aki evaluate dca --config configs/macce/default.yaml
 inspire-aki evaluate reclassification --config configs/macce/default.yaml
 inspire-aki report manuscript --config configs/macce/default.yaml
+```
+
+If only the manuscript tables need regeneration after a reporting-only fix, rerun:
+
+```bash
+cd /home/exouser/Inspire-AKI-prediction
+git switch outcome-extension
+source .venv/bin/activate
+inspire-aki report tables --config configs/macce/default.yaml
 ```
 
 ## Quick Commands For The Next Coder
