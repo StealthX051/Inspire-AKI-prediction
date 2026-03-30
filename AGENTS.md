@@ -62,6 +62,19 @@ As of March 25, 2026:
 ## Safe Working Rules
 
 - Prefer `rg` and targeted reads before editing.
+- For feature work, prefer the smallest correct change that fully satisfies the request.
+- Extend existing code paths, helpers, configs, and CLIs before adding new ones.
+- Do not redevelop, shadow, or parallel an existing feature when the current implementation can be adapted safely.
+- Do not perform opportunistic refactors, file moves, renames, or architectural cleanup unless they are required to complete the requested change correctly.
+- Keep diffs narrow:
+  - touch the fewest files that can reasonably solve the task
+  - preserve existing public interfaces, artifact paths, config keys, and command surfaces unless the request requires changing them
+  - avoid adding new dependencies, abstractions, wrappers, toggles, or layers when existing patterns are sufficient
+- If a new helper or abstraction seems useful, add it only when at least one existing call site can reuse it immediately or the current file would otherwise become materially worse.
+- When a request appears to overlap existing behavior, inspect and reuse that behavior first; patch the current implementation rather than replacing it.
+- Keep verification proportional to the change:
+  - small localized edits should get focused tests/checks
+  - broad reruns belong only to changes that actually affect those surfaces
 - Do not casually edit notebooks when a `.py` source or checked-in markdown output already captures the same behavior.
 - Do not treat checked-in model directories as source code.
 - Do not promise reproducibility without private INSPIRE data.
@@ -74,6 +87,9 @@ As of March 25, 2026:
   - prefer updating an existing canonical doc over adding a new standalone summary
   - avoid restating the same repo context across multiple files unless the duplication is necessary for navigation or manuscript alignment
   - keep notes focused on durable decisions, blockers, artifact paths, and the next concrete step
+- Keep instruction files scoped:
+  - use the repo-root `AGENTS.md` for stable repo-wide defaults
+  - if one subtree needs materially different instructions, add a closer `AGENTS.md` or `AGENTS.override.md` there instead of bloating the root file
 - If you change code behavior, update:
   - `README.md`
   - the relevant `docs/*.md`

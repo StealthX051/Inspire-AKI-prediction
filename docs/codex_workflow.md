@@ -70,6 +70,25 @@ inspire-aki report manuscript --config configs/aki/smoke_hpo.yaml
   - inspect with `jq` or targeted text extraction
   - avoid editing them unless explicitly asked
 
+## Feature Edit Policy
+
+- Default to the smallest correct diff, not the broadest redesign.
+- Reuse existing extension points, helpers, CLI commands, config fields, and artifact contracts before introducing new ones.
+- Do not add parallel implementations of behavior that already exists in `src/inspire_aki/` unless the task explicitly calls for a replacement.
+- Avoid side-quest cleanup during feature work:
+  - no opportunistic renames, moves, large formatting passes, or pattern rewrites unless they are required for correctness
+  - no new dependency, abstraction layer, or configuration knob unless the current structure cannot support the requested behavior cleanly
+- Prefer patching the current call path over introducing a fresh wrapper or alternate pipeline.
+- If broader cleanup is genuinely needed, keep the required change separate from any optional follow-up and say so explicitly.
+- Keep validation proportional:
+  - run the smallest test/check that meaningfully covers the changed behavior
+  - reserve full pipeline reruns for changes that actually alter those stages
+
+## Instruction File Strategy
+
+- Keep the root [../AGENTS.md](../AGENTS.md) short and repo-wide.
+- If one area needs special handling, place a closer `AGENTS.md` or `AGENTS.override.md` in that subtree instead of expanding the root into a long manual.
+
 ## Things To Be Skeptical Of
 
 - any assumption that later scripts consume earlier outputs without path drift
