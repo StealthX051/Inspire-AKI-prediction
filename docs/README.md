@@ -26,12 +26,13 @@ They remain useful for understanding the pre-refactor system and its issues, but
 
 ## Current Handoff Snapshot
 
-As of March 24, 2026:
+As of March 30, 2026:
 
-- synthetic `pytest` coverage for the refactor is green
-- the real-data preprocessing path on the mounted INSPIRE volume has been exercised
-- the real-data HPO tuning path now completes after Optuna `4.x` state-handling fixes
-- the full real-data `configs/aki/smoke_hpo.yaml` run is still pending final end-to-end validation from training through report
+- the main default AKI refactor path has completed end to end under `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default`
+- the grouped-CV reintegration work has been merged into `justin`
+- `outcome-extension` is the current branch for adding other outcomes on top of that merged grouped-CV baseline
+- `eval-backend-refactor` is retained only as a donor/reference line for the historical March 27 grouped-CV run
+- the current branch roles, grouped-CV validation state, and next recommended starting point are captured in [HANDOFF/2026-03-30_grouped-cv-integration-merged-and-outcome-next-steps.md](HANDOFF/2026-03-30_grouped-cv-integration-merged-and-outcome-next-steps.md)
 
 For the current portability/validation status, start with:
 
