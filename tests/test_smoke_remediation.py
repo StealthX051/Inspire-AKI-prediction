@@ -18,6 +18,7 @@ from inspire_aki.models.weighting import balance_sample_weights, positive_balanc
 from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop, run_tabular
 from inspire_aki.pipelines.report import run_manuscript
 from inspire_aki.pipelines.train import run_train_tabular
+from inspire_aki.reporting.shap import generate_shap_outputs
 
 
 def _prepare_reporting_inputs(config_path: Path) -> dict:
@@ -132,6 +133,22 @@ def test_report_manuscript_manifest_includes_outputs(synthetic_config: Path) -> 
     manifest = artifacts.read_json("manifests", "report_manuscript.json")
     assert manifest["metadata"]["n_outputs"] > 0
     assert len(manifest["outputs"]) == manifest["metadata"]["n_outputs"]
+
+
+def test_generate_shap_outputs_accepts_grouped_nested_manifest_names(synthetic_config: Path) -> None:
+    config = _prepare_reporting_inputs(synthetic_config)
+    artifacts = ArtifactManager(config)
+
+    run_train_tabular(config)
+    bootstrap_path = artifacts.paths.artifact_path("datasets", "splits", "bootstrap_combined.parquet")
+    grouped_path = artifacts.paths.artifact_path("datasets", "splits", "grouped_nested_cv_combined.parquet")
+    bootstrap_path.rename(grouped_path)
+
+    config["reports"]["shap_jobs"] = [{"dataset_regime": "combined", "model_key": "log_reg"}]
+    outputs = generate_shap_outputs(artifacts, config)
+
+    assert artifacts.paths.artifact_path("explainability", "shap_importance_combined_log_reg.csv") in outputs
+    assert artifacts.paths.artifact_path("reports", "figures", "shap_beeswarm_combined_log_reg.png") in outputs
 
 
 def test_tabular_bundle_prediction_emits_no_scaler_feature_name_warning(synthetic_config: Path) -> None:

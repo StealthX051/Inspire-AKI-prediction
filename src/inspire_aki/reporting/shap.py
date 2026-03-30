@@ -18,8 +18,23 @@ def _load_dataset_for_regime(artifacts: ArtifactManager, dataset_regime: str) ->
     return pd.read_csv(artifacts.paths.artifact_path("datasets", "tabular", f"tabular_{dataset_regime}_labeled.csv"))
 
 
+def _resolve_split_manifest_path(artifacts: ArtifactManager, dataset_regime: str) -> Path:
+    candidates = [
+        artifacts.paths.artifact_path("datasets", "splits", f"bootstrap_{dataset_regime}.parquet"),
+        artifacts.paths.artifact_path("datasets", "splits", f"grouped_nested_cv_{dataset_regime}.parquet"),
+        artifacts.paths.artifact_path("datasets", "splits", f"grouped_holdout_{dataset_regime}.parquet"),
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    raise FileNotFoundError(
+        "Expected a split manifest for SHAP reporting but none were found. "
+        f"Tried: {', '.join(str(path) for path in candidates)}"
+    )
+
+
 def _load_split(artifacts: ArtifactManager, dataset_regime: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    manifest = pd.read_parquet(artifacts.paths.artifact_path("datasets", "splits", f"bootstrap_{dataset_regime}.parquet"))
+    manifest = pd.read_parquet(_resolve_split_manifest_path(artifacts, dataset_regime))
     dataset_df = _load_dataset_for_regime(artifacts, dataset_regime)
     train_df = subset_from_manifest(dataset_df, manifest, repeat_id=0, fold_id=0, split_name="train")
     test_df = subset_from_manifest(dataset_df, manifest, repeat_id=0, fold_id=0, split_name="test")
