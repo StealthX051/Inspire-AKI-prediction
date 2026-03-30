@@ -31,6 +31,13 @@ class GroupedSplitBundle:
     overlap_audit: pd.DataFrame
 
 
+@dataclass(frozen=True)
+class EvaluationRun:
+    run_id: int
+    repeat_id: int
+    fold_id: int
+
+
 def _validate_split_inputs(df: pd.DataFrame, *, target: str, patient_col: str) -> pd.DataFrame:
     required = {"op_id", target, patient_col}
     missing = sorted(required - set(df.columns))
@@ -164,6 +171,99 @@ def _finalize_grouped_manifest(manifest_rows: list[dict[str, Any]], *, evaluatio
         assert_outer_test_coverage_once(manifest)
 
     return GroupedSplitBundle(manifest=manifest, overlap_audit=_build_overlap_audit(manifest))
+
+
+def manifest_keys(
+    manifest: pd.DataFrame,
+    *,
+    repeat_id: int | None = None,
+    fold_id: int | None = None,
+) -> list[dict[str, int]]:
+    if {"outer_repeat_id", "outer_fold_id", "split_scope"}.issubset(manifest.columns):
+        scoped = manifest[manifest["split_scope"] == "outer"]
+        repeat_column = "outer_repeat_id"
+        fold_column = "outer_fold_id"
+    else:
+        scoped = manifest
+        repeat_column = "repeat_id"
+        fold_column = "fold_id"
+
+    if repeat_id is not None:
+        scoped = scoped[scoped[repeat_column] == repeat_id]
+    if fold_id is not None:
+        scoped = scoped[scoped[fold_column] == fold_id]
+
+    key_columns = [repeat_column, fold_column]
+    keys = (
+        scoped[key_columns]
+        .drop_duplicates()
+        .sort_values(key_columns, kind="stable")
+        .to_dict("records")
+    )
+    return [
+        {
+            "repeat_id": int(row[repeat_column]),
+            "fold_id": int(row[fold_column]),
+        }
+        for row in keys
+    ]
+
+
+def evaluation_runs(
+    manifest: pd.DataFrame,
+    *,
+    repeat_id: int | None = None,
+    fold_id: int | None = None,
+) -> list[EvaluationRun]:
+    keys = manifest_keys(manifest, repeat_id=repeat_id, fold_id=fold_id)
+    return [
+        EvaluationRun(
+            run_id=run_id,
+            repeat_id=int(key["repeat_id"]),
+            fold_id=int(key["fold_id"]),
+        )
+        for run_id, key in enumerate(keys)
+    ]
+
+
+def evaluation_run_for_run_id(manifest: pd.DataFrame, run_id: int) -> EvaluationRun:
+    runs = evaluation_runs(manifest)
+    if run_id < 0 or run_id >= len(runs):
+        raise ValueError(f"run_id={run_id} is out of range for a manifest with {len(runs)} runs.")
+    return runs[run_id]
+
+
+def subset_generated_manifest(
+    df: pd.DataFrame,
+    manifest: pd.DataFrame,
+    *,
+    split_name: str,
+    repeat_id: int | None = None,
+    fold_id: int | None = None,
+    run_id: int | None = None,
+) -> pd.DataFrame:
+    if run_id is not None:
+        run = evaluation_run_for_run_id(manifest, run_id)
+        repeat_id = run.repeat_id
+        fold_id = run.fold_id
+    if repeat_id is None or fold_id is None:
+        raise ValueError("subset_generated_manifest requires either run_id or both repeat_id and fold_id.")
+
+    if {"outer_repeat_id", "outer_fold_id", "split_scope"}.issubset(manifest.columns):
+        subset = manifest[
+            (manifest["split_scope"] == "outer")
+            & (manifest["split_name"] == split_name)
+            & (manifest["outer_repeat_id"] == repeat_id)
+            & (manifest["outer_fold_id"] == fold_id)
+        ]
+    else:
+        subset = manifest[
+            (manifest["split_name"] == split_name)
+            & (manifest["repeat_id"] == repeat_id)
+            & (manifest["fold_id"] == fold_id)
+        ]
+    op_ids = subset["op_id"]
+    return df[df["op_id"].isin(op_ids)].copy()
 
 
 def build_grouped_holdout_manifest(

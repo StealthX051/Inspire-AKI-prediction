@@ -279,7 +279,7 @@ Treat this repository as a research archive with a partially modernized pipeline
 13. `inspire-aki compat export-legacy`
 
 The refactor writes stage outputs and manifests under the configured artifact root instead of relying on implicit handoffs through `/home/server/...`.
-For `evaluation_mode: grouped_holdout` or `grouped_nested_cv`, run `inspire-aki evaluate generate --config ...` before `tune ...` or `train ...`; those stages now consume the grouped split artifacts rather than rebuilding legacy bootstrap manifests.
+For `evaluation_mode: grouped_holdout` or `grouped_nested_cv`, run `inspire-aki evaluate generate --config ...` before `tune ...` or `train ...`; grouped tuning now writes per-run HPO manifests and run-scoped best params from the generated outer train folds, and grouped training consumes the generated outer train/test folds directly instead of rebuilding legacy bootstrap manifests.
 The training path is idempotent at the artifact level:
 
 - `train tabular` refreshes `<artifacts_dir>/predictions/raw/tabular.parquet`
