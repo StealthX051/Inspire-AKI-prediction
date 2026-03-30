@@ -55,6 +55,16 @@ As of March 26, 2026, the refactor is in a strong and materially validated state
 - The observed default completion appears to have been reached through resumed stage commands rather than one preserved `run all` event log; `run_all_events.jsonl` was not present for that completed run.
 - The lighter `configs/aki/smoke_hpo.yaml` path is still useful for cheaper regression runs, but it is no longer the only downstream validation target.
 
+## Current Branch Guidance
+
+As of March 30, 2026:
+
+- `justin` is the stable refactor line and current merge base for the AKI pipeline.
+- `outcome-extension` is the follow-on branch for adding other outcomes and is currently content-identical to `justin`.
+- `cv-integration-aki` preserves the grouped-CV reintegration commits that brought the March 27 grouped-CV mechanics back onto the newer reporting and evaluation stack.
+- `eval-backend-refactor` is now reference-only history for the March 27 grouped-CV artifacts; do not merge it wholesale.
+- The current branch roles, grouped-CV validation evidence, and next-step commands are summarized in [docs/HANDOFF/2026-03-30_grouped-cv-integration-merged-and-outcome-next-steps.md](docs/HANDOFF/2026-03-30_grouped-cv-integration-merged-and-outcome-next-steps.md).
+
 If another coder is resuming this work now, the most useful continuation points are usually report iteration or explicit downstream reruns on the default config:
 
 ```bash

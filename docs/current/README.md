@@ -17,3 +17,4 @@ Project coordination notes live under `docs/`:
 
 - [../TODO/README.md](../TODO/README.md)
 - [../HANDOFF/README.md](../HANDOFF/README.md)
+- [../HANDOFF/2026-03-30_grouped-cv-integration-merged-and-outcome-next-steps.md](../HANDOFF/2026-03-30_grouped-cv-integration-merged-and-outcome-next-steps.md)
