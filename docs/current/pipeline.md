@@ -9,8 +9,10 @@ For the legacy numbered-script path, use [../legacy/README.md](../legacy/README.
 
 - CLI surface: `src/inspire_aki/cli.py`
 - Default config: `configs/aki/default.yaml`
+- Additional shipped outcome configs: `configs/macce/{default,smoke,smoke_hpo}.yaml`
 - Artifact root: `paths.artifacts_dir` in config, `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default` in the shipped default config
 - Raw INSPIRE root: `paths.raw_inspire_dir` in config
+- Active study target: `study.outcome_key`, normalized to `outcome.*` and `models.target`
 - Runtime planning: `inspire-aki runtime inspect --config ...`
 - Orchestration: `inspire-aki run all --config ...`
 
@@ -38,8 +40,8 @@ Current behavior to keep in mind:
 | `preprocess preop` | `pipelines/preprocess.py:run_preop` | raw `operations.csv`, `labs.csv`, `diagnosis.csv`, `ward_vitals.csv` | `features/preop/preop_features.csv`, `cohort/preop_audit.csv` | Builds the preop cohort/features and records audit metadata |
 | `preprocess intraop` | `pipelines/preprocess.py:run_intraop` | raw `vitals.csv`, preop artifact | `features/intraop/feature_engineered.csv` | Builds tabular intraop features and fails if `inf` values remain |
 | `preprocess tabular` | `pipelines/preprocess.py:run_tabular` | preop and intraop artifacts | `datasets/tabular/tabular_{combined,preop,intraop}.csv`, `tabular_combined_unnormalized.csv`, `normalization_stats.csv`, `features/fill_rates.csv` | Assembles the refactored tabular modeling datasets |
-| `preprocess labels` | `pipelines/preprocess.py:run_labels` | preop artifact, combined tabular artifact, raw labs and ward vitals | `cohort/aki_labels.csv`, labeled tabular datasets | Derives AKI labels and joins them back onto each tabular regime |
-| `preprocess timeseries` | `pipelines/preprocess.py:run_timeseries` | raw `vitals.csv`, `cohort/aki_labels.csv` | `features/timeseries/time_series_cleaned.csv` | Filters to labeled ops, cleans/interpolates timeseries, and writes staging partitions |
+| `preprocess labels` | `pipelines/preprocess.py:run_labels` | preop artifact, combined tabular artifact, and the raw source tables required by the active outcome | `cohort/labels.csv`, `cohort/labels_audit.csv`, labeled tabular datasets | Derives the active outcome labels and joins `subject_id`, `patient_id`, and the active target back onto each tabular regime; when the active outcome is AKI it also writes the legacy compat alias `cohort/aki_labels.csv` |
+| `preprocess timeseries` | `pipelines/preprocess.py:run_timeseries` | raw `vitals.csv`, `cohort/labels.csv` | `features/timeseries/time_series_cleaned.csv` | Filters to labeled ops, cleans/interpolates timeseries, and writes staging partitions |
 | `preprocess sequence` | `pipelines/preprocess.py:run_sequence` | `tabular_combined_labeled.csv`, cleaned timeseries artifact | `datasets/sequence/lstm_trainable.pkl` | Builds the sequence-ready dataset and writes sequence staging partitions |
 
 ### Tune
@@ -77,8 +79,8 @@ Current behavior to keep in mind:
 
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
-| `report consort` | `pipelines/report.py:run_consort` | cohort and audit artifacts | `consort_audit.{html,md,csv}`, `consort.dot`, `consort.{png,svg}` | Standalone consort output stage; renders a top-down branched manuscript-style Graphviz flow with explicit exclusion summaries and final AKI / non-AKI terminal nodes |
-| `report tables` | `pipelines/report.py:run_tables` | tabular, label, and evaluation artifacts | manuscript-facing core tables in `html`, `md`, and `csv` | Includes legacy-style uncalibrated and calibrated performance tables plus descriptive tables; HTML performance tables keep a fixed manuscript order, restrict `ASA Rule` to preop, and use gentle monochrome column-wise gradients |
+| `report consort` | `pipelines/report.py:run_consort` | cohort and audit artifacts | `consort_audit.{html,md,csv}`, `consort.dot`, `consort.{png,svg}` | Standalone consort output stage; renders a top-down branched manuscript-style Graphviz flow with explicit exclusion summaries and final active-outcome negative / positive terminal nodes |
+| `report tables` | `pipelines/report.py:run_tables` | tabular, label, and evaluation artifacts | manuscript-facing core tables in `html`, `md`, and `csv` | Includes legacy-style uncalibrated and calibrated performance tables plus descriptive tables; cohort summaries now use the active outcome display label rather than AKI-only wording; HTML performance tables keep a fixed manuscript order, restrict `ASA Rule` to preop, and use gentle monochrome column-wise gradients |
 | `report curves` | `pipelines/report.py:run_curves` | evaluation artifacts | ROC, PR, calibration, DCA, and comparison figures in `png` and `svg` | Uses fold/run aggregation for ROC and PR uncertainty bands |
 | `report manuscript` | `pipelines/report.py:run_manuscript` | report config and all upstream artifacts | combined report outputs under `reports/` | Dispatches `consort`, `tables`, `curves`, `statistics`, `reclassification`, and `shap` from `reports.manuscript_sections` |
 
@@ -86,7 +88,7 @@ Current behavior to keep in mind:
 
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
-| `compat export-legacy` | `io/compat.py:export_legacy_datasets` | selected refactor artifacts | copied files under `compat_aki_dir`, `compat_base_dir`, and `compat_results_dir` | Explicit compatibility export only; not part of `run all` |
+| `compat export-legacy` | `io/compat.py:export_legacy_datasets` | selected refactor artifacts | copied files under `compat_aki_dir`, `compat_base_dir`, and `compat_results_dir` | Explicit compatibility export only; not part of `run all`; only supported when `study.outcome_key: aki` |
 | `runtime inspect` | `runtime.py` | config plus detected host resources | JSON runtime summary | Use this before expensive runs on a new host class |
 | `runtime benchmark` | `benchmarking.py` | config, selected profiles, selected targets | `<artifacts_dir>/benchmarks/summary.{json,csv}` plus per-run logs | Compare runtime profiles or heavy stages without adding tracked benchmark artifacts; supports `--model-keys`, `--dataset-regimes`, and `--execution-policy` for targeted low-CPU benchmarks |
 
@@ -99,6 +101,14 @@ source .venv/bin/activate
 inspire-aki runtime inspect --config configs/aki/default.yaml
 inspire-aki run all --config configs/aki/default.yaml
 inspire-aki runtime benchmark --config configs/aki/default.yaml --profiles throughput,balanced --targets tune_tabular,tune_sequence
+```
+
+### Full MACCE grouped-holdout run
+
+```bash
+source .venv/bin/activate
+inspire-aki runtime inspect --config configs/macce/default.yaml
+inspire-aki run all --config configs/macce/default.yaml
 ```
 
 ### Resume stage-by-stage

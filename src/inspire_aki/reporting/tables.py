@@ -9,6 +9,7 @@ from joblib import Parallel, delayed
 from scipy import stats
 from sklearn.metrics import auc, confusion_matrix, f1_score, precision_recall_curve, precision_score, recall_score, roc_auc_score
 
+from inspire_aki.config import active_outcome_config, active_target_column
 from inspire_aki.evaluation.thresholds import find_optimal_fbeta_threshold
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.registry import DATASET_REGIMES, MANUSCRIPT_MODEL_ORDER, model_display_name
@@ -221,7 +222,7 @@ def _performance_table_spec(summary_df: pd.DataFrame, *, file_stem: str, title: 
     )
 
 
-def _cohort_sections(merged_df: pd.DataFrame) -> list[TableSection]:
+def _cohort_sections(merged_df: pd.DataFrame, config: dict) -> list[TableSection]:
     if merged_df.empty:
         return []
     cohort_df = merged_df.sort_values("op_id", kind="stable")
@@ -246,9 +247,16 @@ def _cohort_sections(merged_df: pd.DataFrame) -> list[TableSection]:
     if "sex" in cohort_df.columns:
         female_mask = cohort_df["sex"].astype(str).str.upper().isin({"F", "FEMALE", "1"})
         summary_rows.append({"characteristic": "Female sex, n (%)", "finding": _format_count_pct(float(female_mask.sum()), total)})
-    if "aki_boolean" in cohort_df.columns:
-        aki_count = float(cohort_df["aki_boolean"].astype(int).sum())
-        summary_rows.append({"characteristic": "Postoperative AKI, n (%)", "finding": _format_count_pct(aki_count, total)})
+    target_column = active_target_column(config)
+    if target_column in cohort_df.columns:
+        outcome_cfg = active_outcome_config(config)
+        positive_count = float(cohort_df[target_column].astype(int).sum())
+        summary_rows.append(
+            {
+                "characteristic": f"{outcome_cfg['display_name']}, n (%)",
+                "finding": _format_count_pct(positive_count, total),
+            }
+        )
 
     sections = [TableSection(title=None, display_df=pd.DataFrame(summary_rows), csv_df=pd.DataFrame(summary_rows))]
 
@@ -280,6 +288,17 @@ def _cohort_sections(merged_df: pd.DataFrame) -> list[TableSection]:
         ]
         sections.append(TableSection(title="Department Surgery type, n (%)", display_df=pd.DataFrame(dept_rows), csv_df=pd.DataFrame(dept_rows)))
     return sections
+
+
+def _labels_artifact_path(artifacts: ArtifactManager) -> Path:
+    candidates = [
+        artifacts.paths.artifact_path("cohort", "labels.csv"),
+        artifacts.paths.artifact_path("cohort", "aki_labels.csv"),
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
 
 
 def _build_fill_rate_frame(cohort_df: pd.DataFrame, artifacts: ArtifactManager) -> pd.DataFrame:
@@ -347,7 +366,7 @@ def generate_table_outputs(artifacts: ArtifactManager) -> list[Path]:
 
     cohort_path = artifacts.paths.artifact_path("datasets", "tabular", "tabular_combined_unnormalized.csv")
     preop_path = artifacts.paths.artifact_path("features", "preop", "preop_features.csv")
-    labels_path = artifacts.paths.artifact_path("cohort", "aki_labels.csv")
+    labels_path = _labels_artifact_path(artifacts)
     if labels_path.exists() and (cohort_path.exists() or preop_path.exists()):
         merged_frames = []
         if cohort_path.exists():
@@ -364,7 +383,7 @@ def generate_table_outputs(artifacts: ArtifactManager) -> list[Path]:
             title="Table 1. Characteristics of Cohort",
             caption="Manuscript-ready descriptive summary.",
             columns=[ColumnSpec("characteristic", "Characteristic", align="left"), ColumnSpec("finding", "Finding", align="left")],
-            sections=_cohort_sections(merged_df),
+            sections=_cohort_sections(merged_df, config),
             include_section_column_in_csv=False,
         )
         outputs.extend(write_table_outputs(artifacts, cohort_spec, config))

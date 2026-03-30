@@ -1,6 +1,6 @@
 # Inspire-AKI-prediction
 
-Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. This repository is best understood as a codebase for studying postoperative acute kidney injury (AKI) prediction in noncardiac surgery patients using the INSPIRE dataset.
+Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. This repository is best understood as a codebase for studying postoperative outcomes in noncardiac surgery patients using the INSPIRE dataset, with AKI still the default shipped target and modular outcome configs now available for other outcome research.
 
 ## Current Refactor Status
 
@@ -14,7 +14,7 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 - The manuscript report layer now targets legacy-style presentation on top of corrected refactor artifacts:
   - performance tables are rebuilt from fold/run metrics rather than pooled `metrics_summary.csv`
   - HTML performance tables now keep a fixed manuscript model order, restrict `ASA Rule` to the preop section, and use gentle monochrome column-wise gradients plus bold best-in-column values
-  - the consort figure now renders as a top-down branched manuscript-style Graphviz flow with explicit exclusion summaries and final AKI / non-AKI terminal boxes
+  - the consort figure now renders as a top-down branched manuscript-style Graphviz flow with explicit exclusion summaries and final active-outcome negative / positive terminal boxes
   - every report table is emitted as `html`, `md`, and `csv`
   - every report figure is emitted as high-resolution `png` plus `svg`
 - `evaluate reclassification` now produces a dedicated stage-owned artifact consumed by `report manuscript`; empty smoke-style summaries are skipped cleanly during report rendering
@@ -42,7 +42,7 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 As of March 26, 2026, the refactor is in a strong and materially validated state on both synthetic tests and the main mounted-volume default path.
 
 - The synthetic refactor test suite is green:
-  - `pytest -q` currently passes with `95` tests.
+  - `pytest -q` currently passes with `131` tests.
 - The main real-data default config at `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default` has completed end to end through manuscript reporting:
   - `train_tabular.json` written at `2026-03-25 20:11:28 UTC`
   - `train_sequence.json` written at `2026-03-25 22:46:56 UTC`
@@ -60,7 +60,7 @@ As of March 26, 2026, the refactor is in a strong and materially validated state
 As of March 30, 2026:
 
 - `justin` is the stable refactor line and current merge base for the AKI pipeline.
-- `outcome-extension` is the follow-on branch for adding other outcomes and is currently content-identical to `justin`.
+- `outcome-extension` is the follow-on branch for modular outcome work and now carries the active-outcome refactor for `aki`, `macce`, `pna`, `pe`, `postop_icu_admission`, and `postop_mortality_30d`.
 - `cv-integration-aki` preserves the grouped-CV reintegration commits that brought the March 27 grouped-CV mechanics back onto the newer reporting and evaluation stack.
 - `eval-backend-refactor` is now reference-only history for the March 27 grouped-CV artifacts; do not merge it wholesale.
 - The current branch roles, grouped-CV validation evidence, and next-step commands are summarized in [docs/HANDOFF/2026-03-30_grouped-cv-integration-merged-and-outcome-next-steps.md](docs/HANDOFF/2026-03-30_grouped-cv-integration-merged-and-outcome-next-steps.md).
@@ -73,6 +73,20 @@ source .venv/bin/activate
 inspire-aki report consort --config configs/aki/default.yaml
 inspire-aki report tables --config configs/aki/default.yaml
 inspire-aki report manuscript --config configs/aki/default.yaml
+```
+
+For the grouped-holdout MACCE path that now ships on `outcome-extension`:
+
+```bash
+source .venv/bin/activate
+
+inspire-aki runtime inspect --config configs/macce/default.yaml
+inspire-aki evaluate generate --config configs/macce/default.yaml
+inspire-aki tune tabular --config configs/macce/default.yaml
+inspire-aki tune sequence --config configs/macce/default.yaml
+inspire-aki train tabular --config configs/macce/default.yaml
+inspire-aki train sequence --config configs/macce/default.yaml
+inspire-aki report manuscript --config configs/macce/default.yaml
 ```
 
 If the downstream evaluation artifacts need to be rebuilt before manuscript rerendering:
@@ -194,6 +208,8 @@ That profile:
 - shortens tabular-MLP and sequence HPO training loops
 - writes outputs to `/media/volume/ncs_inspire_data/ncs_aki/artifacts/smoke_hpo/`
 
+A matching grouped-holdout MACCE smoke-HPO profile now ships at `configs/macce/smoke_hpo.yaml`.
+
 Current implemented HPO models are:
 
 - tabular: `log_reg`, `xgb`, `rf`, `svm`, `mlp`, `knn`
@@ -303,7 +319,7 @@ The refactor also uses internal staging artifacts for the parallel sequence path
 - `<artifacts_dir>/staging/timeseries_cleaned/part-*.parquet`
 - `<artifacts_dir>/staging/sequence/part-*.pkl`
 
-Legacy alias exports remain explicit through `inspire-aki compat export-legacy`; they are not emitted automatically during `run all`.
+Legacy alias exports remain explicit through `inspire-aki compat export-legacy`; they are not emitted automatically during `run all`, and they are only supported for the AKI outcome.
 
 ### 1. Preoperative extraction
 

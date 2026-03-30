@@ -1,14 +1,62 @@
 from __future__ import annotations
 
+import copy
+
 import numpy as np
 import pandas as pd
+import pytest
 
+from inspire_aki.config import load_config
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.io.compat import export_legacy_datasets
+from inspire_aki.pipelines.evaluate import run_calibration, run_dca, run_delong, run_metrics
+from inspire_aki.pipelines.evaluate_generate import run_evaluate_generate
+from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop, run_tabular
+from inspire_aki.pipelines.report import run_consort, run_tables
+from inspire_aki.pipelines.train import run_train_tabular
+from inspire_aki.pipelines.tune import run_tune_tabular
 from inspire_aki.reporting.consort import generate_consort_outputs
 from inspire_aki.reporting.curves import generate_curve_outputs
 from inspire_aki.reporting.tables import _performance_table_spec
 from inspire_aki.reporting.rendering import write_table_outputs
+
+
+def _activate_outcome_config(config: dict, outcome_key: str) -> dict:
+    updated = copy.deepcopy(config)
+    updated["study"]["outcome_key"] = outcome_key
+    updated["outcome"] = copy.deepcopy(updated["outcomes"]["catalog"][outcome_key])
+    updated["models"]["target"] = updated["outcome"]["target_column"]
+    return updated
+
+
+def _inject_postop_macce_events(config_path) -> None:
+    raw_dir = config_path.parent / "raw"
+    diagnosis_path = raw_dir / "diagnosis.csv"
+    operations_df = pd.read_csv(raw_dir / "operations.csv", usecols=["subject_id", "opend_time"])
+    diagnosis_df = pd.read_csv(diagnosis_path)
+    macce_codes = ["I21.9", "I63.9", "I20.0", "I50.1", "I46.0", "I21.4"]
+    macce_rows = [
+        {
+            "subject_id": int(row.subject_id),
+            "chart_time": int(row.opend_time) + 60,
+            "icd10_cm": macce_codes[idx],
+        }
+        for idx, row in enumerate(operations_df.tail(len(macce_codes)).itertuples(index=False))
+    ]
+    pd.concat([diagnosis_df, pd.DataFrame(macce_rows)], ignore_index=True).to_csv(diagnosis_path, index=False)
+
+
+def _macce_smoke_config(config_path) -> dict:
+    config = _activate_outcome_config(load_config(config_path), "macce")
+    config["paths"]["artifacts_dir"] = str(config_path.parent / "artifacts_macce")
+    config["evaluation_mode"] = "grouped_holdout"
+    config["splits"]["use_bootstrapping"] = False
+    config["models"]["tabular_enabled"] = ["log_reg"]
+    config["models"]["sequence_enabled"] = []
+    config["models"]["tabular_hpo_enabled"] = ["log_reg"]
+    config["models"]["sequence_hpo_enabled"] = []
+    config["models"]["hpo"]["n_trials"] = 1
+    return config
 
 
 def test_preprocess_and_evaluation_artifacts_exist(completed_pipeline) -> None:
@@ -54,6 +102,13 @@ def test_sequence_artifact_and_legacy_export(completed_pipeline) -> None:
     assert (artifacts.paths.compat_aki_dir / "preop_data.csv").exists()
     assert (artifacts.paths.compat_base_dir / "tabular_combined.csv").exists()
     assert (artifacts.paths.compat_results_dir / "performance_table.md").exists()
+
+
+def test_export_legacy_rejects_non_aki_outcome(loaded_synthetic_config) -> None:
+    artifacts = ArtifactManager(_activate_outcome_config(loaded_synthetic_config, "macce"))
+
+    with pytest.raises(ValueError, match="only supported for the AKI outcome"):
+        export_legacy_datasets(artifacts)
 
 
 def test_report_curves_separates_dca_figures_by_population(loaded_synthetic_config) -> None:
@@ -114,8 +169,9 @@ def test_report_curves_separates_dca_figures_by_population(loaded_synthetic_conf
     assert not legacy_path.exists()
 
 
-def test_consort_outputs_branch_to_final_aki_split(loaded_synthetic_config) -> None:
-    artifacts = ArtifactManager(loaded_synthetic_config)
+def test_consort_outputs_branch_to_final_active_outcome_split(loaded_synthetic_config) -> None:
+    config = _activate_outcome_config(loaded_synthetic_config, "macce")
+    artifacts = ArtifactManager(config)
     preop_audit = pd.DataFrame(
         [
             {"step": "raw_operations", "count": 120, "note": "raw"},
@@ -136,7 +192,7 @@ def test_consort_outputs_branch_to_final_aki_split(loaded_synthetic_config) -> N
     artifacts.write_dataframe(labels_audit, "cohort", "labels_audit.csv")
     artifacts.write_dataframe(pd.DataFrame({"op_id": range(100)}), "features", "preop", "preop_features.csv")
     artifacts.write_dataframe(pd.DataFrame({"op_id": range(92)}), "features", "intraop", "feature_engineered.csv")
-    artifacts.write_dataframe(pd.DataFrame({"op_id": range(80), "aki_boolean": [0] * 64 + [1] * 16}), "cohort", "aki_labels.csv")
+    artifacts.write_dataframe(pd.DataFrame({"op_id": range(80), "macce": [0] * 64 + [1] * 16}), "cohort", "labels.csv")
 
     outputs = generate_consort_outputs(artifacts)
 
@@ -145,13 +201,45 @@ def test_consort_outputs_branch_to_final_aki_split(loaded_synthetic_config) -> N
 
     assert dot_path in outputs
     assert 'rankdir="TB"' in dot_text
-    assert 'label="Study Cohort Flow and Final Postoperative AKI Split"' in dot_text
+    assert 'label="Study Cohort Flow and Final 30-day MACCE Split"' in dot_text
     assert "splines=ortho" in dot_text
     assert 'ordering="out"' in dot_text
-    assert "final_labeled:s -> aki_negative:n [minlen=1];" in dot_text
-    assert "final_labeled:s -> aki_positive:n [minlen=1];" in dot_text
+    assert "final_labeled:s -> final_negative:n [minlen=1];" in dot_text
+    assert "final_labeled:s -> final_positive:n [minlen=1];" in dot_text
     assert 'analytic_preop:e -> excluded_preop:w' in dot_text
     assert "Excluded after preoperative cohort" in dot_text
+    assert "30-day MACCE" in dot_text
+
+
+def test_macce_grouped_holdout_smoke_pipeline(synthetic_config) -> None:
+    _inject_postop_macce_events(synthetic_config)
+    config = _macce_smoke_config(synthetic_config)
+    artifacts = ArtifactManager(config)
+
+    run_preop(config)
+    run_intraop(config)
+    run_tabular(config)
+    run_labels(config)
+    run_evaluate_generate(config)
+    run_tune_tabular(config)
+    run_train_tabular(config)
+    run_calibration(config)
+    run_metrics(config)
+    run_delong(config)
+    run_dca(config)
+    run_consort(config)
+    run_tables(config)
+
+    labels_df = pd.read_csv(artifacts.paths.artifact_path("cohort", "labels.csv"))
+    manifest_df = pd.read_parquet(artifacts.paths.artifact_path("datasets", "splits", "grouped_holdout_combined.parquet"))
+    predictions_df = pd.read_parquet(artifacts.paths.artifact_path("predictions", "calibrated_predictions.parquet"))
+    cohort_table = pd.read_csv(artifacts.paths.artifact_path("reports", "tables", "cohort_characteristics.csv"))
+
+    assert "macce" in labels_df.columns
+    assert int(labels_df["macce"].astype(int).sum()) >= 4
+    assert set(manifest_df["evaluation_mode"]) == {"grouped_holdout"}
+    assert set(predictions_df["target"]) == {"macce"}
+    assert cohort_table["characteristic"].astype(str).str.contains("30-day MACCE", regex=False).any()
 
 
 def test_performance_tables_filter_asa_rule_and_render_column_gradients(loaded_synthetic_config) -> None:

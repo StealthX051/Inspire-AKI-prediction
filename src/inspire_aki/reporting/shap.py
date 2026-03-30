@@ -7,6 +7,7 @@ import pandas as pd
 from joblib import Parallel, delayed
 
 from inspire_aki.datasets.splits import subset_from_manifest
+from inspire_aki.evaluation.split_manager import subset_generated_manifest
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.models.tabular import load_tabular_bundle
 from inspire_aki.registry import SUPPORTED_SHAP_MODELS
@@ -36,8 +37,12 @@ def _resolve_split_manifest_path(artifacts: ArtifactManager, dataset_regime: str
 def _load_split(artifacts: ArtifactManager, dataset_regime: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     manifest = pd.read_parquet(_resolve_split_manifest_path(artifacts, dataset_regime))
     dataset_df = _load_dataset_for_regime(artifacts, dataset_regime)
-    train_df = subset_from_manifest(dataset_df, manifest, repeat_id=0, fold_id=0, split_name="train")
-    test_df = subset_from_manifest(dataset_df, manifest, repeat_id=0, fold_id=0, split_name="test")
+    if {"split_scope", "outer_repeat_id", "outer_fold_id"}.issubset(manifest.columns):
+        train_df = subset_generated_manifest(dataset_df, manifest, split_name="train", run_id=0)
+        test_df = subset_generated_manifest(dataset_df, manifest, split_name="test", run_id=0)
+    else:
+        train_df = subset_from_manifest(dataset_df, manifest, repeat_id=0, fold_id=0, split_name="train")
+        test_df = subset_from_manifest(dataset_df, manifest, repeat_id=0, fold_id=0, split_name="test")
     return train_df, test_df
 
 

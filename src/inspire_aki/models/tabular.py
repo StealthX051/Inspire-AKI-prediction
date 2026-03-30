@@ -13,11 +13,11 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
 
+from inspire_aki.evaluation.split_manager import train_validation_split
 from inspire_aki.models.weighting import balance_sample_weights, balance_weight_series, positive_balance_weight, safe_balanced_accuracy, weighted_resample_for_knn
 from inspire_aki.runtime import build_stage_runtime_plan, configure_torch_threads, thread_limited_context
 
@@ -43,6 +43,7 @@ _TABULAR_DATASET_REGIMES = ("preop", "intraop", "combined")
 _TABULAR_EXECUTION_POLICY_ENV = "INSPIRE_AKI_EXECUTION_POLICY"
 _TABULAR_MODEL_KEYS_ENV = "INSPIRE_AKI_MODEL_KEYS"
 _TABULAR_DATASET_REGIMES_ENV = "INSPIRE_AKI_DATASET_REGIMES"
+_TABULAR_IDENTIFIER_COLUMNS = {"op_id", "subject_id", "patient_id"}
 
 
 @dataclass(frozen=True)
@@ -85,7 +86,10 @@ _OPTIMIZED_LOW_CPU_POLICIES: dict[str, TabularExecutionPolicy] = {
 
 
 def tabular_feature_columns(df: pd.DataFrame, target: str) -> list[str]:
-    return [col for col in df.columns if col not in ["op_id", target, f"{target}_boolean", f"{target}_positive"]]
+    excluded = set(_TABULAR_IDENTIFIER_COLUMNS)
+    excluded.update({target, f"{target}_boolean", f"{target}_positive"})
+    excluded.update({column for column in df.columns if str(column).endswith("_event_codes")})
+    return [col for col in df.columns if col not in excluded]
 
 
 def tabular_execution_policy_name() -> str:
@@ -313,13 +317,19 @@ def fit_tabular_model(
         n_units = params.get("n_units", 32)
         dropout_rate = params.get("dropout_rate", 0.5)
         device = torch.device("cuda" if runtime_plan.sequence_use_gpu and torch.cuda.is_available() else "cpu")
-        x_train_part, x_val_part, y_train_part, y_val_part = train_test_split(
-            x_train.to_numpy(),
-            y_train,
-            test_size=config["splits"]["tabular_mlp_validation_fraction"],
+        validation_source = train_df.copy()
+        validation_source.loc[:, feature_cols] = x_train.to_numpy()
+        train_part_df, val_part_df = train_validation_split(
+            validation_source,
+            target=target,
+            validation_fraction=config["splits"]["tabular_mlp_validation_fraction"],
             random_state=seed,
-            stratify=y_train,
+            evaluation_mode=config.get("evaluation_mode", "legacy_repeated_cv"),
         )
+        x_train_part = train_part_df[feature_cols].to_numpy()
+        x_val_part = val_part_df[feature_cols].to_numpy()
+        y_train_part = train_part_df[target].to_numpy()
+        y_val_part = val_part_df[target].to_numpy()
         x_train_tensor = torch.FloatTensor(x_train_part).to(device)
         y_train_tensor = torch.FloatTensor(y_train_part).reshape(-1, 1).to(device)
         x_val_tensor = torch.FloatTensor(x_val_part).to(device)

@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
 import pandas as pd
 
+from inspire_aki.config import active_outcome_config, active_target_column
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.reporting.rendering import FigureExportSpec, ColumnSpec, TableSection, TableSpec, save_figure_variants, write_table_outputs
 
@@ -50,19 +51,6 @@ _LABEL_EXCLUSION_LABELS = {
 }
 
 
-def _consort_step_and_count(row: pd.Series) -> tuple[str, str]:
-    step = str(row.get("step", row.get("stage", "stage")))
-    count = row.get("count", row.get("n_rows", "NA"))
-    if pd.notna(count):
-        try:
-            count = str(int(count))
-        except (TypeError, ValueError):
-            count = str(count)
-    else:
-        count = "NA"
-    return step, count
-
-
 def _safe_count(value: object) -> int | None:
     if value is None or pd.isna(value):
         return None
@@ -93,7 +81,7 @@ def _load_consort_audit(artifacts: ArtifactManager) -> pd.DataFrame:
 
     preop_path = artifacts.paths.artifact_path("features", "preop", "preop_features.csv")
     intraop_path = artifacts.paths.artifact_path("features", "intraop", "feature_engineered.csv")
-    labels_path = artifacts.paths.artifact_path("cohort", "aki_labels.csv")
+    labels_path = _labels_artifact_path(artifacts)
     if preop_path.exists() and intraop_path.exists():
         preop_rows = len(pd.read_csv(preop_path))
         intraop_rows = len(pd.read_csv(intraop_path))
@@ -115,22 +103,45 @@ def _load_consort_audit(artifacts: ArtifactManager) -> pd.DataFrame:
         )
     if labels_path.exists():
         labels_df = pd.read_csv(labels_path)
-        if "aki_boolean" in labels_df.columns:
-            positive = int(labels_df["aki_boolean"].astype(int).sum())
+        target_column = active_target_column(artifacts.config)
+        outcome_cfg = active_outcome_config(artifacts.config)
+        if target_column in labels_df.columns:
+            positive = int(labels_df[target_column].astype(int).sum())
             negative = int(len(labels_df) - positive)
             consort_df = pd.concat(
                 [
                     consort_df,
                     pd.DataFrame(
                         [
-                            {"step": "final_aki_negative", "count": negative, "note": "Final cohort without postoperative AKI.", "source": "derived/labels"},
-                            {"step": "final_aki_positive", "count": positive, "note": "Final cohort with postoperative AKI.", "source": "derived/labels"},
+                            {
+                                "step": "final_negative",
+                                "count": negative,
+                                "note": f"Final cohort without {outcome_cfg['display_name']}.",
+                                "source": "derived/labels",
+                            },
+                            {
+                                "step": "final_positive",
+                                "count": positive,
+                                "note": f"Final cohort with {outcome_cfg['display_name']}.",
+                                "source": "derived/labels",
+                            },
                         ]
                     ),
                 ],
                 ignore_index=True,
             )
     return consort_df
+
+
+def _labels_artifact_path(artifacts: ArtifactManager) -> Path:
+    candidates = [
+        artifacts.paths.artifact_path("cohort", "labels.csv"),
+        artifacts.paths.artifact_path("cohort", "aki_labels.csv"),
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
 
 
 def _step_counts(consort_df: pd.DataFrame) -> dict[str, int]:
@@ -167,13 +178,14 @@ def _sequential_exclusions(step_counts: dict[str, int], sequence: tuple[str, ...
     return exclusions
 
 
-def _build_consort_layout(consort_df: pd.DataFrame) -> dict[str, object]:
+def _build_consort_layout(consort_df: pd.DataFrame, config: dict) -> dict[str, object]:
     step_counts = _step_counts(consort_df)
+    outcome_cfg = active_outcome_config(config)
     identified_count = step_counts.get("raw_operations") or _last_available_count(step_counts, _PREOP_SEQUENCE)
     preop_count = _last_available_count(step_counts, _PREOP_SEQUENCE)
     final_labeled_count = step_counts.get("final_labeled_ops") or _last_available_count(step_counts, _LABEL_SEQUENCE) or preop_count
-    negative_count = step_counts.get("final_aki_negative")
-    positive_count = step_counts.get("final_aki_positive")
+    negative_count = step_counts.get("final_negative")
+    positive_count = step_counts.get("final_positive")
 
     preop_exclusions = _sequential_exclusions(step_counts, _PREOP_SEQUENCE, _PREOP_EXCLUSION_LABELS)
     post_preop_exclusions: list[tuple[str, int]] = []
@@ -195,12 +207,12 @@ def _build_consort_layout(consort_df: pd.DataFrame) -> dict[str, object]:
             "title": "Final labeled analytic cohort",
             "count": final_labeled_count,
         },
-        "aki_negative": {
-            "title": "No postoperative AKI",
+        "negative": {
+            "title": outcome_cfg["negative_label"],
             "count": negative_count,
         },
-        "aki_positive": {
-            "title": "Postoperative AKI",
+        "positive": {
+            "title": outcome_cfg["positive_label"],
             "count": positive_count,
         },
         "preop_exclusions": {
@@ -254,15 +266,16 @@ def _dot_label(lines: list[str], *, left_aligned: bool) -> str:
     return "\\n".join(escaped)
 
 
-def _consort_dot(consort_df: pd.DataFrame) -> str:
-    layout = _build_consort_layout(consort_df)
-    title = "Study Cohort Flow and Final Postoperative AKI Split"
+def _consort_dot(consort_df: pd.DataFrame, config: dict) -> str:
+    layout = _build_consort_layout(consort_df, config)
+    outcome_cfg = active_outcome_config(config)
+    title = f"Study Cohort Flow and Final {outcome_cfg['display_name']} Split"
     main_node_lines = {
         "identified": _consort_box_lines(layout["identified"]["title"], layout["identified"]["count"]),
         "analytic_preop": _consort_box_lines(layout["analytic_preop"]["title"], layout["analytic_preop"]["count"]),
         "final_labeled": _consort_box_lines(layout["final_labeled"]["title"], layout["final_labeled"]["count"]),
-        "aki_negative": _consort_box_lines(layout["aki_negative"]["title"], layout["aki_negative"]["count"]),
-        "aki_positive": _consort_box_lines(layout["aki_positive"]["title"], layout["aki_positive"]["count"]),
+        "negative": _consort_box_lines(layout["negative"]["title"], layout["negative"]["count"]),
+        "positive": _consort_box_lines(layout["positive"]["title"], layout["positive"]["count"]),
     }
     exclusion_node_lines = {
         "excluded_preop": _exclusion_box_lines(
@@ -278,26 +291,26 @@ def _consort_dot(consort_df: pd.DataFrame) -> str:
     }
     lines = [
         "digraph consort {",
-        '  graph [rankdir="TB", splines=ortho, newrank=true, ordering="out", pad="0.18", nodesep="0.55", ranksep="0.9", labelloc="t", labeljust="c", fontname="Times New Roman", fontsize=20, label="Study Cohort Flow and Final Postoperative AKI Split"];',
+        f'  graph [rankdir="TB", splines=ortho, newrank=true, ordering="out", pad="0.18", nodesep="0.55", ranksep="0.9", labelloc="t", labeljust="c", fontname="Times New Roman", fontsize=20, label="{title}"];',
         '  node [shape=box, style="rounded,filled", fontname="Times New Roman", fontsize=12, penwidth=1.5, color="#667d93", fillcolor="#f8fafc", margin="0.20,0.14"];',
         '  edge [color="#667d93", penwidth=1.5, arrowsize=0.75];',
         f'  identified [label="{_dot_label(main_node_lines["identified"], left_aligned=False)}", width=3.8, height=1.0];',
         f'  analytic_preop [label="{_dot_label(main_node_lines["analytic_preop"], left_aligned=False)}", width=3.8, height=1.0];',
         f'  final_labeled [label="{_dot_label(main_node_lines["final_labeled"], left_aligned=False)}", width=3.8, height=1.0, fillcolor="#f2f7fb"];',
-        f'  aki_negative [label="{_dot_label(main_node_lines["aki_negative"], left_aligned=False)}", width=3.0, height=0.95, fillcolor="#f8fafc"];',
-        f'  aki_positive [label="{_dot_label(main_node_lines["aki_positive"], left_aligned=False)}", width=3.0, height=0.95, fillcolor="#edf5fb"];',
+        f'  final_negative [label="{_dot_label(main_node_lines["negative"], left_aligned=False)}", width=3.0, height=0.95, fillcolor="#f8fafc"];',
+        f'  final_positive [label="{_dot_label(main_node_lines["positive"], left_aligned=False)}", width=3.0, height=0.95, fillcolor="#edf5fb"];',
         f'  excluded_preop [label="{_dot_label(exclusion_node_lines["excluded_preop"], left_aligned=True)}", width=3.35, fontsize=10.5, style="rounded,filled,dashed", fillcolor="#fbfcfd", margin="0.16,0.12"];',
         f'  excluded_post_preop [label="{_dot_label(exclusion_node_lines["excluded_post_preop"], left_aligned=True)}", width=3.35, fontsize=10.5, style="rounded,filled,dashed", fillcolor="#fbfcfd", margin="0.16,0.12"];',
         "  identified:s -> analytic_preop:n;",
         "  analytic_preop:s -> final_labeled:n;",
-        "  final_labeled:s -> aki_negative:n [minlen=1];",
-        "  final_labeled:s -> aki_positive:n [minlen=1];",
+        "  final_labeled:s -> final_negative:n [minlen=1];",
+        "  final_labeled:s -> final_positive:n [minlen=1];",
         '  analytic_preop:e -> excluded_preop:w [style=dashed, arrowhead=none, constraint=false, minlen=2];',
         '  final_labeled:e -> excluded_post_preop:w [style=dashed, arrowhead=none, constraint=false, minlen=2];',
         "  { rank=same; analytic_preop; excluded_preop; }",
         "  { rank=same; final_labeled; excluded_post_preop; }",
-        "  { rank=same; aki_negative; aki_positive; }",
-        "  aki_negative -> aki_positive [style=invis, weight=20];",
+        "  { rank=same; final_negative; final_positive; }",
+        "  final_negative -> final_positive [style=invis, weight=20];",
         "  excluded_preop -> excluded_post_preop [style=invis, weight=20];",
         "}",
     ]
@@ -372,8 +385,9 @@ def _draw_arrow(ax: plt.Axes, start: tuple[float, float], end: tuple[float, floa
     )
 
 
-def _draw_consort_figure(consort_df: pd.DataFrame):
-    layout = _build_consort_layout(consort_df)
+def _draw_consort_figure(consort_df: pd.DataFrame, config: dict):
+    layout = _build_consort_layout(consort_df, config)
+    outcome_cfg = active_outcome_config(config)
     fig, ax = plt.subplots(figsize=(10.8, 9.2))
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
@@ -391,8 +405,8 @@ def _draw_consort_figure(consort_df: pd.DataFrame):
         "identified": _consort_box_lines(layout["identified"]["title"], layout["identified"]["count"]),
         "analytic_preop": _consort_box_lines(layout["analytic_preop"]["title"], layout["analytic_preop"]["count"]),
         "final_labeled": _consort_box_lines(layout["final_labeled"]["title"], layout["final_labeled"]["count"]),
-        "aki_negative": _consort_box_lines(layout["aki_negative"]["title"], layout["aki_negative"]["count"]),
-        "aki_positive": _consort_box_lines(layout["aki_positive"]["title"], layout["aki_positive"]["count"]),
+        "negative": _consort_box_lines(layout["negative"]["title"], layout["negative"]["count"]),
+        "positive": _consort_box_lines(layout["positive"]["title"], layout["positive"]["count"]),
     }
     exclusion_lines = {
         "preop": _exclusion_box_lines(
@@ -408,7 +422,7 @@ def _draw_consort_figure(consort_df: pd.DataFrame):
     }
 
     box_h = _box_height(main_lines["identified"], line_height=0.05, minimum=0.12)
-    branch_h = _box_height(main_lines["aki_negative"], line_height=0.047, minimum=0.11)
+    branch_h = _box_height(main_lines["negative"], line_height=0.047, minimum=0.11)
     preop_excl_h = _box_height(exclusion_lines["preop"], line_height=0.032, minimum=0.16)
     post_preop_excl_h = _box_height(exclusion_lines["post_preop"], line_height=0.032, minimum=0.16)
 
@@ -416,8 +430,8 @@ def _draw_consort_figure(consort_df: pd.DataFrame):
         "identified": (main_x, 0.82, main_w, box_h),
         "analytic_preop": (main_x, 0.56, main_w, box_h),
         "final_labeled": (main_x, 0.30, main_w, box_h),
-        "aki_negative": (left_branch_x, 0.04, branch_w, branch_h),
-        "aki_positive": (right_branch_x, 0.04, branch_w, branch_h),
+        "negative": (left_branch_x, 0.04, branch_w, branch_h),
+        "positive": (right_branch_x, 0.04, branch_w, branch_h),
         "preop_exclusions": (side_x, 0.54, side_w, preop_excl_h),
         "post_preop_exclusions": (side_x, 0.26, side_w, post_preop_excl_h),
     }
@@ -457,22 +471,22 @@ def _draw_consort_figure(consort_df: pd.DataFrame):
     )
     _draw_box(
         ax,
-        x=positions["aki_negative"][0],
-        y=positions["aki_negative"][1],
-        width=positions["aki_negative"][2],
-        height=positions["aki_negative"][3],
-        lines=main_lines["aki_negative"],
+        x=positions["negative"][0],
+        y=positions["negative"][1],
+        width=positions["negative"][2],
+        height=positions["negative"][3],
+        lines=main_lines["negative"],
         facecolor="#f8fafc",
         edgecolor="#607286",
         fontsize=10.0,
     )
     _draw_box(
         ax,
-        x=positions["aki_positive"][0],
-        y=positions["aki_positive"][1],
-        width=positions["aki_positive"][2],
-        height=positions["aki_positive"][3],
-        lines=main_lines["aki_positive"],
+        x=positions["positive"][0],
+        y=positions["positive"][1],
+        width=positions["positive"][2],
+        height=positions["positive"][3],
+        lines=main_lines["positive"],
         facecolor="#eef5fb",
         edgecolor="#607286",
         fontsize=10.0,
@@ -515,14 +529,14 @@ def _draw_consort_figure(consort_df: pd.DataFrame):
         (main_x + main_w / 2, positions["final_labeled"][1] + positions["final_labeled"][3]),
     )
 
-    split_y = positions["aki_negative"][1] + positions["aki_negative"][3] + 0.05
+    split_y = positions["negative"][1] + positions["negative"][3] + 0.05
     parent_x = main_x + main_w / 2
     ax.plot([parent_x, parent_x], [positions["final_labeled"][1], split_y], color="#607286", lw=1.5)
-    left_center = positions["aki_negative"][0] + positions["aki_negative"][2] / 2
-    right_center = positions["aki_positive"][0] + positions["aki_positive"][2] / 2
+    left_center = positions["negative"][0] + positions["negative"][2] / 2
+    right_center = positions["positive"][0] + positions["positive"][2] / 2
     ax.plot([left_center, right_center], [split_y, split_y], color="#607286", lw=1.5)
-    _draw_arrow(ax, (left_center, split_y), (left_center, positions["aki_negative"][1] + positions["aki_negative"][3]))
-    _draw_arrow(ax, (right_center, split_y), (right_center, positions["aki_positive"][1] + positions["aki_positive"][3]))
+    _draw_arrow(ax, (left_center, split_y), (left_center, positions["negative"][1] + positions["negative"][3]))
+    _draw_arrow(ax, (right_center, split_y), (right_center, positions["positive"][1] + positions["positive"][3]))
 
     analytic_mid_y = positions["analytic_preop"][1] + positions["analytic_preop"][3] / 2
     final_mid_y = positions["final_labeled"][1] + positions["final_labeled"][3] / 2
@@ -532,7 +546,7 @@ def _draw_consort_figure(consort_df: pd.DataFrame):
     ax.text(
         0.5,
         0.985,
-        "Study Cohort Flow and Final Postoperative AKI Split",
+        f"Study Cohort Flow and Final {outcome_cfg['display_name']} Split",
         ha="center",
         va="top",
         fontsize=14,
@@ -562,7 +576,7 @@ def generate_consort_outputs(artifacts: ArtifactManager) -> list[Path]:
     outputs.extend(write_table_outputs(artifacts, table_spec, config))
 
     dot_path = artifacts.resolve("reports", "figures", "consort.dot")
-    dot_path.write_text(_consort_dot(consort_df), encoding="utf-8")
+    dot_path.write_text(_consort_dot(consort_df, config), encoding="utf-8")
     outputs.append(dot_path)
 
     try:
@@ -572,7 +586,7 @@ def generate_consort_outputs(artifacts: ArtifactManager) -> list[Path]:
         else:
             raise FileNotFoundError("graphviz dot binary not available")
     except (subprocess.CalledProcessError, FileNotFoundError):
-        fig = _draw_consort_figure(consort_df)
+        fig = _draw_consort_figure(consort_df, config)
         try:
             outputs.extend(save_figure_variants(fig, artifacts, FigureExportSpec(stem="consort"), config))
         finally:

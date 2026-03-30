@@ -37,7 +37,7 @@ For refactor-specific portability fixes that do not intentionally change the man
 
 ## Current Refactor Manuscript Contract
 
-The refactor now aims for legacy manuscript parity at the report layer while keeping the scientific fixes that were introduced during the package migration.
+The refactor now aims for legacy manuscript parity at the report layer while keeping the scientific fixes that were introduced during the package migration. The report layer is no longer AKI-hardcoded: one active outcome is selected per config/artifact root through `study.outcome_key`.
 
 Presentation now restored in the refactor:
 
@@ -52,7 +52,9 @@ Presentation now restored in the refactor:
 - report figures are emitted in both:
   - high-resolution `png`
   - `svg`
-- the consort figure now follows a manuscript-style top-down Graphviz layout with explicit exclusion summaries and direct orthogonal terminal arrows to the final `AKI` / `non-AKI` split
+- the consort figure now follows a manuscript-style top-down Graphviz layout with explicit exclusion summaries and direct orthogonal terminal arrows to the final active-outcome negative / positive split
+- the active label artifact is now `cohort/labels.csv`; AKI still writes `cohort/aki_labels.csv` as a compatibility alias, while non-AKI outcomes do not
+- legacy alias export remains AKI-only through `inspire-aki compat export-legacy`
 - manuscript reporting now includes:
   - consort audit + figure
   - legacy-style ROC / PR / calibration figures

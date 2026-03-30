@@ -13,6 +13,121 @@ from inspire_aki.registry import MANUSCRIPT_SECTIONS, SUPPORTED_SHAP_MODELS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = REPO_ROOT / "configs" / "aki" / "default.yaml"
+DEFAULT_COHORT_KEY = "default_noncardiac_adult"
+DEFAULT_OUTCOME_KEY = "aki"
+KNOWN_RAW_SOURCES = {"operations", "diagnosis", "labs", "ward_vitals"}
+KNOWN_OUTCOME_KINDS = {"aki", "diagnosis_window", "time_comparison", "composite"}
+
+
+def _default_cohort_profiles() -> dict[str, Any]:
+    return {
+        DEFAULT_COHORT_KEY: {
+            "preop_window_days": 90,
+            "postop_windows_days": [2, 7],
+            "max_preop_creatinine": 4.5,
+            "min_age": 18,
+            "max_asa_exclusive": 6,
+            "exclude_antype": ["Regional"],
+            "department_include": [],
+            "department_exclude": ["PED"],
+            "include_icd10_prefixes": [],
+            "exclude_icd10_prefixes": ["10", "0TY", "B50", "B51"],
+            "require_height_weight": True,
+            "require_positive_op_len": True,
+            "cardiovascular_prefix": "I",
+            "creatinine_item_name": "creatinine",
+            "dialysis_item_name": "crrt",
+        }
+    }
+
+
+def _default_outcome_catalog() -> dict[str, Any]:
+    return {
+        "aki": {
+            "kind": "aki",
+            "target_column": "aki_boolean",
+            "display_name": "Postoperative AKI",
+            "positive_label": "Postoperative AKI",
+            "negative_label": "No postoperative AKI",
+            "required_sources": ["labs", "ward_vitals"],
+        },
+        "macce": {
+            "kind": "composite",
+            "target_column": "macce",
+            "display_name": "30-day MACCE",
+            "positive_label": "30-day MACCE",
+            "negative_label": "No 30-day MACCE",
+            "required_sources": ["diagnosis"],
+            "window_days": 30,
+            "component_keys": [
+                "macce_mi",
+                "macce_stroke",
+                "macce_angina",
+                "macce_hf",
+                "macce_cardiac_arrest",
+            ],
+            "component_diagnosis_prefixes": {
+                "macce_mi": ["I21"],
+                "macce_stroke": ["I63"],
+                "macce_angina": ["I20"],
+                "macce_hf": ["I50"],
+                "macce_cardiac_arrest": ["I46"],
+            },
+        },
+        "pna": {
+            "kind": "diagnosis_window",
+            "target_column": "pna",
+            "display_name": "30-day PNA",
+            "positive_label": "30-day PNA",
+            "negative_label": "No 30-day PNA",
+            "required_sources": ["diagnosis"],
+            "window_days": 30,
+            "diagnosis_prefixes": ["J11", "J12", "J13", "J14", "J15", "J16", "J17", "J18"],
+        },
+        "pe": {
+            "kind": "diagnosis_window",
+            "target_column": "pe",
+            "display_name": "30-day PE",
+            "positive_label": "30-day PE",
+            "negative_label": "No 30-day PE",
+            "required_sources": ["diagnosis"],
+            "window_days": 30,
+            "diagnosis_prefixes": ["I26"],
+        },
+        "postop_icu_admission": {
+            "kind": "time_comparison",
+            "target_column": "postop_icu_admission",
+            "display_name": "Postoperative ICU Admission",
+            "positive_label": "Postoperative ICU Admission",
+            "negative_label": "No postoperative ICU Admission",
+            "required_sources": ["operations"],
+            "source_column": "icuin_time",
+            "reference_column": "opend_time",
+            "comparison_rule": "strictly_after",
+        },
+        "postop_mortality_30d": {
+            "kind": "time_comparison",
+            "target_column": "postop_mortality_30d",
+            "display_name": "30-day Mortality",
+            "positive_label": "30-day Mortality",
+            "negative_label": "No 30-day Mortality",
+            "required_sources": ["operations"],
+            "source_column": "allcause_death_time",
+            "reference_column": "opend_time",
+            "comparison_rule": "strictly_after_within_window",
+            "window_days": 30,
+        },
+    }
+
+
+def _infer_outcome_key_from_target(target: Any, catalog: dict[str, Any]) -> str | None:
+    if not target:
+        return None
+    target_name = str(target)
+    for outcome_key, outcome_cfg in catalog.items():
+        if str(outcome_cfg.get("target_column")) == target_name:
+            return outcome_key
+    return None
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -36,6 +151,39 @@ def load_yaml(path: Path) -> dict[str, Any]:
 def _normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(config)
     normalized.setdefault("evaluation_mode", "legacy_repeated_cv")
+    normalized.setdefault("study", {})
+
+    cohorts_cfg = normalized.setdefault("cohorts", {})
+    legacy_cohort = normalized.get("cohort", {})
+    default_profiles = _default_cohort_profiles()
+    if isinstance(legacy_cohort, dict) and legacy_cohort:
+        default_profiles[DEFAULT_COHORT_KEY] = _deep_merge(default_profiles[DEFAULT_COHORT_KEY], legacy_cohort)
+    existing_profiles = cohorts_cfg.get("profiles", {})
+    if not isinstance(existing_profiles, dict):
+        existing_profiles = {}
+    cohorts_cfg["profiles"] = _deep_merge(default_profiles, existing_profiles)
+
+    outcomes_cfg = normalized.setdefault("outcomes", {})
+    existing_catalog = outcomes_cfg.get("catalog", {})
+    if not isinstance(existing_catalog, dict):
+        existing_catalog = {}
+    outcomes_cfg["catalog"] = _deep_merge(_default_outcome_catalog(), existing_catalog)
+
+    study_cfg = normalized.setdefault("study", {})
+    if not study_cfg.get("cohort_key"):
+        study_cfg["cohort_key"] = DEFAULT_COHORT_KEY
+
+    models_cfg = normalized.setdefault("models", {})
+    resolved_outcome_key = study_cfg.get("outcome_key")
+    if not resolved_outcome_key:
+        resolved_outcome_key = _infer_outcome_key_from_target(models_cfg.get("target"), outcomes_cfg["catalog"]) or DEFAULT_OUTCOME_KEY
+        study_cfg["outcome_key"] = resolved_outcome_key
+
+    normalized["cohort"] = copy.deepcopy(cohorts_cfg["profiles"].get(study_cfg["cohort_key"], {}))
+    normalized["outcome"] = copy.deepcopy(outcomes_cfg["catalog"].get(study_cfg["outcome_key"], {}))
+    if "target" not in models_cfg or models_cfg.get("target") in {None, ""}:
+        models_cfg["target"] = normalized["outcome"].get("target_column")
+
     reports_cfg = normalized.setdefault("reports", {})
     if "batch_shap_jobs" in reports_cfg:
         reports_cfg["shap_jobs"] = copy.deepcopy(reports_cfg.pop("batch_shap_jobs"))
@@ -67,6 +215,50 @@ def validate_config(config: dict[str, Any]) -> None:
     evaluation_mode = config.get("evaluation_mode", "legacy_repeated_cv")
     if evaluation_mode not in {"legacy_repeated_cv", "grouped_holdout", "grouped_nested_cv"}:
         raise ValueError("evaluation_mode must be one of: legacy_repeated_cv, grouped_holdout, grouped_nested_cv.")
+
+    study_cfg = config.get("study", {})
+    cohort_key = study_cfg.get("cohort_key", DEFAULT_COHORT_KEY)
+    outcome_key = study_cfg.get("outcome_key", DEFAULT_OUTCOME_KEY)
+    cohort_profiles = config.get("cohorts", {}).get("profiles", {})
+    if cohort_key not in cohort_profiles:
+        raise ValueError(f"Unknown study.cohort_key '{cohort_key}'.")
+    outcome_catalog = config.get("outcomes", {}).get("catalog", {})
+    if outcome_key not in outcome_catalog:
+        raise ValueError(f"Unknown study.outcome_key '{outcome_key}'.")
+    outcome_cfg = config.get("outcome", {})
+    if config.get("models", {}).get("target") != outcome_cfg.get("target_column"):
+        raise ValueError(
+            "models.target must match the active outcome target_column derived from study.outcome_key."
+        )
+    required_sources = outcome_cfg.get("required_sources", [])
+    unknown_sources = sorted(set(required_sources) - KNOWN_RAW_SOURCES)
+    if unknown_sources:
+        raise ValueError(f"Unknown outcomes.catalog required_sources values: {unknown_sources}")
+    outcome_kind = outcome_cfg.get("kind")
+    if outcome_kind not in KNOWN_OUTCOME_KINDS:
+        raise ValueError(f"Unsupported outcomes.catalog kind '{outcome_kind}'.")
+    if outcome_kind == "diagnosis_window":
+        if not outcome_cfg.get("diagnosis_prefixes"):
+            raise ValueError("diagnosis_window outcomes require diagnosis_prefixes.")
+        if int(outcome_cfg.get("window_days", 0)) < 1:
+            raise ValueError("diagnosis_window outcomes require window_days >= 1.")
+    elif outcome_kind == "time_comparison":
+        comparison_rule = outcome_cfg.get("comparison_rule")
+        if comparison_rule not in {"strictly_after", "strictly_after_within_window"}:
+            raise ValueError("time_comparison outcomes require a supported comparison_rule.")
+        if not outcome_cfg.get("source_column") or not outcome_cfg.get("reference_column"):
+            raise ValueError("time_comparison outcomes require source_column and reference_column.")
+        if comparison_rule == "strictly_after_within_window" and int(outcome_cfg.get("window_days", 0)) < 1:
+            raise ValueError("strictly_after_within_window outcomes require window_days >= 1.")
+    elif outcome_kind == "composite":
+        component_keys = outcome_cfg.get("component_keys", [])
+        component_prefixes = outcome_cfg.get("component_diagnosis_prefixes", {})
+        if not component_keys:
+            raise ValueError("composite outcomes require component_keys.")
+        if sorted(component_keys) != sorted(component_prefixes.keys()):
+            raise ValueError("composite outcomes require component_diagnosis_prefixes for every component_key.")
+        if int(outcome_cfg.get("window_days", 0)) < 1:
+            raise ValueError("composite outcomes require window_days >= 1.")
 
     splits_cfg = config["splits"]
     if splits_cfg["use_bootstrapping"] and (splits_cfg["n_bootstrap_iterations"] % splits_cfg["n_cv_folds"]) != 0:
@@ -159,3 +351,19 @@ def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
 def config_hash(config: dict[str, Any]) -> str:
     payload = json.dumps(config, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def active_cohort_key(config: dict[str, Any]) -> str:
+    return str(config["study"]["cohort_key"])
+
+
+def active_outcome_key(config: dict[str, Any]) -> str:
+    return str(config["study"]["outcome_key"])
+
+
+def active_outcome_config(config: dict[str, Any]) -> dict[str, Any]:
+    return config["outcome"]
+
+
+def active_target_column(config: dict[str, Any]) -> str:
+    return str(config["models"]["target"])

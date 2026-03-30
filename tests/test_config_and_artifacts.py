@@ -11,7 +11,10 @@ def test_load_config_merges_override_and_preserves_defaults(synthetic_config) ->
     config = load_config(synthetic_config)
     assert config["paths"]["artifacts_dir"].endswith("artifacts")
     assert config["features"]["preop_lab_items"] == ["creatinine", "sodium"]
+    assert config["study"]["cohort_key"] == "default_noncardiac_adult"
+    assert config["study"]["outcome_key"] == "aki"
     assert config["cohort"]["min_age"] == 18
+    assert config["outcome"]["target_column"] == "aki_boolean"
     assert config["models"]["target"] == "aki_boolean"
 
 
@@ -78,6 +81,40 @@ def test_smoke_hpo_config_validates_and_limits_trials() -> None:
     assert config["models"]["sequence_hpo_enabled"] == ["lstm_only", "hybrid"]
 
 
+def test_macce_default_config_validates_and_switches_to_grouped_holdout() -> None:
+    config = load_config("configs/macce/default.yaml")
+
+    assert config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default"
+    assert config["study"]["cohort_key"] == "default_noncardiac_adult"
+    assert config["study"]["outcome_key"] == "macce"
+    assert config["evaluation_mode"] == "grouped_holdout"
+    assert config["splits"]["use_bootstrapping"] is False
+    assert config["outcome"]["display_name"] == "30-day MACCE"
+    assert config["models"]["target"] == "macce"
+
+
+def test_macce_smoke_configs_validate_and_limit_trials() -> None:
+    smoke = load_config("configs/macce/smoke.yaml")
+    smoke_hpo = load_config("configs/macce/smoke_hpo.yaml")
+
+    assert smoke["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_smoke"
+    assert smoke["study"]["outcome_key"] == "macce"
+    assert smoke["evaluation_mode"] == "grouped_holdout"
+    assert smoke["models"]["target"] == "macce"
+    assert smoke["models"]["tabular_enabled"] == ["log_reg"]
+    assert smoke["reports"]["shap_jobs"] == [
+        {"run_name": "LogReg_Combined_Macce_Smoke", "model_key": "log_reg", "dataset_regime": "combined"}
+    ]
+
+    assert smoke_hpo["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_smoke_hpo"
+    assert smoke_hpo["study"]["outcome_key"] == "macce"
+    assert smoke_hpo["evaluation_mode"] == "grouped_holdout"
+    assert smoke_hpo["models"]["target"] == "macce"
+    assert smoke_hpo["models"]["hpo"]["n_trials"] == 1
+    assert smoke_hpo["models"]["tabular_hpo_enabled"] == ["log_reg", "xgb", "rf", "svm", "mlp", "knn"]
+    assert smoke_hpo["models"]["sequence_hpo_enabled"] == ["lstm_only", "hybrid"]
+
+
 def test_validate_config_rejects_unsupported_shap_jobs(loaded_synthetic_config) -> None:
     loaded_synthetic_config["reports"]["shap_jobs"] = [{"dataset_regime": "combined", "model_key": "svm"}]
     with pytest.raises(ValueError, match="Unsupported SHAP model_key"):
@@ -94,6 +131,12 @@ def test_validate_config_rejects_invalid_bootstrap_ratio(loaded_synthetic_config
 def test_validate_config_rejects_invalid_evaluation_mode(loaded_synthetic_config) -> None:
     loaded_synthetic_config["evaluation_mode"] = "invalid"
     with pytest.raises(ValueError, match="evaluation_mode"):
+        validate_config(loaded_synthetic_config)
+
+
+def test_validate_config_rejects_unknown_outcome_key(loaded_synthetic_config) -> None:
+    loaded_synthetic_config["study"]["outcome_key"] = "unknown"
+    with pytest.raises(ValueError, match="Unknown study.outcome_key"):
         validate_config(loaded_synthetic_config)
 
 

@@ -9,7 +9,12 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 from inspire_aki.datasets.splits import subset_from_manifest
-from inspire_aki.models.sequence import HybridModel, _enable_sequence_cuda_benchmark, _sequence_loader_kwargs
+from inspire_aki.models.sequence import (
+    HybridModel,
+    _enable_sequence_cuda_benchmark,
+    _sequence_loader_kwargs,
+    sequence_feature_columns,
+)
 from inspire_aki.models.tabular import PyTorchMLP, fit_tabular_model, tabular_execution_policy, tabular_feature_columns
 from inspire_aki.models.weighting import balance_sample_weights, positive_balance_weight, safe_balanced_accuracy, weighted_resample_for_knn
 from inspire_aki.runtime import build_stage_runtime_plan, configure_torch_threads, thread_limited_context
@@ -315,7 +320,7 @@ def tune_sequence_dataset(
 
     search_spaces = config["models"]["sequence_hpo_search_spaces"]
     hpo_cfg = _hpo_cfg(config)
-    feature_cols_tab = [col for col in df_sequence.columns if col not in ["op_id", "time_tensors", "seq_len", target]]
+    feature_cols_tab = sequence_feature_columns(df_sequence, target)
     train_df = subset_from_manifest(df_sequence, manifest, repeat_id=0, fold_id=0, split_name="train")
     val_df = subset_from_manifest(df_sequence, manifest, repeat_id=0, fold_id=0, split_name="val")
     scaler = StandardScaler()

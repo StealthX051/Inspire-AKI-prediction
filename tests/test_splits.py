@@ -3,9 +3,14 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from inspire_aki.datasets.splits import build_bootstrap_split_manifest
+from inspire_aki.datasets.splits import build_bootstrap_split_manifest, build_grouped_hpo_split_manifest
 from inspire_aki.evaluation.leakage_checks import assert_group_integrity, assert_outer_test_coverage_once, assert_split_pair_has_no_overlap
-from inspire_aki.evaluation.split_manager import build_grouped_holdout_manifest, build_grouped_nested_cv_manifest, patient_level_stratification_table
+from inspire_aki.evaluation.split_manager import (
+    build_grouped_holdout_manifest,
+    build_grouped_nested_cv_manifest,
+    patient_level_stratification_table,
+    train_validation_split,
+)
 
 
 def test_bootstrap_split_manifest_is_reproducible() -> None:
@@ -140,3 +145,62 @@ def test_grouped_leakage_checks_fail_closed_on_patient_overlap() -> None:
 
     with pytest.raises(ValueError, match="Patient grouping violated"):
         assert_group_integrity(manifest, split_scope="outer")
+
+
+def test_grouped_hpo_split_manifest_has_zero_patient_overlap() -> None:
+    df = _grouped_df()
+    manifest = build_grouped_hpo_split_manifest(
+        df,
+        target="aki_boolean",
+        dataset_regime="combined",
+        population_id="combined",
+        random_state=42,
+        holdout_fraction=0.2,
+        validation_fraction_within_train=0.25,
+    )
+
+    lookup = df.set_index("op_id")["patient_id"]
+    split_patients = {
+        split_name: {int(lookup.loc[op_id]) for op_id in split_df["op_id"].tolist()}
+        for split_name, split_df in manifest.groupby("split_name", sort=False)
+    }
+
+    assert set(manifest["split_name"]) == {"train", "val", "holdout"}
+    assert not split_patients["train"] & split_patients["val"]
+    assert not split_patients["train"] & split_patients["holdout"]
+    assert not split_patients["val"] & split_patients["holdout"]
+
+
+def test_train_validation_split_groups_patients_for_grouped_holdout() -> None:
+    train_df, val_df = train_validation_split(
+        _grouped_df(),
+        target="aki_boolean",
+        validation_fraction=0.25,
+        random_state=42,
+        evaluation_mode="grouped_holdout",
+    )
+
+    assert set(train_df["patient_id"]) and set(val_df["patient_id"])
+    assert not set(train_df["patient_id"]) & set(val_df["patient_id"])
+    assert train_df["aki_boolean"].nunique() == 2
+    assert val_df["aki_boolean"].nunique() == 2
+
+
+def test_train_validation_split_fails_fast_for_infeasible_grouped_support() -> None:
+    df = pd.DataFrame(
+        [
+            {"op_id": 1, "patient_id": 101, "aki_boolean": 1},
+            {"op_id": 2, "patient_id": 102, "aki_boolean": 0},
+            {"op_id": 3, "patient_id": 103, "aki_boolean": 0},
+            {"op_id": 4, "patient_id": 104, "aki_boolean": 0},
+        ]
+    )
+
+    with pytest.raises(ValueError, match="Insufficient class support"):
+        train_validation_split(
+            df,
+            target="aki_boolean",
+            validation_fraction=0.5,
+            random_state=42,
+            evaluation_mode="grouped_holdout",
+        )

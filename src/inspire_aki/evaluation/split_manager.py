@@ -72,6 +72,65 @@ def _can_stratify(series: pd.Series, *, n_splits: int | None = None) -> bool:
     return (counts >= n_splits).all()
 
 
+def _ensure_binary_support(df: pd.DataFrame, *, target_col: str, split_name: str) -> None:
+    if len(pd.unique(df[target_col])) < 2:
+        raise ValueError(f"Insufficient class support for split '{split_name}'.")
+
+
+def grouped_patient_train_test_split(
+    df: pd.DataFrame,
+    *,
+    target: str,
+    test_size: float,
+    random_state: int,
+    patient_col: str = "patient_id",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    frame = _validate_split_inputs(df, target=target, patient_col=patient_col)
+    patient_table = patient_level_stratification_table(df, target=target, patient_col=patient_col)
+    stratify = patient_table["patient_target"] if _can_stratify(patient_table["patient_target"]) else None
+    patient_train, patient_test = train_test_split(
+        patient_table["patient_id"],
+        test_size=test_size,
+        random_state=random_state,
+        stratify=stratify,
+    )
+    train_patients = set(patient_train.tolist())
+    test_patients = set(patient_test.tolist())
+    train_df = df[df[patient_col].isin(train_patients)].copy()
+    test_df = df[df[patient_col].isin(test_patients)].copy()
+    _ensure_binary_support(train_df, target_col=target, split_name="train")
+    _ensure_binary_support(test_df, target_col=target, split_name="test")
+    return train_df, test_df
+
+
+def train_validation_split(
+    df: pd.DataFrame,
+    *,
+    target: str,
+    validation_fraction: float,
+    random_state: int,
+    evaluation_mode: str,
+    patient_col: str = "patient_id",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if evaluation_mode != "legacy_repeated_cv" and patient_col in df.columns:
+        return grouped_patient_train_test_split(
+            df,
+            target=target,
+            test_size=validation_fraction,
+            random_state=random_state,
+            patient_col=patient_col,
+        )
+    train_df, val_df = train_test_split(
+        df,
+        test_size=validation_fraction,
+        random_state=random_state,
+        stratify=df[target],
+    )
+    _ensure_binary_support(train_df, target_col=target, split_name="train")
+    _ensure_binary_support(val_df, target_col=target, split_name="val")
+    return train_df.copy(), val_df.copy()
+
+
 def _outer_rows(
     frame: pd.DataFrame,
     *,
@@ -277,19 +336,15 @@ def build_grouped_holdout_manifest(
     patient_col: str = "patient_id",
 ) -> GroupedSplitBundle:
     frame = _validate_split_inputs(df, target=target, patient_col=patient_col)
-    patient_table = patient_level_stratification_table(df, target=target, patient_col=patient_col)
-    stratify = patient_table["patient_target"] if _can_stratify(patient_table["patient_target"]) else None
-    patient_train, patient_test = train_test_split(
-        patient_table["patient_id"],
+    outer_train_frame, outer_test_frame = grouped_patient_train_test_split(
+        df,
+        target=target,
         test_size=holdout_fraction,
         random_state=random_state,
-        stratify=stratify,
+        patient_col=patient_col,
     )
-
-    train_patients = set(patient_train.tolist())
-    test_patients = set(patient_test.tolist())
-    train_op_ids = set(frame.loc[frame["patient_id"].isin(train_patients), "op_id"].tolist())
-    test_op_ids = set(frame.loc[frame["patient_id"].isin(test_patients), "op_id"].tolist())
+    train_op_ids = set(outer_train_frame["op_id"].tolist())
+    test_op_ids = set(outer_test_frame["op_id"].tolist())
 
     manifest_rows = _outer_rows(
         frame,

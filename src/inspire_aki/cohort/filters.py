@@ -25,17 +25,27 @@ def apply_preop_filters(
     audit = record_count(audit, "has_opstart_time", df_preop)
 
     df_preop["op_len"] = df_preop["opend_time"] - df_preop["opstart_time"]
-    df_preop = df_preop[df_preop["op_len"] > 0]
+    if bool(cohort_cfg.get("require_positive_op_len", True)):
+        df_preop = df_preop[df_preop["op_len"] > 0]
     audit = record_count(audit, "positive_op_len_only", df_preop)
     df_preop["sex"] = df_preop["sex"] == "M"
-    df_preop = df_preop[~(df_preop["weight"].isna() | df_preop["height"].isna())]
+    if bool(cohort_cfg.get("require_height_weight", True)):
+        df_preop = df_preop[~(df_preop["weight"].isna() | df_preop["height"].isna())]
     audit = record_count(audit, "has_height_weight", df_preop)
-    df_preop = df_preop[(df_preop["weight"] != 0) & (df_preop["height"] != 0)]
+    if bool(cohort_cfg.get("require_height_weight", True)):
+        df_preop = df_preop[(df_preop["weight"] != 0) & (df_preop["height"] != 0)]
     audit = record_count(audit, "nonzero_height_weight", df_preop)
 
-    df_ops_for_merge = df_ops_for_merge.drop(df_ops_for_merge[df_ops_for_merge["antype"].isin(cohort_cfg["exclude_antype"])].index)
+    exclude_antype = cohort_cfg.get("exclude_antype", [])
+    if exclude_antype:
+        df_ops_for_merge = df_ops_for_merge.drop(df_ops_for_merge[df_ops_for_merge["antype"].isin(exclude_antype)].index)
     antype_map = {"General": 0, "MAC": 1, "Neuraxial": 1}
     df_ops_for_merge["antype"] = df_ops_for_merge["antype"].map(antype_map).astype(float)
-    df_ops_for_merge = df_ops_for_merge[~df_ops_for_merge["department"].isin(cohort_cfg["department_exclude"])]
+    department_include = cohort_cfg.get("department_include", [])
+    if department_include:
+        df_ops_for_merge = df_ops_for_merge[df_ops_for_merge["department"].isin(department_include)]
+    department_exclude = cohort_cfg.get("department_exclude", [])
+    if department_exclude:
+        df_ops_for_merge = df_ops_for_merge[~df_ops_for_merge["department"].isin(department_exclude)]
     df_ops_for_merge = pd.get_dummies(df_ops_for_merge, columns=["department"])
     return df_preop, df_ops_for_merge, audit

@@ -3,8 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-import pandas as pd
-
+from inspire_aki.config import active_outcome_key
 from inspire_aki.io.artifacts import ArtifactManager
 
 
@@ -15,6 +14,12 @@ def _copy(src: Path, dst: Path) -> None:
 
 
 def export_legacy_datasets(artifacts: ArtifactManager) -> list[Path]:
+    if active_outcome_key(artifacts.config) != "aki":
+        raise ValueError(
+            "Legacy alias export is only supported for the AKI outcome. "
+            "Use the active artifact directory directly for non-AKI outcomes."
+        )
+
     exported: list[Path] = []
     compat_aki = artifacts.paths.compat_aki_dir
     compat_base = artifacts.paths.compat_base_dir

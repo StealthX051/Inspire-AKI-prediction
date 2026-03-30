@@ -1,0 +1,65 @@
+paths:
+  artifacts_dir: /media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_smoke
+
+study:
+  cohort_key: default_noncardiac_adult
+  outcome_key: macce
+
+evaluation_mode: grouped_holdout
+
+runtime:
+  profile: balanced
+  progress_interval_seconds: 60
+  orchestration:
+    mode: serial
+
+splits:
+  use_bootstrapping: false
+
+models:
+  tabular_enabled:
+    - log_reg
+  sequence_enabled:
+    - lstm_only
+  tabular_hpo_enabled: []
+  sequence_hpo_enabled: []
+  sequence_defaults:
+    learning_rate: 0.001
+    epochs: 3
+    batch_size: 256
+    patience: 1
+    es_check_interval: 1
+    lr_scheduler_patience: 1
+    lr_scheduler_factor: 0.1
+    gradient_clip_value: 1.0
+    lstm_hidden_size: 32
+    lstm_num_layers: 1
+    mlp_dims: [32]
+    dropout_rate: 0.2
+
+calibration:
+  cv_folds: 3
+  threshold_steps: 50
+
+evaluation:
+  bootstrap_reps: 100
+  dca_threshold_step: 0.01
+
+reports:
+  table_formats: [html, md, csv]
+  figure_formats: [png, svg]
+  figure_png_dpi: 600
+  style_variant: legacy_manuscript
+  highlight_best_values: true
+  generate_supplemental_outputs: true
+  max_display_features: 10
+  manuscript_sections:
+    - consort
+    - tables
+    - curves
+    - statistics
+    - reclassification
+    - shap
+  shap_jobs:
+    - {run_name: LogReg_Combined_Macce_Smoke, model_key: log_reg, dataset_regime: combined}
+

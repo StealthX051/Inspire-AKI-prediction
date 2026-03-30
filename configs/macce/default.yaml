@@ -1,0 +1,12 @@
+paths:
+  artifacts_dir: /media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default
+
+study:
+  cohort_key: default_noncardiac_adult
+  outcome_key: macce
+
+evaluation_mode: grouped_holdout
+
+splits:
+  use_bootstrapping: false
+
