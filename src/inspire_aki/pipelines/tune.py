@@ -294,6 +294,9 @@ def run_tune_tabular(config: dict) -> dict[str, str]:
     per_dataset_records: dict[str, dict[str, Any]] = {}
     pending_by_model: dict[str, list[TabularStudySpec]] = {}
     enabled_models = selected_tabular_models(config, "tune")
+    if not enabled_models:
+        progress.stage_end(stage_name, wall_time_seconds=perf_counter() - start, message="tabular HPO skipped; no tabular HPO models enabled")
+        return {}
     dataset_regimes = selected_tabular_dataset_regimes()
     evaluation_mode = config.get("evaluation_mode", "legacy_repeated_cv")
 
@@ -594,6 +597,9 @@ def run_tune_sequence(config: dict) -> dict[str, str]:
     artifacts = ArtifactManager(config)
     progress = ProgressLogger(artifacts, ("logs", "tune_sequence_progress.jsonl"), stdout=False)
     progress.stage_start(stage_name, message="sequence HPO started")
+    if not config["models"]["sequence_hpo_enabled"]:
+        progress.stage_end(stage_name, wall_time_seconds=perf_counter() - start, message="sequence HPO skipped; no sequence HPO models enabled")
+        return {}
     sequence_path = artifacts.paths.artifact_path("datasets", "sequence", "lstm_trainable.pkl")
     if not sequence_path.exists():
         progress.stage_end(stage_name, wall_time_seconds=perf_counter() - start, message="sequence HPO skipped; no sequence dataset")

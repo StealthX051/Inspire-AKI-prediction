@@ -492,6 +492,7 @@ def test_tune_tabular_uses_regime_executor_for_svm(monkeypatch, synthetic_config
 
 def test_tune_sequence_uses_pipeline_written_hpo_manifest(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_training_inputs(synthetic_config, include_sequence=True)
+    config["models"]["sequence_hpo_enabled"] = ["lstm_only"]
     artifacts = ArtifactManager(config)
     captured: dict[str, pd.DataFrame] = {}
 
@@ -509,6 +510,7 @@ def test_tune_sequence_uses_pipeline_written_hpo_manifest(monkeypatch, synthetic
 def test_tune_sequence_runs_grouped_nested_hpo_per_run_id(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_training_inputs(synthetic_config, include_sequence=True)
     config["evaluation_mode"] = "grouped_nested_cv"
+    config["models"]["sequence_hpo_enabled"] = ["lstm_only"]
     artifacts = ArtifactManager(config)
     captured_source_op_ids: list[set[int]] = []
     run_evaluate_generate(config)

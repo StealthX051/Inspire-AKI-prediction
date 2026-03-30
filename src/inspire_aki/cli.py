@@ -71,6 +71,10 @@ def _progress_logger(config: dict[str, Any], *, stdout: bool = True) -> Progress
     return ProgressLogger(ArtifactManager(config), ("logs", "run_all_events.jsonl"), stdout=stdout)
 
 
+def _requires_generated_evaluation(config: dict[str, Any]) -> bool:
+    return config.get("evaluation_mode", "legacy_repeated_cv") != "legacy_repeated_cv"
+
+
 def _aborted_stdout_message(stage_name: str) -> str:
     return f"Interrupted {stage_name}; exiting cleanly (130)."
 
@@ -323,12 +327,24 @@ def run_all(config: str | None = typer.Option(None, "--config")) -> None:
         ("preprocess_labels", run_labels),
         ("preprocess_timeseries", run_timeseries),
         ("preprocess_sequence", run_sequence),
-        ("tune_tabular", run_tune_tabular),
     ]
     outputs: dict[str, Any] = {}
     try:
         for stage_name, runner in stage_order:
             outputs[stage_name] = _run_stage(stage_name=stage_name, runner=runner, config=cfg, progress=progress)
+        if _requires_generated_evaluation(cfg):
+            outputs["evaluate_generate"] = _run_stage(
+                stage_name="evaluate_generate",
+                runner=run_evaluate_generate,
+                config=cfg,
+                progress=progress,
+            )
+        outputs["tune_tabular"] = _run_stage(
+            stage_name="tune_tabular",
+            runner=run_tune_tabular,
+            config=cfg,
+            progress=progress,
+        )
 
         orchestration_mode = cfg.get("runtime", {}).get("orchestration", {}).get("mode", "serial")
         if orchestration_mode == "overlap":

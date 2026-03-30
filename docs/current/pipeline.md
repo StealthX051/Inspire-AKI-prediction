@@ -16,13 +16,14 @@ For the legacy numbered-script path, use [../legacy/README.md](../legacy/README.
 
 Current behavior to keep in mind:
 
-- `run all` executes preprocessing, tuning, training, evaluation, and `report manuscript`
+- `run all` executes preprocessing, grouped split generation when needed, tuning, training, evaluation, and `report manuscript`
 - as of March 26, 2026, the main default artifact root `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default` has completed end to end through `report manuscript`
 - `run all` now emits immediate stage start/end lines plus `<artifacts_dir>/logs/run_all_events.jsonl`
 - long-running `tune_*` and `train_*` stages now append JSONL progress logs under `<artifacts_dir>/logs/`
 - interrupting a direct stage command or `run all` with `Ctrl-C` now exits cleanly with code `130`; overlapped child stages are terminated before the parent exits
 - in `runtime.orchestration.mode: overlap`, `run all` overlaps `tune sequence` with `train tabular` after `tune tabular`
 - `run all` does not call `compat export-legacy`
+- for `evaluation_mode: grouped_holdout` or `grouped_nested_cv`, `run all` inserts `evaluate generate` automatically before tuning
 - SHAP can be run explicitly with `explain shap`, but `report manuscript` also includes SHAP when configured
 - the current refactor optimization policy uses validation `balanced_accuracy` for HPO and early-stopping monitors
 - trainable models use explicit inverse-frequency `balance_weight`-style weighting; `knn` applies the same weighting intent through deterministic weighted resampling because `sklearn` KNN does not accept `sample_weight`

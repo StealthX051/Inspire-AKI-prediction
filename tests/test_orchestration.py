@@ -164,6 +164,48 @@ def test_run_all_overlap_executes_parallel_branch_before_tail(monkeypatch, synth
     ]
 
 
+def test_run_all_grouped_overlap_inserts_evaluate_generate_before_tuning(monkeypatch, synthetic_config: Path) -> None:
+    runner = CliRunner()
+    config = load_config(synthetic_config)
+    config["evaluation_mode"] = "grouped_nested_cv"
+    config["runtime"]["orchestration"]["mode"] = "overlap"
+    order: list[str] = []
+
+    def fake_run_stage(*, stage_name, runner, config, progress):
+        order.append(stage_name)
+        return {stage_name: True}
+
+    def fake_overlap_branch(**_kwargs):
+        order.append("overlap_branch")
+        return {"tune_sequence": {}, "train_tabular": {}}
+
+    monkeypatch.setattr(cli_module, "_cfg", lambda _path: config)
+    monkeypatch.setattr(cli_module, "_run_stage", fake_run_stage)
+    monkeypatch.setattr(cli_module, "_run_overlap_branch", fake_overlap_branch)
+
+    result = runner.invoke(app, ["run", "all", "--config", str(synthetic_config)])
+
+    assert result.exit_code == 0, result.stdout
+    assert order == [
+        "preprocess_preop",
+        "preprocess_intraop",
+        "preprocess_tabular",
+        "preprocess_labels",
+        "preprocess_timeseries",
+        "preprocess_sequence",
+        "evaluate_generate",
+        "tune_tabular",
+        "overlap_branch",
+        "train_sequence",
+        "evaluate_calibrate",
+        "evaluate_metrics",
+        "evaluate_delong",
+        "evaluate_dca",
+        "evaluate_reclassification",
+        "report_manuscript",
+    ]
+
+
 def test_run_all_serial_mode_preserves_stage_order(monkeypatch, synthetic_config: Path) -> None:
     runner = CliRunner()
     config = load_config(synthetic_config)
@@ -187,6 +229,44 @@ def test_run_all_serial_mode_preserves_stage_order(monkeypatch, synthetic_config
         "preprocess_labels",
         "preprocess_timeseries",
         "preprocess_sequence",
+        "tune_tabular",
+        "tune_sequence",
+        "train_tabular",
+        "train_sequence",
+        "evaluate_calibrate",
+        "evaluate_metrics",
+        "evaluate_delong",
+        "evaluate_dca",
+        "evaluate_reclassification",
+        "report_manuscript",
+    ]
+
+
+def test_run_all_grouped_serial_mode_inserts_evaluate_generate_before_tuning(monkeypatch, synthetic_config: Path) -> None:
+    runner = CliRunner()
+    config = load_config(synthetic_config)
+    config["evaluation_mode"] = "grouped_nested_cv"
+    config["runtime"]["orchestration"]["mode"] = "serial"
+    order: list[str] = []
+
+    def fake_run_stage(*, stage_name, runner, config, progress):
+        order.append(stage_name)
+        return {stage_name: True}
+
+    monkeypatch.setattr(cli_module, "_cfg", lambda _path: config)
+    monkeypatch.setattr(cli_module, "_run_stage", fake_run_stage)
+
+    result = runner.invoke(app, ["run", "all", "--config", str(synthetic_config)])
+
+    assert result.exit_code == 0, result.stdout
+    assert order == [
+        "preprocess_preop",
+        "preprocess_intraop",
+        "preprocess_tabular",
+        "preprocess_labels",
+        "preprocess_timeseries",
+        "preprocess_sequence",
+        "evaluate_generate",
         "tune_tabular",
         "tune_sequence",
         "train_tabular",
