@@ -13,7 +13,8 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 - `inspire-aki report manuscript` is now the report-level command that includes SHAP, rather than requiring a separate SHAP call.
 - The manuscript report layer now targets legacy-style presentation on top of corrected refactor artifacts:
   - performance tables are rebuilt from fold/run metrics rather than pooled `metrics_summary.csv`
-  - for grouped-holdout manuscript tables, confidence intervals are now bootstrap intervals computed directly from the saved prediction artifacts with the same metric definitions the tables display
+- for grouped-holdout manuscript tables, confidence intervals are now bootstrap intervals computed directly from the saved prediction artifacts with the same metric definitions the tables display
+- cohort descriptive tables now include explicit `Total patients, n` and `Total operations, n` rows at the top of Table 1
   - HTML performance tables now keep a fixed manuscript model order, restrict `ASA Rule` to the preop section, and use gentle monochrome column-wise gradients plus bold best-in-column values
   - cohort characteristics tables now prefer the combined unnormalized cohort artifact, restore the legacy `False = female` encoding, and emit one full-name department row per service instead of duplicated merged `*_preop` rows
   - the consort figure now renders as a top-down branched manuscript-style Graphviz flow with explicit exclusion summaries and final active-outcome negative / positive terminal boxes
@@ -38,14 +39,15 @@ Legacy names inside the repo still refer to `VitalDB-Dimensionality-Reduction`. 
 - `evaluate calibrate` now uses grouped cross-validation on `op_id`, so repeated prediction rows for the same case are kept together during isotonic calibration.
 - The refactor now excludes operations with `op_len <= 0` upstream, which is an intentional cleanup relative to the legacy scripts.
 - The refactor now treats infinite intraop feature values as invalid and fails the stage instead of silently carrying them forward.
+- The shipped configs now explicitly select patient-grouped evaluation modes; no shipped config defaults to the legacy operation-level repeated-CV path.
 
 ## Current Validation Status
 
-As of March 26, 2026, the refactor is in a strong and materially validated state on both synthetic tests and the main mounted-volume default path.
+As of March 31, 2026, the refactor is in a strong and materially validated state on both synthetic tests and the current patient-grouped evaluation paths.
 
 - The synthetic refactor test suite is green:
   - `pytest -q` currently passes with `131` tests.
-- The main real-data default config at `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default` has completed end to end through manuscript reporting:
+- The historical AKI default artifact root at `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default` completed end to end through manuscript reporting under the earlier operation-level repeated-CV config:
   - `train_tabular.json` written at `2026-03-25 20:11:28 UTC`
   - `train_sequence.json` written at `2026-03-25 22:46:56 UTC`
   - `evaluate_calibration.json` written at `2026-03-26 00:39:58 UTC`
@@ -53,7 +55,10 @@ As of March 26, 2026, the refactor is in a strong and materially validated state
   - `evaluate_delong.json` written at `2026-03-26 00:58:37 UTC`
   - `evaluate_dca.json` written at `2026-03-26 01:00:20 UTC`
   - `report_manuscript.json` written at `2026-03-26 02:40:51 UTC`
-- The completed default manuscript report currently records `141` emitted outputs in [`report_manuscript.json`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/default/manifests/report_manuscript.json).
+- The latest full non-leaky AKI manuscript artifact is `/media/volume/ncs_inspire_data/ncs_aki/artifacts/full_gcv`:
+  - `report_manuscript.json` written at `2026-03-30 00:32:42 UTC`
+  - grouped nested-CV split manifests under `datasets/splits/grouped_nested_cv_*.parquet` show zero train/test patient overlap across all outer folds
+- The completed historical default manuscript report currently records `141` emitted outputs in [`report_manuscript.json`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/default/manifests/report_manuscript.json).
 - The observed default completion appears to have been reached through resumed stage commands rather than one preserved `run all` event log; `run_all_events.jsonl` was not present for that completed run.
 - The lighter `configs/aki/smoke_hpo.yaml` path is still useful for cheaper regression runs, but it is no longer the only downstream validation target.
 
@@ -229,7 +234,7 @@ Current refactor optimization policy:
 - trainable models use explicit inverse-frequency `balance_weight`-style weighting during fitting
 - `knn` consumes those weights through deterministic weighted resampling because `sklearn` KNN does not expose `sample_weight` on `fit()`
 - HPO and early-stopping monitors now optimize validation `balanced_accuracy`
-- the current repeated-CV evaluation remains non-nested: HPO is run once on the cohort and the later bootstrap CV reuses that tuned parameter set
+- the current patient-grouped evaluation remains non-nested: HPO is run once on the cohort and the later grouped holdout / grouped nested-CV evaluation reuses that tuned parameter set
 
 Current HPO smoke note:
 

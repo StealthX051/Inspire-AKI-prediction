@@ -28,7 +28,7 @@ def test_config_hash_changes_with_override(synthetic_config) -> None:
 
 def test_load_config_normalizes_legacy_shap_key_and_removes_dead_compat(synthetic_config) -> None:
     config = load_config(synthetic_config)
-    assert config["evaluation_mode"] == "legacy_repeated_cv"
+    assert config["evaluation_mode"] == "grouped_nested_cv"
     assert "batch_shap_jobs" not in config["reports"]
     assert config["reports"]["shap_jobs"] == []
     assert config["reports"]["manuscript_sections"] == ["consort", "tables", "curves", "statistics", "reclassification", "shap"]
@@ -41,6 +41,7 @@ def test_load_config_normalizes_legacy_shap_key_and_removes_dead_compat(syntheti
 def test_default_config_validates() -> None:
     config = load_config()
     assert config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/default"
+    assert config["evaluation_mode"] == "grouped_nested_cv"
     assert config["reports"]["shap_jobs"]
     assert config["reports"]["manuscript_sections"] == ["consort", "tables", "curves", "statistics", "reclassification", "shap"]
     assert config["reports"]["figure_png_dpi"] == 600
@@ -55,6 +56,7 @@ def test_default_config_validates() -> None:
 def test_smoke_config_validates_and_is_lightweight() -> None:
     config = load_config("configs/aki/smoke.yaml")
     assert config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/smoke"
+    assert config["evaluation_mode"] == "grouped_holdout"
     assert config["runtime"]["profile"] == "balanced"
     assert config["runtime"]["orchestration"]["mode"] == "serial"
     assert config["splits"]["use_bootstrapping"] is False
@@ -70,6 +72,7 @@ def test_smoke_config_validates_and_is_lightweight() -> None:
 def test_smoke_hpo_config_validates_and_limits_trials() -> None:
     config = load_config("configs/aki/smoke_hpo.yaml")
     assert config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/smoke_hpo"
+    assert config["evaluation_mode"] == "grouped_holdout"
     assert config["runtime"]["profile"] == "balanced"
     assert config["runtime"]["orchestration"]["mode"] == "serial"
     assert config["models"]["hpo"]["n_trials"] == 1
@@ -90,6 +93,17 @@ def test_macce_default_config_validates_and_switches_to_grouped_holdout() -> Non
     assert config["evaluation_mode"] == "grouped_holdout"
     assert config["splits"]["use_bootstrapping"] is False
     assert config["outcome"]["display_name"] == "30-day MACCE"
+    assert config["models"]["target"] == "macce"
+
+
+def test_macce_five_fold_config_validates_and_switches_to_grouped_nested_cv() -> None:
+    config = load_config("configs/macce/five_fold.yaml")
+
+    assert config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_5fold_cv"
+    assert config["study"]["cohort_key"] == "default_noncardiac_adult"
+    assert config["study"]["outcome_key"] == "macce"
+    assert config["evaluation_mode"] == "grouped_nested_cv"
+    assert config["splits"]["n_cv_folds"] == 5
     assert config["models"]["target"] == "macce"
 
 

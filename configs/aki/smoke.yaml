@@ -7,6 +7,8 @@ runtime:
   orchestration:
     mode: serial
 
+evaluation_mode: grouped_holdout
+
 splits:
   use_bootstrapping: false
 

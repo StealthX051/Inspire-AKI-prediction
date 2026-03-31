@@ -7,6 +7,9 @@ paths:
 study:
   cohort_key: default_noncardiac_adult
   outcome_key: aki
+
+evaluation_mode: grouped_nested_cv
+
 cohorts:
   profiles:
     default_noncardiac_adult:

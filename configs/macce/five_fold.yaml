@@ -1,0 +1,13 @@
+paths:
+  artifacts_dir: /media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_5fold_cv
+
+study:
+  cohort_key: default_noncardiac_adult
+  outcome_key: macce
+
+evaluation_mode: grouped_nested_cv
+
+splits:
+  use_bootstrapping: true
+  n_bootstrap_iterations: 25
+  n_cv_folds: 5
