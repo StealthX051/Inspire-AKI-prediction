@@ -300,9 +300,13 @@ def test_cohort_characteristics_use_legacy_sex_encoding_and_deduped_departments(
     generate_table_outputs(artifacts)
 
     cohort_table = pd.read_csv(artifacts.paths.artifact_path("reports", "tables", "cohort_characteristics.csv"))
+    total_patients_row = cohort_table.loc[cohort_table["characteristic"] == "Total patients, n"].iloc[0]
+    total_operations_row = cohort_table.loc[cohort_table["characteristic"] == "Total operations, n"].iloc[0]
     female_row = cohort_table.loc[cohort_table["characteristic"] == "Female sex, n (%)"].iloc[0]
     department_rows = cohort_table[cohort_table["characteristic"].isin(["General Surgery", "Urology"])]
 
+    assert total_patients_row["finding"] == "3"
+    assert total_operations_row["finding"] == "3"
     assert female_row["finding"] == "2 (66.67%)"
     assert len(department_rows) == 2
     assert not cohort_table["characteristic"].astype(str).str.contains("preop", case=False).any()

@@ -55,7 +55,7 @@ Relevant implementation surfaces:
   - [`performance_table.html`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default/reports/tables/performance_table.html) now shows grouped-holdout bootstrap CIs instead of `N/A`
   - [`performance_table_calibrated.html`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default/reports/tables/performance_table_calibrated.html) now shows grouped-holdout bootstrap CIs instead of `N/A`
   - the manuscript-table CI path now bootstraps directly from saved prediction artifacts using the same table-level metric definitions, rather than reusing the broader evaluation bootstrap artifact
-  - [`cohort_characteristics.html`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default/reports/tables/cohort_characteristics.html) now restores the legacy `False = female` encoding, removes duplicated merged department rows, and emits full department names
+  - [`cohort_characteristics.html`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default/reports/tables/cohort_characteristics.html) now restores the legacy `False = female` encoding, removes duplicated merged department rows, emits full department names, and includes explicit total patient and operation rows
 - current observed run-state snapshot:
   - [`preprocess_preop.json`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default/manifests/preprocess_preop.json) is present under `manifests/`
   - `logs/` exists under the same artifact root and is where `run_all_events.jsonl` and the `tune_*` / `train_*` progress logs will appear once those stages execute
@@ -85,8 +85,13 @@ Relevant implementation surfaces:
 - grouped holdout HPO manifests now split on `patient_id` instead of falling back to op-level HPO splits
 - shipped MACCE configs now exist under:
   - [`configs/macce/default.yaml`](/home/exouser/Inspire-AKI-prediction/configs/macce/default.yaml)
+  - [`configs/macce/five_fold.yaml`](/home/exouser/Inspire-AKI-prediction/configs/macce/five_fold.yaml)
   - [`configs/macce/smoke.yaml`](/home/exouser/Inspire-AKI-prediction/configs/macce/smoke.yaml)
   - [`configs/macce/smoke_hpo.yaml`](/home/exouser/Inspire-AKI-prediction/configs/macce/smoke_hpo.yaml)
+
+- the dedicated five-fold repeated-CV MACCE artifact root is:
+  - [`/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_5fold_cv`](/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_5fold_cv)
+  - use this instead of `/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default` when the grouped-holdout abstract results need to stay frozen
 
 ## Recommended Next Starting Point
 

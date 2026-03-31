@@ -375,12 +375,16 @@ def _performance_table_spec(summary_df: pd.DataFrame, *, file_stem: str, title: 
 def _cohort_sections(merged_df: pd.DataFrame, config: dict) -> list[TableSection]:
     if merged_df.empty:
         return []
+    total_operations = int(merged_df["op_id"].nunique()) if "op_id" in merged_df.columns else int(len(merged_df))
     cohort_df = merged_df.sort_values("op_id", kind="stable")
     if "subject_id" in cohort_df.columns:
         cohort_df = cohort_df.drop_duplicates(subset=["subject_id"], keep="last")
-    total = int(len(cohort_df))
+    total_patients = int(len(cohort_df))
 
-    summary_rows: list[dict[str, object]] = []
+    summary_rows: list[dict[str, object]] = [
+        {"characteristic": "Total patients, n", "finding": str(total_patients)},
+        {"characteristic": "Total operations, n", "finding": str(total_operations)},
+    ]
     numeric_rows = [
         ("Age, y, mean (SD)", "age"),
         ("Weight, kg, mean (SD)", "weight"),
@@ -396,13 +400,13 @@ def _cohort_sections(merged_df: pd.DataFrame, config: dict) -> list[TableSection
             summary_rows.append({"characteristic": label, "finding": _format_mean_sd(cohort_df[column])})
     if "sex" in cohort_df.columns:
         female_mask = _female_mask(cohort_df["sex"])
-        summary_rows.append({"characteristic": "Female sex, n (%)", "finding": _format_count_pct(float(female_mask.sum()), total)})
+        summary_rows.append({"characteristic": "Female sex, n (%)", "finding": _format_count_pct(float(female_mask.sum()), total_patients)})
     sections = [TableSection(title=None, display_df=pd.DataFrame(summary_rows), csv_df=pd.DataFrame(summary_rows))]
 
     if "asa" in cohort_df.columns:
         asa_rows = []
         for value, count in cohort_df["asa"].dropna().astype(int).value_counts().sort_index().items():
-            asa_rows.append({"characteristic": str(value), "finding": _format_count_pct(float(count), total)})
+            asa_rows.append({"characteristic": str(value), "finding": _format_count_pct(float(count), total_patients)})
         sections.append(TableSection(title="ASA classification, n (%)", display_df=pd.DataFrame(asa_rows), csv_df=pd.DataFrame(asa_rows)))
 
     target_column = active_target_column(config)
@@ -413,7 +417,7 @@ def _cohort_sections(merged_df: pd.DataFrame, config: dict) -> list[TableSection
             [
                 {
                     "characteristic": f"{outcome_cfg['display_name']}, n (%)",
-                    "finding": _format_count_pct(positive_count, total),
+                    "finding": _format_count_pct(positive_count, total_patients),
                 }
             ]
         )
@@ -421,7 +425,7 @@ def _cohort_sections(merged_df: pd.DataFrame, config: dict) -> list[TableSection
 
     dept_columns = [column for column in cohort_df.columns if column.startswith("department_")]
     if dept_columns:
-        dept_rows = _department_rows(cohort_df, total)
+        dept_rows = _department_rows(cohort_df, total_patients)
         sections.append(
             TableSection(
                 title="Department Surgery type, n (%)",
@@ -432,7 +436,7 @@ def _cohort_sections(merged_df: pd.DataFrame, config: dict) -> list[TableSection
     elif "department" in cohort_df.columns:
         dept_counts = cohort_df["department"].astype(str).value_counts().sort_index()
         dept_rows = [
-            {"characteristic": _DEPARTMENT_LABELS.get(label.upper(), label), "finding": _format_count_pct(float(count), total)}
+            {"characteristic": _DEPARTMENT_LABELS.get(label.upper(), label), "finding": _format_count_pct(float(count), total_patients)}
             for label, count in dept_counts.items()
         ]
         sections.append(TableSection(title="Department Surgery type, n (%)", display_df=pd.DataFrame(dept_rows), csv_df=pd.DataFrame(dept_rows)))
