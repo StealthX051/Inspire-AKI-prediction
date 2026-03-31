@@ -4,6 +4,13 @@
 - Date: 2026-03-31
 - Scope: safe merge of `outcome-extension` back into `justin`, current modular outcome implementation state, validation evidence, and the clean next starting point for continuing AKI or MACCE work on the merged line
 
+## Merge Record
+
+- pre-merge `justin` safety push: `f9d435e`
+- pre-merge `outcome-extension` safety push: `3813eaa`
+- merge commit on `justin`: `936d785`
+- note: `ResponsetoReviewed41026.html` was intentionally preserved in a follow-up post-merge commit rather than folded into the merge commit itself
+
 ## Branch / Worktree Status
 
 - `justin`
