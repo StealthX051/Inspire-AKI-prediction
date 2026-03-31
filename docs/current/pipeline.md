@@ -9,15 +9,22 @@ For the legacy numbered-script path, use [../legacy/README.md](../legacy/README.
 
 - CLI surface: `src/inspire_aki/cli.py`
 - Default config: `configs/aki/default.yaml`
+- Additional shipped outcome configs: `configs/macce/{default,five_fold,smoke,smoke_hpo}.yaml`
 - Artifact root: `paths.artifacts_dir` in config, `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default` in the shipped default config
 - Raw INSPIRE root: `paths.raw_inspire_dir` in config
+- Active study target: `study.outcome_key`, normalized to `outcome.*` and `models.target`
 - Runtime planning: `inspire-aki runtime inspect --config ...`
 - Orchestration: `inspire-aki run all --config ...`
 
 Current behavior to keep in mind:
 
 - `run all` executes preprocessing, grouped split generation when needed, tuning, training, evaluation, and `report manuscript`
-- as of March 26, 2026, the main default artifact root `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default` has completed end to end through `report manuscript`
+- the shipped configs now explicitly select patient-grouped evaluation modes:
+  - `configs/aki/default.yaml` -> `grouped_nested_cv`
+  - `configs/aki/smoke.yaml` and `configs/aki/smoke_hpo.yaml` -> `grouped_holdout`
+  - `configs/macce/default.yaml` and `configs/macce/smoke*.yaml` -> `grouped_holdout`
+  - `configs/macce/five_fold.yaml` -> `grouped_nested_cv`
+- the historical AKI artifact root `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default` reflects the earlier operation-level repeated-CV config; the latest full patient-grouped AKI manuscript artifact is `/media/volume/ncs_inspire_data/ncs_aki/artifacts/full_gcv`
 - `run all` now emits immediate stage start/end lines plus `<artifacts_dir>/logs/run_all_events.jsonl`
 - long-running `tune_*` and `train_*` stages now append JSONL progress logs under `<artifacts_dir>/logs/`
 - interrupting a direct stage command or `run all` with `Ctrl-C` now exits cleanly with code `130`; overlapped child stages are terminated before the parent exits
@@ -27,7 +34,7 @@ Current behavior to keep in mind:
 - SHAP can be run explicitly with `explain shap`, but `report manuscript` also includes SHAP when configured
 - the current refactor optimization policy uses validation `balanced_accuracy` for HPO and early-stopping monitors
 - trainable models use explicit inverse-frequency `balance_weight`-style weighting; `knn` applies the same weighting intent through deterministic weighted resampling because `sklearn` KNN does not accept `sample_weight`
-- the current evaluation remains non-nested: HPO runs once on the cohort and later repeated-CV evaluation reuses that tuned parameter set
+- the current evaluation remains non-nested: HPO runs once on the cohort and later grouped holdout / grouped nested-CV evaluation reuses that tuned parameter set
 
 ## Stage Map
 
@@ -38,8 +45,8 @@ Current behavior to keep in mind:
 | `preprocess preop` | `pipelines/preprocess.py:run_preop` | raw `operations.csv`, `labs.csv`, `diagnosis.csv`, `ward_vitals.csv` | `features/preop/preop_features.csv`, `cohort/preop_audit.csv` | Builds the preop cohort/features and records audit metadata |
 | `preprocess intraop` | `pipelines/preprocess.py:run_intraop` | raw `vitals.csv`, preop artifact | `features/intraop/feature_engineered.csv` | Builds tabular intraop features and fails if `inf` values remain |
 | `preprocess tabular` | `pipelines/preprocess.py:run_tabular` | preop and intraop artifacts | `datasets/tabular/tabular_{combined,preop,intraop}.csv`, `tabular_combined_unnormalized.csv`, `normalization_stats.csv`, `features/fill_rates.csv` | Assembles the refactored tabular modeling datasets |
-| `preprocess labels` | `pipelines/preprocess.py:run_labels` | preop artifact, combined tabular artifact, raw labs and ward vitals | `cohort/aki_labels.csv`, labeled tabular datasets | Derives AKI labels and joins them back onto each tabular regime |
-| `preprocess timeseries` | `pipelines/preprocess.py:run_timeseries` | raw `vitals.csv`, `cohort/aki_labels.csv` | `features/timeseries/time_series_cleaned.csv` | Filters to labeled ops, cleans/interpolates timeseries, and writes staging partitions |
+| `preprocess labels` | `pipelines/preprocess.py:run_labels` | preop artifact, combined tabular artifact, and the raw source tables required by the active outcome | `cohort/labels.csv`, `cohort/labels_audit.csv`, labeled tabular datasets | Derives the active outcome labels and joins `subject_id`, `patient_id`, and the active target back onto each tabular regime; when the active outcome is AKI it also writes the legacy compat alias `cohort/aki_labels.csv` |
+| `preprocess timeseries` | `pipelines/preprocess.py:run_timeseries` | raw `vitals.csv`, `cohort/labels.csv` | `features/timeseries/time_series_cleaned.csv` | Filters to labeled ops, cleans/interpolates timeseries, and writes staging partitions |
 | `preprocess sequence` | `pipelines/preprocess.py:run_sequence` | `tabular_combined_labeled.csv`, cleaned timeseries artifact | `datasets/sequence/lstm_trainable.pkl` | Builds the sequence-ready dataset and writes sequence staging partitions |
 
 ### Tune
@@ -77,8 +84,8 @@ Current behavior to keep in mind:
 
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
-| `report consort` | `pipelines/report.py:run_consort` | cohort and audit artifacts | `consort_audit.{html,md,csv}`, `consort.dot`, `consort.{png,svg}` | Standalone consort output stage; renders a top-down branched manuscript-style Graphviz flow with explicit exclusion summaries and final AKI / non-AKI terminal nodes |
-| `report tables` | `pipelines/report.py:run_tables` | tabular, label, and evaluation artifacts | manuscript-facing core tables in `html`, `md`, and `csv` | Includes legacy-style uncalibrated and calibrated performance tables plus descriptive tables; HTML performance tables keep a fixed manuscript order, restrict `ASA Rule` to preop, and use gentle monochrome column-wise gradients |
+| `report consort` | `pipelines/report.py:run_consort` | cohort and audit artifacts | `consort_audit.{html,md,csv}`, `consort.dot`, `consort.{png,svg}` | Standalone consort output stage; renders a top-down branched manuscript-style Graphviz flow with explicit exclusion summaries and final active-outcome negative / positive terminal nodes |
+| `report tables` | `pipelines/report.py:run_tables` | tabular, label, and evaluation artifacts | manuscript-facing core tables in `html`, `md`, and `csv` | Includes legacy-style uncalibrated and calibrated performance tables plus descriptive tables; cohort summaries now use the active outcome display label rather than AKI-only wording, prefer the combined unnormalized cohort artifact when available, restore the legacy `False = female` sex encoding, emit deduplicated full-name department rows, and add explicit total patient and operation rows at the top of Table 1; HTML performance tables keep a fixed manuscript order, restrict `ASA Rule` to preop, and use gentle monochrome column-wise gradients; grouped-holdout performance tables derive bootstrap CIs directly from the saved prediction artifacts using the same manuscript metric definitions shown in the table |
 | `report curves` | `pipelines/report.py:run_curves` | evaluation artifacts | ROC, PR, calibration, DCA, and comparison figures in `png` and `svg` | Uses fold/run aggregation for ROC and PR uncertainty bands |
 | `report manuscript` | `pipelines/report.py:run_manuscript` | report config and all upstream artifacts | combined report outputs under `reports/` | Dispatches `consort`, `tables`, `curves`, `statistics`, `reclassification`, and `shap` from `reports.manuscript_sections` |
 
@@ -86,13 +93,13 @@ Current behavior to keep in mind:
 
 | Command | Main implementation | Primary inputs | Primary outputs | Notes |
 | --- | --- | --- | --- | --- |
-| `compat export-legacy` | `io/compat.py:export_legacy_datasets` | selected refactor artifacts | copied files under `compat_aki_dir`, `compat_base_dir`, and `compat_results_dir` | Explicit compatibility export only; not part of `run all` |
+| `compat export-legacy` | `io/compat.py:export_legacy_datasets` | selected refactor artifacts | copied files under `compat_aki_dir`, `compat_base_dir`, and `compat_results_dir` | Explicit compatibility export only; not part of `run all`; only supported when `study.outcome_key: aki` |
 | `runtime inspect` | `runtime.py` | config plus detected host resources | JSON runtime summary | Use this before expensive runs on a new host class |
 | `runtime benchmark` | `benchmarking.py` | config, selected profiles, selected targets | `<artifacts_dir>/benchmarks/summary.{json,csv}` plus per-run logs | Compare runtime profiles or heavy stages without adding tracked benchmark artifacts; supports `--model-keys`, `--dataset-regimes`, and `--execution-policy` for targeted low-CPU benchmarks |
 
 ## Typical Current Runs
 
-### Full default run
+### Full default grouped-nested-CV run
 
 ```bash
 source .venv/bin/activate
@@ -100,6 +107,23 @@ inspire-aki runtime inspect --config configs/aki/default.yaml
 inspire-aki run all --config configs/aki/default.yaml
 inspire-aki runtime benchmark --config configs/aki/default.yaml --profiles throughput,balanced --targets tune_tabular,tune_sequence
 ```
+
+### Full MACCE grouped-holdout run
+
+```bash
+source .venv/bin/activate
+inspire-aki runtime inspect --config configs/macce/default.yaml
+inspire-aki run all --config configs/macce/default.yaml
+```
+
+### MACCE five-fold grouped-nested-CV run
+
+```bash
+source .venv/bin/activate
+inspire-aki runtime inspect --config configs/macce/five_fold.yaml
+```
+
+`configs/macce/five_fold.yaml` writes to `/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_5fold_cv` so the grouped-holdout results under `/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default` remain preserved while still using patient-grouped outer folds.
 
 ### Resume stage-by-stage
 
@@ -125,6 +149,7 @@ Notes:
 
 - `report consort` is the fastest loop for Graphviz consort-layout iteration
 - `report tables` is the tightest loop for manuscript table styling and ordering, but it still recomputes fold/run performance summaries from the saved prediction artifacts
+- in grouped-holdout mode, rerunning `report tables` also recomputes the manuscript-table bootstrap intervals from those saved predictions
 
 ## Runtime Notes
 

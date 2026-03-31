@@ -3,6 +3,8 @@ from __future__ import annotations
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
+from inspire_aki.evaluation.split_manager import grouped_patient_train_test_split
+
 _LEGACY_SPLIT_COLUMNS = ["op_id", "repeat_id", "fold_id", "split_name"]
 _HPO_SPLIT_COLUMNS = ["op_id", "dataset_regime", "population_id", "repeat_id", "fold_id", "split_name"]
 
@@ -97,6 +99,47 @@ def build_hpo_split_manifest(
                 "fold_id": 0,
                 "split_name": split_name,
             })
+    return pd.DataFrame(records)
+
+
+def build_grouped_hpo_split_manifest(
+    df: pd.DataFrame,
+    *,
+    target: str,
+    dataset_regime: str,
+    population_id: str,
+    random_state: int,
+    holdout_fraction: float,
+    validation_fraction_within_train: float,
+    patient_col: str = "patient_id",
+) -> pd.DataFrame:
+    records: list[dict] = []
+    train_val_df, holdout_df = grouped_patient_train_test_split(
+        df,
+        target=target,
+        test_size=holdout_fraction,
+        random_state=random_state,
+        patient_col=patient_col,
+    )
+    train_df, val_df = grouped_patient_train_test_split(
+        train_val_df,
+        target=target,
+        test_size=validation_fraction_within_train,
+        random_state=random_state,
+        patient_col=patient_col,
+    )
+    for split_name, split_df in [("train", train_df), ("val", val_df), ("holdout", holdout_df)]:
+        for op_id in split_df["op_id"].tolist():
+            records.append(
+                {
+                    "op_id": op_id,
+                    "dataset_regime": dataset_regime,
+                    "population_id": population_id,
+                    "repeat_id": 0,
+                    "fold_id": 0,
+                    "split_name": split_name,
+                }
+            )
     return pd.DataFrame(records)
 
 

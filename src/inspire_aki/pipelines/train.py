@@ -13,7 +13,12 @@ from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.io.predictions import materialize_raw_predictions, write_prediction_partition
 from inspire_aki.io.progress import ProgressLogger
 from inspire_aki.models.registry import sequence_dataset_for_model, sequence_population_for_model
-from inspire_aki.models.sequence import fit_sequence_model, predict_sequence_bundle, raw_prediction_rows as sequence_prediction_rows
+from inspire_aki.models.sequence import (
+    fit_sequence_model,
+    predict_sequence_bundle,
+    raw_prediction_rows as sequence_prediction_rows,
+    sequence_feature_columns,
+)
 from inspire_aki.models.tabular import (
     fit_tabular_model,
     predict_tabular_bundle,
@@ -564,7 +569,7 @@ def run_train_sequence(config: dict) -> dict[str, str]:
     if evaluation_mode != "legacy_repeated_cv":
         manifest, manifest_path = _load_grouped_evaluation_manifest(artifacts, config, "sequence")
         split_runs = evaluation_runs(manifest)
-        feature_cols_tab = [col for col in sequence_df.columns if col not in ["op_id", "time_tensors", "seq_len", target]]
+        feature_cols_tab = sequence_feature_columns(sequence_df, target)
         prediction_frames: list[pd.DataFrame] = []
 
         for model_key in config["models"]["sequence_enabled"]:
@@ -579,6 +584,7 @@ def run_train_sequence(config: dict) -> dict[str, str]:
                     model_key=model_key,
                     train_df=train_df,
                     feature_cols_tab=feature_cols_tab,
+                    target=target,
                     params=params,
                     config=config,
                     model_output_dir=model_dir,
@@ -600,6 +606,7 @@ def run_train_sequence(config: dict) -> dict[str, str]:
                         dataset_regime=dataset_regime,
                         population_id=population_id,
                         model_key=model_key,
+                        target=target,
                         repeat_id=run.repeat_id,
                         fold_id=run.fold_id,
                         test_df=test_df,
@@ -635,7 +642,7 @@ def run_train_sequence(config: dict) -> dict[str, str]:
         population_id="sequence_common",
     )
     split_keys = manifest[["repeat_id", "fold_id"]].drop_duplicates().sort_values(["repeat_id", "fold_id"])
-    feature_cols_tab = [col for col in sequence_df.columns if col not in ["op_id", "time_tensors", "seq_len", target]]
+    feature_cols_tab = sequence_feature_columns(sequence_df, target)
     prediction_frames: list[pd.DataFrame] = []
 
     for model_key in config["models"]["sequence_enabled"]:
@@ -650,6 +657,7 @@ def run_train_sequence(config: dict) -> dict[str, str]:
                 model_key=model_key,
                 train_df=train_df,
                 feature_cols_tab=feature_cols_tab,
+                target=target,
                 params=params,
                 config=config,
                 model_output_dir=model_dir,
@@ -670,6 +678,7 @@ def run_train_sequence(config: dict) -> dict[str, str]:
                     dataset_regime=dataset_regime,
                     population_id=population_id,
                     model_key=model_key,
+                    target=target,
                     repeat_id=row.repeat_id,
                     fold_id=row.fold_id,
                     test_df=test_df,

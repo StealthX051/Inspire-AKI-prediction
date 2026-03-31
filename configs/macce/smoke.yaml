@@ -1,13 +1,17 @@
 paths:
-  artifacts_dir: /media/volume/ncs_inspire_data/ncs_aki/artifacts/smoke
+  artifacts_dir: /media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_smoke
+
+study:
+  cohort_key: default_noncardiac_adult
+  outcome_key: macce
+
+evaluation_mode: grouped_holdout
 
 runtime:
   profile: balanced
   progress_interval_seconds: 60
   orchestration:
     mode: serial
-
-evaluation_mode: grouped_holdout
 
 splits:
   use_bootstrapping: false
@@ -57,4 +61,4 @@ reports:
     - reclassification
     - shap
   shap_jobs:
-    - {run_name: LogReg_Combined_Smoke, model_key: log_reg, dataset_regime: combined}
+    - {run_name: LogReg_Combined_Macce_Smoke, model_key: log_reg, dataset_regime: combined}

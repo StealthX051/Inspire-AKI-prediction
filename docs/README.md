@@ -29,10 +29,10 @@ They remain useful for understanding the pre-refactor system and its issues, but
 As of March 30, 2026:
 
 - the main default AKI refactor path has completed end to end under `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default`
-- the grouped-CV reintegration work has been merged into `justin`
-- `outcome-extension` is the current branch for adding other outcomes on top of that merged grouped-CV baseline
+- the grouped-CV reintegration work and modular outcome extension are now merged into `justin`
+- `outcome-extension` is retained only as a safety/reference branch after the merge back into `justin`
 - `eval-backend-refactor` is retained only as a donor/reference line for the historical March 27 grouped-CV run
-- the current branch roles, grouped-CV validation state, and next recommended starting point are captured in [HANDOFF/2026-03-30_grouped-cv-integration-merged-and-outcome-next-steps.md](HANDOFF/2026-03-30_grouped-cv-integration-merged-and-outcome-next-steps.md)
+- the current branch roles, grouped-CV validation state, MACCE run surface, and next recommended starting point are captured in [HANDOFF/2026-03-30_grouped-cv-integration-merged-and-outcome-next-steps.md](HANDOFF/2026-03-30_grouped-cv-integration-merged-and-outcome-next-steps.md)
 
 For the current portability/validation status, start with:
 

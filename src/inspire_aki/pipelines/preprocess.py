@@ -4,7 +4,8 @@ from time import perf_counter
 
 import pandas as pd
 
-from inspire_aki.cohort.labels import derive_aki_labels
+from inspire_aki.cohort.labels import derive_active_labels
+from inspire_aki.config import active_outcome_config, active_outcome_key, active_target_column
 from inspire_aki.cohort.preop import build_preop_features
 from inspire_aki.datasets.sequence import build_sequence_dataset_partitioned
 from inspire_aki.datasets.tabular import build_tabular_datasets
@@ -130,34 +131,47 @@ def run_labels(config: dict) -> dict[str, str]:
     artifacts = ArtifactManager(config)
     preop_df = pd.read_csv(artifacts.paths.artifact_path("features", "preop", "preop_features.csv"))
     combined_df = pd.read_csv(artifacts.paths.artifact_path("datasets", "tabular", "tabular_combined.csv"))
-    labels_df, audit_df = derive_aki_labels(
+    labels_df, audit_df = derive_active_labels(
         config=config,
         raw_inspire_dir=artifacts.paths.raw_inspire_dir,
         preop_df=preop_df,
         tabular_combined_df=combined_df,
     )
-    label_path = artifacts.write_dataframe(labels_df, "cohort", "aki_labels.csv")
+    outcome_cfg = active_outcome_config(config)
+    target = active_target_column(config)
+    labels_for_datasets = labels_df[[column for column in ["op_id", "subject_id", "patient_id", target] if column in labels_df.columns]].copy()
+    label_path = artifacts.write_dataframe(labels_df, "cohort", "labels.csv")
     audit_path = artifacts.write_dataframe(audit_df, "cohort", "labels_audit.csv")
 
     outputs = {"labels": str(label_path), "audit": str(audit_path)}
+    if active_outcome_key(config) == "aki":
+        outputs["legacy_labels"] = str(artifacts.write_dataframe(labels_df, "cohort", "aki_labels.csv"))
     for dataset_name in ["combined", "preop", "intraop"]:
         dataset_path = artifacts.paths.artifact_path("datasets", "tabular", f"tabular_{dataset_name}.csv")
         dataset_df = pd.read_csv(dataset_path)
-        labeled_df = dataset_df.merge(labels_df, on="op_id", how="inner")
+        labeled_df = dataset_df.merge(labels_for_datasets, on="op_id", how="inner")
         out_path = artifacts.write_dataframe(labeled_df, "datasets", "tabular", f"tabular_{dataset_name}_labeled.csv")
         outputs[f"{dataset_name}_labeled"] = str(out_path)
 
+    source_paths = {
+        "operations": artifacts.paths.raw_inspire_dir / "operations.csv",
+        "diagnosis": artifacts.paths.raw_inspire_dir / "diagnosis.csv",
+        "labs": artifacts.paths.raw_inspire_dir / "labs.csv",
+        "ward_vitals": artifacts.paths.raw_inspire_dir / "ward_vitals.csv",
+    }
     artifacts.write_manifest(
         stage_name,
         ["manifests", "preprocess_labels.json"],
         inputs=[
             artifacts.relative(artifacts.paths.artifact_path("features", "preop", "preop_features.csv")),
             artifacts.relative(artifacts.paths.artifact_path("datasets", "tabular", "tabular_combined.csv")),
-            artifacts.relative(artifacts.paths.raw_inspire_dir / "labs.csv"),
-            artifacts.relative(artifacts.paths.raw_inspire_dir / "ward_vitals.csv"),
+        ]
+        + [
+            artifacts.relative(source_paths[source_name])
+            for source_name in outcome_cfg.get("required_sources", [])
         ],
-        outputs=[artifacts.relative(artifacts.paths.artifact_path("cohort", "aki_labels.csv"))],
-        metadata={"n_labels": len(labels_df)},
+        outputs=[artifacts.relative(artifacts.paths.artifact_path("cohort", "labels.csv"))],
+        metadata={"n_labels": len(labels_df), "target": target},
         stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
         wall_time_seconds=perf_counter() - start,
     )
@@ -168,7 +182,7 @@ def run_timeseries(config: dict) -> dict[str, str]:
     stage_name = "preprocess_timeseries"
     start = perf_counter()
     artifacts = ArtifactManager(config)
-    labels_df = pd.read_csv(artifacts.paths.artifact_path("cohort", "aki_labels.csv"))
+    labels_df = pd.read_csv(artifacts.paths.artifact_path("cohort", "labels.csv"))
     path, row_count = build_clean_timeseries_partitioned(
         raw_vitals_path=artifacts.paths.raw_inspire_dir / "vitals.csv",
         op_ids=labels_df["op_id"],
@@ -180,7 +194,7 @@ def run_timeseries(config: dict) -> dict[str, str]:
         ["manifests", "preprocess_timeseries.json"],
         inputs=[
             artifacts.relative(artifacts.paths.raw_inspire_dir / "vitals.csv"),
-            artifacts.relative(artifacts.paths.artifact_path("cohort", "aki_labels.csv")),
+            artifacts.relative(artifacts.paths.artifact_path("cohort", "labels.csv")),
         ],
         outputs=[artifacts.relative(path)],
         metadata={"n_rows": row_count},

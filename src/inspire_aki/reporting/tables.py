@@ -9,6 +9,7 @@ from joblib import Parallel, delayed
 from scipy import stats
 from sklearn.metrics import auc, confusion_matrix, f1_score, precision_recall_curve, precision_score, recall_score, roc_auc_score
 
+from inspire_aki.config import active_outcome_config, active_target_column
 from inspire_aki.evaluation.thresholds import find_optimal_fbeta_threshold
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.registry import DATASET_REGIMES, MANUSCRIPT_MODEL_ORDER, model_display_name
@@ -39,6 +40,24 @@ _DATASET_MODEL_ORDER = {
     "intraop": ("autogluon", "xgb", "knn", "log_reg", "lstm_only", "mlp", "rf", "svm"),
     "combined": ("autogluon", "xgb", "knn", "log_reg", "mlp", "hybrid", "rf", "svm"),
 }
+_DEPARTMENT_LABELS = {
+    "UR": "Urology",
+    "RO": "Radiation Oncology",
+    "RAD": "Radiology",
+    "PS": "Plastic Surgery",
+    "PED": "Pediatric Surgery",
+    "OT": "Orthopedic Surgery",
+    "OS": "Oral Surgery",
+    "OL": "Otorhinolaryngology",
+    "OG": "Obstetrics and Gynecology",
+    "NS": "Neurosurgery",
+    "IM": "Internal Medicine",
+    "GS": "General Surgery",
+    "EM": "Emergency Medicine",
+    "DM": "Dermatology",
+    "CTS": "Cardiothoracic Surgery",
+    "AN": "Anesthesiology",
+}
 
 
 def _format_mean_sd(series: pd.Series) -> str:
@@ -52,6 +71,47 @@ def _format_count_pct(count: float, total: int) -> str:
     if total <= 0:
         return "0 (0.00%)"
     return f"{int(count)} ({(count / total) * 100:.2f}%)"
+
+
+def _female_mask(series: pd.Series) -> pd.Series:
+    clean = series.dropna()
+    if clean.empty:
+        return pd.Series(False, index=series.index)
+
+    if clean.map(lambda value: isinstance(value, (bool, np.bool_))).all():
+        return series.astype("boolean").eq(False).fillna(False)
+
+    numeric = pd.to_numeric(series, errors="coerce")
+    if numeric.notna().sum() == clean.shape[0] and set(numeric.dropna().unique()).issubset({0, 1}):
+        return numeric.eq(0).fillna(False)
+
+    normalized = series.astype(str).str.strip().str.upper()
+    female_tokens = {"F", "FEMALE", "FALSE", "0"}
+    male_tokens = {"M", "MALE", "TRUE", "1"}
+    if normalized[series.notna()].isin(female_tokens | male_tokens).all():
+        return normalized.isin(female_tokens)
+    return normalized.isin({"F", "FEMALE"})
+
+
+def _department_rows(cohort_df: pd.DataFrame, total: int) -> list[dict[str, object]]:
+    dept_counts: dict[str, float] = {}
+    dept_columns = sorted(column for column in cohort_df.columns if column.startswith("department_"))
+    for column in dept_columns:
+        normalized_column = column.removesuffix("_preop")
+        abbreviation = normalized_column.removeprefix("department_").upper()
+        count = float(pd.to_numeric(cohort_df[column], errors="coerce").fillna(0).astype(int).sum())
+        if abbreviation in dept_counts:
+            dept_counts[abbreviation] = max(dept_counts[abbreviation], count)
+        else:
+            dept_counts[abbreviation] = count
+
+    return [
+        {
+            "characteristic": _DEPARTMENT_LABELS.get(abbreviation, abbreviation.replace("_", " ")),
+            "finding": _format_count_pct(count, total),
+        }
+        for abbreviation, count in sorted(dept_counts.items())
+    ]
 
 
 def _model_sort_key(model_key: str) -> tuple[int, str]:
@@ -152,7 +212,94 @@ def _format_ci(lower: float | None, upper: float | None) -> str:
     return f"({lower:.3f}, {upper:.3f})"
 
 
-def _performance_summary_frame(predictions_df: pd.DataFrame, *, prob_col: str, config: dict, use_existing_threshold: bool) -> pd.DataFrame:
+def _bootstrap_ci_worker(
+    keys: tuple[str, str, str],
+    group_df: pd.DataFrame,
+    *,
+    n_bootstrap: int,
+    random_state: int,
+) -> tuple[tuple[str, str, str], dict[str, tuple[float | None, float | None]]]:
+    y_true_base = group_df["y_true"].astype(int).to_numpy()
+    y_prob_base = group_df["report_y_prob"].astype(float).to_numpy()
+    threshold = float(group_df["report_threshold"].iloc[0])
+    n_samples = len(group_df)
+    rng = np.random.default_rng(random_state)
+    values_by_metric: dict[str, list[float]] = {metric: [] for metric in _PERFORMANCE_METRICS}
+
+    for _ in range(n_bootstrap):
+        bootstrap_idx = rng.integers(0, n_samples, n_samples)
+        y_true = y_true_base[bootstrap_idx]
+        if len(np.unique(y_true)) < 2:
+            continue
+        y_prob = y_prob_base[bootstrap_idx]
+        y_pred = (y_prob >= threshold).astype(int)
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+        values_by_metric["auroc"].append(float(roc_auc_score(y_true, y_prob)))
+        values_by_metric["auprc"].append(_safe_trapezoidal_auprc(y_true, y_prob))
+        values_by_metric["sensitivity"].append(float(recall_score(y_true, y_pred, zero_division=0)))
+        values_by_metric["specificity"].append(float(tn / (tn + fp)) if (tn + fp) else np.nan)
+        values_by_metric["precision"].append(float(precision_score(y_true, y_pred, zero_division=0)))
+        values_by_metric["f_score"].append(float(f1_score(y_true, y_pred, zero_division=0)))
+        values_by_metric["balanced_accuracy"].append(
+            float(np.mean([
+                np.mean(y_pred[y_true == 0] == 0) if np.any(y_true == 0) else np.nan,
+                np.mean(y_pred[y_true == 1] == 1) if np.any(y_true == 1) else np.nan,
+            ]))
+        )
+
+    ci_lookup: dict[str, tuple[float | None, float | None]] = {}
+    for metric, values in values_by_metric.items():
+        clean = pd.to_numeric(pd.Series(values), errors="coerce").dropna().to_numpy(dtype=float)
+        if clean.size == 0:
+            ci_lookup[metric] = (None, None)
+            continue
+        ci_lookup[metric] = (
+            float(np.percentile(clean, 2.5)),
+            float(np.percentile(clean, 97.5)),
+        )
+    return keys, ci_lookup
+
+
+def _bootstrap_ci_lookup(
+    report_df: pd.DataFrame,
+    *,
+    config: dict,
+    runtime_plan,
+) -> dict[tuple[str, str, str], dict[str, tuple[float | None, float | None]]]:
+    lookups: dict[tuple[str, str, str], dict[str, tuple[float | None, float | None]]] = {}
+    if report_df.empty or int(config["evaluation"]["bootstrap_reps"]) < 2:
+        return lookups
+
+    groups = [
+        ((str(keys[0]), str(keys[1]), str(keys[2])), group_df.copy())
+        for keys, group_df in report_df.groupby(["dataset_regime", "population_id", "model_key"], sort=False)
+        if len(group_df[["repeat_id", "fold_id"]].drop_duplicates()) <= 1
+    ]
+    if not groups:
+        return lookups
+
+    results = Parallel(n_jobs=max(1, min(runtime_plan.bootstrap_workers, len(groups))), backend="loky")(
+        delayed(_bootstrap_ci_worker)(
+            keys,
+            group_df,
+            n_bootstrap=int(config["evaluation"]["bootstrap_reps"]),
+            random_state=int(config["splits"]["random_state"]) + idx,
+        )
+        for idx, (keys, group_df) in enumerate(groups)
+    )
+    for keys, ci_lookup in results:
+        lookups[keys] = ci_lookup
+    return lookups
+
+
+def _performance_summary_frame(
+    predictions_df: pd.DataFrame,
+    *,
+    prob_col: str,
+    config: dict,
+    use_existing_threshold: bool,
+    bootstrap_ci_lookup: dict[tuple[str, str, str], dict[str, tuple[float | None, float | None]]] | None = None,
+) -> pd.DataFrame:
     report_df = _performance_prediction_frame(predictions_df, prob_col=prob_col, config=config, use_existing_threshold=use_existing_threshold)
     if report_df.empty:
         return pd.DataFrame()
@@ -166,6 +313,7 @@ def _performance_summary_frame(predictions_df: pd.DataFrame, *, prob_col: str, c
         for keys, group_df in groups
     )
     fold_df = pd.DataFrame(fold_rows)
+    bootstrap_ci = bootstrap_ci_lookup or _bootstrap_ci_lookup(report_df, config=config, runtime_plan=runtime_plan)
     rows: list[dict[str, object]] = []
     for (dataset_regime, population_id, model_key), group_df in fold_df.groupby(["dataset_regime", "population_id", "model_key"], sort=False):
         row: dict[str, object] = {
@@ -174,8 +322,11 @@ def _performance_summary_frame(predictions_df: pd.DataFrame, *, prob_col: str, c
             "model_key": model_key,
             "model_name": model_display_name(model_key),
         }
+        bootstrap_lookup = bootstrap_ci.get((str(dataset_regime), str(population_id), str(model_key)), {})
         for metric in _PERFORMANCE_METRICS:
             mean, lower, upper = _manuscript_ci(group_df[metric])
+            if len(group_df) <= 1 and metric in bootstrap_lookup:
+                lower, upper = bootstrap_lookup[metric]
             row[metric] = mean
             row[f"{metric}_ci_lower"] = np.nan if lower is None else lower
             row[f"{metric}_ci_upper"] = np.nan if upper is None else upper
@@ -221,15 +372,19 @@ def _performance_table_spec(summary_df: pd.DataFrame, *, file_stem: str, title: 
     )
 
 
-def _cohort_sections(merged_df: pd.DataFrame) -> list[TableSection]:
+def _cohort_sections(merged_df: pd.DataFrame, config: dict) -> list[TableSection]:
     if merged_df.empty:
         return []
+    total_operations = int(merged_df["op_id"].nunique()) if "op_id" in merged_df.columns else int(len(merged_df))
     cohort_df = merged_df.sort_values("op_id", kind="stable")
     if "subject_id" in cohort_df.columns:
         cohort_df = cohort_df.drop_duplicates(subset=["subject_id"], keep="last")
-    total = int(len(cohort_df))
+    total_patients = int(len(cohort_df))
 
-    summary_rows: list[dict[str, object]] = []
+    summary_rows: list[dict[str, object]] = [
+        {"characteristic": "Total patients, n", "finding": str(total_patients)},
+        {"characteristic": "Total operations, n", "finding": str(total_operations)},
+    ]
     numeric_rows = [
         ("Age, y, mean (SD)", "age"),
         ("Weight, kg, mean (SD)", "weight"),
@@ -244,27 +399,33 @@ def _cohort_sections(merged_df: pd.DataFrame) -> list[TableSection]:
         if column in cohort_df.columns:
             summary_rows.append({"characteristic": label, "finding": _format_mean_sd(cohort_df[column])})
     if "sex" in cohort_df.columns:
-        female_mask = cohort_df["sex"].astype(str).str.upper().isin({"F", "FEMALE", "1"})
-        summary_rows.append({"characteristic": "Female sex, n (%)", "finding": _format_count_pct(float(female_mask.sum()), total)})
-    if "aki_boolean" in cohort_df.columns:
-        aki_count = float(cohort_df["aki_boolean"].astype(int).sum())
-        summary_rows.append({"characteristic": "Postoperative AKI, n (%)", "finding": _format_count_pct(aki_count, total)})
-
+        female_mask = _female_mask(cohort_df["sex"])
+        summary_rows.append({"characteristic": "Female sex, n (%)", "finding": _format_count_pct(float(female_mask.sum()), total_patients)})
     sections = [TableSection(title=None, display_df=pd.DataFrame(summary_rows), csv_df=pd.DataFrame(summary_rows))]
 
     if "asa" in cohort_df.columns:
         asa_rows = []
         for value, count in cohort_df["asa"].dropna().astype(int).value_counts().sort_index().items():
-            asa_rows.append({"characteristic": str(value), "finding": _format_count_pct(float(count), total)})
+            asa_rows.append({"characteristic": str(value), "finding": _format_count_pct(float(count), total_patients)})
         sections.append(TableSection(title="ASA classification, n (%)", display_df=pd.DataFrame(asa_rows), csv_df=pd.DataFrame(asa_rows)))
+
+    target_column = active_target_column(config)
+    if target_column in cohort_df.columns:
+        outcome_cfg = active_outcome_config(config)
+        positive_count = float(cohort_df[target_column].astype(int).sum())
+        outcome_rows = pd.DataFrame(
+            [
+                {
+                    "characteristic": f"{outcome_cfg['display_name']}, n (%)",
+                    "finding": _format_count_pct(positive_count, total_patients),
+                }
+            ]
+        )
+        sections.append(TableSection(title=None, display_df=outcome_rows, csv_df=outcome_rows))
 
     dept_columns = [column for column in cohort_df.columns if column.startswith("department_")]
     if dept_columns:
-        dept_rows = []
-        for column in sorted(dept_columns):
-            label = column.removeprefix("department_").replace("_", " ")
-            count = float(pd.to_numeric(cohort_df[column], errors="coerce").fillna(0).astype(int).sum())
-            dept_rows.append({"characteristic": label, "finding": _format_count_pct(count, total)})
+        dept_rows = _department_rows(cohort_df, total_patients)
         sections.append(
             TableSection(
                 title="Department Surgery type, n (%)",
@@ -275,11 +436,22 @@ def _cohort_sections(merged_df: pd.DataFrame) -> list[TableSection]:
     elif "department" in cohort_df.columns:
         dept_counts = cohort_df["department"].astype(str).value_counts().sort_index()
         dept_rows = [
-            {"characteristic": label, "finding": _format_count_pct(float(count), total)}
+            {"characteristic": _DEPARTMENT_LABELS.get(label.upper(), label), "finding": _format_count_pct(float(count), total_patients)}
             for label, count in dept_counts.items()
         ]
         sections.append(TableSection(title="Department Surgery type, n (%)", display_df=pd.DataFrame(dept_rows), csv_df=pd.DataFrame(dept_rows)))
     return sections
+
+
+def _labels_artifact_path(artifacts: ArtifactManager) -> Path:
+    candidates = [
+        artifacts.paths.artifact_path("cohort", "labels.csv"),
+        artifacts.paths.artifact_path("cohort", "aki_labels.csv"),
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
 
 
 def _build_fill_rate_frame(cohort_df: pd.DataFrame, artifacts: ArtifactManager) -> pd.DataFrame:
@@ -311,7 +483,12 @@ def generate_table_outputs(artifacts: ArtifactManager) -> list[Path]:
     calibrated_path = artifacts.paths.artifact_path("predictions", "calibrated_predictions.parquet")
     if predictions_path.exists():
         raw_predictions = pd.read_parquet(predictions_path)
-        raw_summary = _performance_summary_frame(raw_predictions, prob_col="y_prob_raw", config=config, use_existing_threshold=False)
+        raw_summary = _performance_summary_frame(
+            raw_predictions,
+            prob_col="y_prob_raw",
+            config=config,
+            use_existing_threshold=False,
+        )
         outputs.extend(
             write_table_outputs(
                 artifacts,
@@ -347,24 +524,19 @@ def generate_table_outputs(artifacts: ArtifactManager) -> list[Path]:
 
     cohort_path = artifacts.paths.artifact_path("datasets", "tabular", "tabular_combined_unnormalized.csv")
     preop_path = artifacts.paths.artifact_path("features", "preop", "preop_features.csv")
-    labels_path = artifacts.paths.artifact_path("cohort", "aki_labels.csv")
+    labels_path = _labels_artifact_path(artifacts)
     if labels_path.exists() and (cohort_path.exists() or preop_path.exists()):
-        merged_frames = []
         if cohort_path.exists():
-            merged_frames.append(pd.read_csv(cohort_path))
-        if preop_path.exists():
-            merged_frames.append(pd.read_csv(preop_path))
-        merged_df = None
-        for frame in merged_frames:
-            merged_df = frame if merged_df is None else merged_df.merge(frame, on="op_id", how="left", suffixes=("", "_preop"))
-        assert merged_df is not None
+            merged_df = pd.read_csv(cohort_path)
+        else:
+            merged_df = pd.read_csv(preop_path)
         merged_df = merged_df.merge(pd.read_csv(labels_path), on="op_id", how="inner")
         cohort_spec = TableSpec(
             file_stem="cohort_characteristics",
             title="Table 1. Characteristics of Cohort",
             caption="Manuscript-ready descriptive summary.",
             columns=[ColumnSpec("characteristic", "Characteristic", align="left"), ColumnSpec("finding", "Finding", align="left")],
-            sections=_cohort_sections(merged_df),
+            sections=_cohort_sections(merged_df, config),
             include_section_column_in_csv=False,
         )
         outputs.extend(write_table_outputs(artifacts, cohort_spec, config))

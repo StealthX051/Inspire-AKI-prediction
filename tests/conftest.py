@@ -230,6 +230,7 @@ def loaded_synthetic_config(synthetic_config: Path) -> dict:
 def completed_pipeline(shared_synthetic_config: Path) -> dict:
     from inspire_aki.config import load_config
     from inspire_aki.pipelines.evaluate import run_calibration, run_dca, run_delong, run_metrics
+    from inspire_aki.pipelines.evaluate_generate import run_evaluate_generate
     from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop, run_sequence, run_tabular, run_timeseries
     from inspire_aki.pipelines.report import run_consort, run_curves, run_tables
     from inspire_aki.pipelines.train import run_train_tabular
@@ -241,6 +242,8 @@ def completed_pipeline(shared_synthetic_config: Path) -> dict:
     run_labels(config)
     run_timeseries(config)
     run_sequence(config)
+    if config.get("evaluation_mode", "legacy_repeated_cv") != "legacy_repeated_cv":
+        run_evaluate_generate(config)
     run_train_tabular(config)
     run_calibration(config)
     run_metrics(config)

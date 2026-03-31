@@ -8,9 +8,9 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
+from inspire_aki.evaluation.split_manager import train_validation_split
 from inspire_aki.models.weighting import balance_sample_weights, positive_balance_weight, safe_balanced_accuracy
 from inspire_aki.runtime import build_stage_runtime_plan, configure_torch_threads
 
@@ -47,6 +47,7 @@ class FittedSequenceBundle:
 
 
 SEQUENCE_BUNDLE_FORMAT_VERSION = 1
+_SEQUENCE_IDENTIFIER_COLUMNS = {"op_id", "subject_id", "patient_id", "time_tensors", "seq_len"}
 
 
 if nn is not None:
@@ -112,11 +113,23 @@ else:  # pragma: no cover - optional dependency guard
             raise ImportError("torch is required for sequence models.")
 
 
-def _df_to_tensors(sub_df: pd.DataFrame, feature_cols_tab: list[str]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+def sequence_feature_columns(df: pd.DataFrame, target: str) -> list[str]:
+    excluded = set(_SEQUENCE_IDENTIFIER_COLUMNS)
+    excluded.add(target)
+    excluded.update({column for column in df.columns if str(column).endswith("_event_codes")})
+    return [column for column in df.columns if column not in excluded]
+
+
+def _df_to_tensors(
+    sub_df: pd.DataFrame,
+    feature_cols_tab: list[str],
+    *,
+    target: str,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     if torch is None:
         raise ImportError("torch is required for sequence models.")
     x_tab = torch.tensor(sub_df[feature_cols_tab].values, dtype=torch.float32)
-    y = torch.tensor(sub_df["aki_boolean"].values, dtype=torch.float32)
+    y = torch.tensor(sub_df[target].values, dtype=torch.float32)
     if "time_tensors" in sub_df.columns:
         x_time = torch.stack([torch.as_tensor(tensor, dtype=torch.float32).clone().detach() for tensor in sub_df["time_tensors"]]).to(torch.float32)
         seq_len = torch.tensor(sub_df["seq_len"].tolist(), dtype=torch.long)
@@ -153,6 +166,7 @@ def fit_sequence_model(
     model_key: str,
     train_df: pd.DataFrame,
     feature_cols_tab: list[str],
+    target: str,
     params: dict[str, Any],
     config: dict,
     model_output_dir: Path,
@@ -168,18 +182,19 @@ def fit_sequence_model(
     _enable_sequence_cuda_benchmark(device)
     model_output_dir.mkdir(parents=True, exist_ok=True)
 
-    train_split, val_split = train_test_split(
+    train_split, val_split = train_validation_split(
         train_df,
-        test_size=config["splits"]["sequence_validation_fraction"],
+        target=target,
+        validation_fraction=config["splits"]["sequence_validation_fraction"],
         random_state=seed,
-        stratify=train_df["aki_boolean"],
+        evaluation_mode=config.get("evaluation_mode", "legacy_repeated_cv"),
     )
     scaler = StandardScaler()
     train_split.loc[:, feature_cols_tab] = scaler.fit_transform(train_split[feature_cols_tab])
     val_split.loc[:, feature_cols_tab] = scaler.transform(val_split[feature_cols_tab])
 
-    train_tensors = _df_to_tensors(train_split, feature_cols_tab)
-    val_tensors = _df_to_tensors(val_split, feature_cols_tab)
+    train_tensors = _df_to_tensors(train_split, feature_cols_tab, target=target)
+    val_tensors = _df_to_tensors(val_split, feature_cols_tab, target=target)
     train_dataset = TensorDataset(*train_tensors)
     val_dataset = TensorDataset(*val_tensors)
     train_loader = DataLoader(
@@ -287,6 +302,7 @@ def fit_sequence_model(
             "loader_workers": loader_workers,
             "sequence_use_gpu": runtime_plan.sequence_use_gpu,
             "batch_size": int(params["batch_size"]),
+            "target": target,
         },
     )
     save_sequence_bundle(bundle, model_output_dir)
@@ -303,7 +319,8 @@ def predict_sequence_bundle(bundle: FittedSequenceBundle, test_df: pd.DataFrame)
     test_copy = test_df.copy()
     if bundle.scaler is not None:
         test_copy.loc[:, feature_cols] = bundle.scaler.transform(test_copy[feature_cols])
-    test_tensors = _df_to_tensors(test_copy, feature_cols)
+    target = str(bundle.metadata.get("target", "aki_boolean"))
+    test_tensors = _df_to_tensors(test_copy, feature_cols, target=target)
     test_dataset = TensorDataset(*test_tensors)
     test_loader = DataLoader(
         test_dataset,
@@ -387,6 +404,7 @@ def raw_prediction_rows(
     dataset_regime: str,
     population_id: str,
     model_key: str,
+    target: str,
     repeat_id: int,
     fold_id: int,
     test_df: pd.DataFrame,
@@ -402,8 +420,8 @@ def raw_prediction_rows(
             "fold_id": fold_id,
             "split_name": "test",
             "model_key": model_key,
-            "target": "aki_boolean",
-            "y_true": test_df["aki_boolean"].astype(int).values,
+            "target": target,
+            "y_true": test_df[target].astype(int).values,
             "y_prob_raw": y_prob,
             "y_prob_calibrated": np.nan,
             "y_pred": y_pred.astype(int),

@@ -19,7 +19,7 @@ def _prepare_labeled_inputs(config_path: Path) -> tuple[dict, ArtifactManager, p
     run_tabular(config)
     run_labels(config)
     artifacts = ArtifactManager(config)
-    labels_df = pd.read_csv(artifacts.paths.artifact_path("cohort", "aki_labels.csv"))
+    labels_df = pd.read_csv(artifacts.paths.artifact_path("cohort", "labels.csv"))
     return config, artifacts, labels_df
 
 

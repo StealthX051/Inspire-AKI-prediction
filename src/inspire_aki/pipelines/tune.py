@@ -11,7 +11,7 @@ from typing import Any
 import pandas as pd
 
 from inspire_aki.config import config_hash
-from inspire_aki.datasets.splits import build_hpo_split_manifest
+from inspire_aki.datasets.splits import build_grouped_hpo_split_manifest, build_hpo_split_manifest
 from inspire_aki.evaluation.split_manager import evaluation_runs, subset_generated_manifest
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.io.manifest import build_manifest
@@ -79,6 +79,17 @@ def _build_hpo_manifest(
     dataset_regime: str = "dataset",
     population_id: str = "population",
 ) -> pd.DataFrame:
+    if config.get("evaluation_mode", "legacy_repeated_cv") != "legacy_repeated_cv" and "patient_id" in df.columns:
+        return build_grouped_hpo_split_manifest(
+            df,
+            target=config["models"]["target"],
+            dataset_regime=dataset_regime,
+            population_id=population_id,
+            random_state=config["splits"]["random_state"],
+            holdout_fraction=config["splits"]["holdout_fraction"],
+            validation_fraction_within_train=config["splits"]["hpo_validation_fraction_within_train"],
+            patient_col="patient_id",
+        )
     return build_hpo_split_manifest(
         df,
         target=config["models"]["target"],

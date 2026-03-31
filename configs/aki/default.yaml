@@ -4,18 +4,98 @@ paths:
   compat_aki_dir: /media/volume/ncs_inspire_data/ncs_aki/data/AKI
   compat_base_dir: /media/volume/ncs_inspire_data/ncs_aki/data/base
   compat_results_dir: /media/volume/ncs_inspire_data/ncs_aki/data/AKI/results
-cohort:
-  preop_window_days: 90
-  postop_windows_days: [2, 7]
-  max_preop_creatinine: 4.5
-  min_age: 18
-  max_asa_exclusive: 6
-  exclude_antype: ["Regional"]
-  department_exclude: ["PED"]
-  exclude_icd10_prefixes: ["10", "0TY", "B50", "B51"]
-  cardiovascular_prefix: "I"
-  creatinine_item_name: "creatinine"
-  dialysis_item_name: "crrt"
+study:
+  cohort_key: default_noncardiac_adult
+  outcome_key: aki
+
+evaluation_mode: grouped_nested_cv
+
+cohorts:
+  profiles:
+    default_noncardiac_adult:
+      preop_window_days: 90
+      postop_windows_days: [2, 7]
+      max_preop_creatinine: 4.5
+      min_age: 18
+      max_asa_exclusive: 6
+      exclude_antype: ["Regional"]
+      department_include: []
+      department_exclude: ["PED"]
+      include_icd10_prefixes: []
+      exclude_icd10_prefixes: ["10", "0TY", "B50", "B51"]
+      require_height_weight: true
+      require_positive_op_len: true
+      cardiovascular_prefix: "I"
+      creatinine_item_name: "creatinine"
+      dialysis_item_name: "crrt"
+outcomes:
+  catalog:
+    aki:
+      kind: aki
+      target_column: aki_boolean
+      display_name: Postoperative AKI
+      positive_label: Postoperative AKI
+      negative_label: No postoperative AKI
+      required_sources: [labs, ward_vitals]
+    macce:
+      kind: composite
+      target_column: macce
+      display_name: 30-day MACCE
+      positive_label: 30-day MACCE
+      negative_label: No 30-day MACCE
+      required_sources: [diagnosis]
+      window_days: 30
+      component_keys:
+        - macce_mi
+        - macce_stroke
+        - macce_angina
+        - macce_hf
+        - macce_cardiac_arrest
+      component_diagnosis_prefixes:
+        macce_mi: [I21]
+        macce_stroke: [I63]
+        macce_angina: [I20]
+        macce_hf: [I50]
+        macce_cardiac_arrest: [I46]
+    pna:
+      kind: diagnosis_window
+      target_column: pna
+      display_name: 30-day PNA
+      positive_label: 30-day PNA
+      negative_label: No 30-day PNA
+      required_sources: [diagnosis]
+      diagnosis_prefixes: [J11, J12, J13, J14, J15, J16, J17, J18]
+      window_days: 30
+    pe:
+      kind: diagnosis_window
+      target_column: pe
+      display_name: 30-day PE
+      positive_label: 30-day PE
+      negative_label: No 30-day PE
+      required_sources: [diagnosis]
+      diagnosis_prefixes: [I26]
+      window_days: 30
+    postop_icu_admission:
+      kind: time_comparison
+      target_column: postop_icu_admission
+      display_name: Postoperative ICU Admission
+      positive_label: Postoperative ICU Admission
+      negative_label: No postoperative ICU Admission
+      required_sources: [operations]
+      source_column: icuin_time
+      reference_column: opend_time
+      comparison_rule: strictly_after
+    postop_mortality_30d:
+      kind: time_comparison
+      target_column: postop_mortality_30d
+      display_name: 30-day Mortality
+      positive_label: 30-day Mortality
+      negative_label: No 30-day Mortality
+      required_sources: [operations]
+      source_column: allcause_death_time
+      reference_column: opend_time
+      comparison_rule: strictly_after_within_window
+      window_days: 30
 features:
   preop_lab_items:
     - total_protein
@@ -148,7 +228,6 @@ splits:
   sequence_validation_fraction: 0.15
   tabular_mlp_validation_fraction: 0.2
 models:
-  target: aki_boolean
   tabular_enabled:
     - log_reg
     - autogluon

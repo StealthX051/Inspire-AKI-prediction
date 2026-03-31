@@ -14,7 +14,7 @@ This table reconciles manuscript expectations from the supplied brief with curre
 | Feature summaries | Intraop tabular path should summarize regular signals with eight statistics | `02_extract_intraop.py` | Current code does exactly that for 24 regular signals | high | None |
 | Missing-data handling | Brief expects `<30%` style rule discussion, `-99` sentinel, KNN imputation | `03_create_base.py` | Current code uses `>=10%` -> `-99`, `0-10%` -> `KNNImputer`, after normalization | high | Thresholding and ordering may differ from manuscript prose |
 | Class imbalance | Brief expects class weighting rather than SMOTE | `07_tabular_hpo.py`, `08_tabular_model_creation.py`, `09_lstm_hpo.py`, `10_lstm_model_creation.py` | Current refactor training now uses explicit inverse-frequency `balance_weight`-style weighting across trainable models; `knn` applies the same weighting intent through deterministic weighted resampling because `sklearn` KNN has no `sample_weight` fit API | high | This is manuscript-aligned, but more uniform than the mixed `class_weight` / `scale_pos_weight` / `pos_weight` legacy implementation |
-| Split logic | Brief flags ambiguity between simple 80/20 and repeated CV | `07_tabular_hpo.py`, `08_tabular_model_creation.py`, `09_lstm_hpo.py`, `10_lstm_model_creation.py` | HPO uses fixed 60/20/20-style train/val/holdout splits; model creation uses repeated fold-style resampling over 25 iterations; the current refactor keeps that non-nested tune-once then repeated-CV evaluation design | high | Needs careful wording; the repo does not use one universal split strategy and does not currently perform nested CV |
+| Split logic | Brief flags ambiguity between simple 80/20 and repeated CV | `07_tabular_hpo.py`, `08_tabular_model_creation.py`, `09_lstm_hpo.py`, `10_lstm_model_creation.py` | HPO still uses fixed train/val/holdout-style splits, but the shipped refactor configs now select patient-grouped evaluation modes (`grouped_holdout` or `grouped_nested_cv`) rather than the historical operation-level repeated-CV path | high | Needs careful wording; historical legacy artifacts can still reflect operation-level repeated CV, while current shipped configs are patient-grouped and non-leaky |
 | Optimization metric | Brief points toward `balanced_accuracy` for model-selection behavior | `07_tabular_hpo.py`, `08_tabular_model_creation.py`, `09_lstm_hpo.py`, `10_lstm_model_creation.py` | Current refactor now uses validation `balanced_accuracy` for tabular HPO, sequence HPO, AutoGluon fit selection, and the PyTorch early-stopping monitors | medium | This now matches the manuscript-facing metric policy, but it intentionally diverges from the trusted legacy tabular HPO script, which optimized validation AUROC |
 | Model naming drift | Brief notes possible “SVM Ensemble” vs “SVM (Linear)” drift | `08_tabular_model_creation.py`, checked-in performance tables | Current main tabular SVM path is `LinearSVC`; calibrated output table labels it `SVM (Linear)` | high | Any manuscript text implying nonlinear SVM or ensemble should be checked |
 | AutoGluon | Brief expects strong tabular performance and no HPO | `07_tabular_hpo.py`, `08_tabular_model_creation.py`, `create_results/performance_table.md` | AutoGluon is excluded from HPO and is the strongest checked-in combined model; the refactor now trains it with explicit sample weights and `balanced_accuracy` as the fit metric | high | The legacy `08_tabular_model_creation.py` snapshot itself leaves the weight-column materialization inconsistent, so manuscript wording should follow the code-first summary rather than assuming that old script is internally clean |
@@ -37,14 +37,16 @@ For refactor-specific portability fixes that do not intentionally change the man
 
 ## Current Refactor Manuscript Contract
 
-The refactor now aims for legacy manuscript parity at the report layer while keeping the scientific fixes that were introduced during the package migration.
+The refactor now aims for legacy manuscript parity at the report layer while keeping the scientific fixes that were introduced during the package migration. The report layer is no longer AKI-hardcoded: one active outcome is selected per config/artifact root through `study.outcome_key`.
 
 Presentation now restored in the refactor:
 
 - performance tables are rebuilt from fold/run metrics and emitted as:
   - `performance_table.{html,md,csv}`
   - `performance_table_calibrated.{html,md,csv}`
+  - grouped-holdout runs now fill manuscript-table confidence intervals with bootstrap intervals computed from the saved prediction artifacts using the same table-level metric definitions, rather than leaving those cells as `N/A`
   - HTML performance tables keep a fixed manuscript-oriented model order, restrict `ASA Rule` to the preop section, and use gentle monochrome column-wise gradients while still bolding the best value per metric
+- cohort-characteristics tables now prefer the combined unnormalized cohort artifact, count female patients with the legacy `False = female` encoding, emit one full-name department row per service instead of duplicated merged `*_preop` rows, and add explicit total patient and operation rows at the top of Table 1
 - report tables are emitted in all three manuscript-facing formats:
   - `html`
   - `md`
@@ -52,7 +54,10 @@ Presentation now restored in the refactor:
 - report figures are emitted in both:
   - high-resolution `png`
   - `svg`
-- the consort figure now follows a manuscript-style top-down Graphviz layout with explicit exclusion summaries and direct orthogonal terminal arrows to the final `AKI` / `non-AKI` split
+- the consort figure now follows a manuscript-style top-down Graphviz layout with explicit exclusion summaries and direct orthogonal terminal arrows to the final active-outcome negative / positive split
+- the active label artifact is now `cohort/labels.csv`; AKI still writes `cohort/aki_labels.csv` as a compatibility alias, while non-AKI outcomes do not
+- legacy alias export remains AKI-only through `inspire-aki compat export-legacy`
+- shipped configs now explicitly select patient-grouped evaluation modes; `legacy_repeated_cv` remains available only as a historical/audit backend
 - manuscript reporting now includes:
   - consort audit + figure
   - legacy-style ROC / PR / calibration figures
@@ -61,7 +66,7 @@ Presentation now restored in the refactor:
   - raw and FDR-corrected DeLong tables
   - reclassification reporting
 - rerunning `report manuscript` overwrites the canonical filenames under `reports/`; manual cleanup is only needed if you want to remove stale legacy-named leftovers from older runs
-- the main default-config real-data path has now completed end to end through manuscript reporting under `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default`
+- the latest full patient-grouped AKI manuscript run has completed end to end under `/media/volume/ncs_inspire_data/ncs_aki/artifacts/full_gcv`; `/media/volume/ncs_inspire_data/ncs_aki/artifacts/default` remains a historical pre-switch artifact root until it is rerun under the current grouped config
 
 Intentional scientific differences retained relative to the legacy notebook path:
 

@@ -17,7 +17,13 @@ from sklearn.preprocessing import StandardScaler
 
 from inspire_aki.config import REPO_ROOT, load_config
 from inspire_aki.io.artifacts import ArtifactManager
-from inspire_aki.models.sequence import HybridModel, _df_to_tensors, _enable_sequence_cuda_benchmark, _sequence_loader_kwargs
+from inspire_aki.models.sequence import (
+    HybridModel,
+    _df_to_tensors,
+    _enable_sequence_cuda_benchmark,
+    _sequence_loader_kwargs,
+    sequence_feature_columns,
+)
 from inspire_aki.runtime import build_stage_runtime_plan
 
 
@@ -150,11 +156,11 @@ def benchmark_sequence_loader(
         raise FileNotFoundError(sequence_path)
     sequence_df = artifacts.read_pickle("datasets", "sequence", "lstm_trainable.pkl")
     target = config["models"]["target"]
-    feature_cols = [col for col in sequence_df.columns if col not in ["op_id", "time_tensors", "seq_len", target]]
+    feature_cols = sequence_feature_columns(sequence_df, target)
     sample_df = sequence_df.head(sample_size).copy()
     scaler = StandardScaler()
-    sample_df.loc[:, feature_cols] = scaler.fit_transform(sample_df[feature_cols])
-    dataset = TensorDataset(*_df_to_tensors(sample_df, feature_cols))
+    sample_df.loc[:, feature_cols] = scaler.fit_transform(sample_df[feature_cols].astype(float))
+    dataset = TensorDataset(*_df_to_tensors(sample_df, feature_cols, target=target))
     plan = build_stage_runtime_plan(config, "tune_sequence")
     device = torch.device("cuda" if plan.sequence_use_gpu and torch.cuda.is_available() else "cpu")
     _enable_sequence_cuda_benchmark(device)

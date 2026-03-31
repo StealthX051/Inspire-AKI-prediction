@@ -153,9 +153,16 @@ def build_preop_features(config: dict, raw_inspire_dir: Path) -> tuple[pd.DataFr
     df_preop = pd.merge(df_preop, df_ops_for_merge[cols_to_keep], on=["op_id", "subject_id"], how="inner")
     record_count(audit, "after_antype_department_merge", df_preop)
 
-    mask = df_ops["icd10_pcs"].astype(str).str.startswith(tuple(cohort_cfg["exclude_icd10_prefixes"]))
-    ops_to_exclude = df_ops.loc[mask, "op_id"]
-    df_preop = df_preop[~df_preop["op_id"].isin(ops_to_exclude)]
+    include_prefixes = tuple(cohort_cfg.get("include_icd10_prefixes", []))
+    exclude_prefixes = tuple(cohort_cfg.get("exclude_icd10_prefixes", []))
+    if include_prefixes:
+        include_mask = df_ops["icd10_pcs"].astype(str).str.startswith(include_prefixes)
+        included_ops = df_ops.loc[include_mask, "op_id"]
+        df_preop = df_preop[df_preop["op_id"].isin(included_ops)]
+    if exclude_prefixes:
+        exclude_mask = df_ops["icd10_pcs"].astype(str).str.startswith(exclude_prefixes)
+        ops_to_exclude = df_ops.loc[exclude_mask, "op_id"]
+        df_preop = df_preop[~df_preop["op_id"].isin(ops_to_exclude)]
     record_count(audit, "after_prefix_exclusions", df_preop)
 
     tolerance = cohort_cfg["preop_window_days"] * 24 * 60
