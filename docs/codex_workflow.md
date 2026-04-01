@@ -1,137 +1,54 @@
-# Codex Workflow
+# Contributor Workflow
 
-This is the repo-specific workflow guide for Codex or any similar coding agent.
+This file is contributor-only guidance for Codex or another coding agent working inside the repo.
 
-## Current Handoff State
+## Recommended Reading Order
 
-As of March 24, 2026:
-
-- the refactor test suite passes on synthetic data
-- the real-data preprocessing chain on `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` has been exercised through sequence creation
-- the real-data HPO tuning chain now completes after patching Optuna `4.x` trial-state handling and tuning manifest completeness
-- the remaining unvalidated step is a clean real-data `configs/aki/smoke_hpo.yaml` continuation from training through manuscript reporting
-
-If resuming the current work rather than restarting from scratch, the recommended command sequence is:
-
-```bash
-source .venv/bin/activate
-inspire-aki train tabular --config configs/aki/smoke_hpo.yaml
-inspire-aki train sequence --config configs/aki/smoke_hpo.yaml
-inspire-aki evaluate calibrate --config configs/aki/smoke_hpo.yaml
-inspire-aki evaluate metrics --config configs/aki/smoke_hpo.yaml
-inspire-aki evaluate delong --config configs/aki/smoke_hpo.yaml
-inspire-aki evaluate dca --config configs/aki/smoke_hpo.yaml
-inspire-aki report manuscript --config configs/aki/smoke_hpo.yaml
-```
-
-## First Principles
-
-- Prefer code over prose when they disagree.
-- Prefer numbered scripts over exploratory notebooks when both touch the same behavior.
-- Prefer checked-in markdown/html result outputs over memory or guesswork when summarizing findings.
-- Never pretend the repo is turnkey.
-
-## Recommended Order Of Work
-
-1. Read `README.md`.
-2. Read `AGENTS.md`.
-3. Read `docs/README.md`.
-4. Read `docs/current/README.md`.
-5. For current refactor execution questions, read `docs/current/pipeline.md`, `src/inspire_aki/`, and `docs/refactor/behavior_drift.md`.
-6. For legacy data questions or parity checks, read `docs/legacy/02_data_pipeline.md` and `docs/legacy/03_labels_and_features.md`.
-7. For manuscript claims or execution feasibility, read `docs/legacy/07_manuscript_alignment.md` and `docs/legacy/08_reproducibility_and_known_gaps.md`.
+1. `README.md`
+2. `AGENTS.md`
+3. `docs/current/README.md`
+4. `docs/current/pipeline.md`
+5. `docs/reviewer/README.md` when manuscript or rebuttal context matters
+6. `legacy/README.md` only for audit or parity work
 
 ## Preferred Sources By Question Type
 
-| Question type | Preferred source |
+| Question | Preferred source |
 | --- | --- |
-| “How should I run the refactored pipeline?” | `src/inspire_aki/`, `configs/aki/default.yaml`, and `inspire-aki --help` |
-| “What is the current pipeline?” | numbered scripts `01`-`10` |
-| “How is AKI defined right now?” | `data_preprocessing/04_AKI_data_selection.py` |
-| “What features exist?” | `01_extract_preop.py`, `02_extract_intraop.py`, `03_create_base.py`, `05_time_series_cleaner.py`, `06_create_lstm_trainable.py` |
-| “How are models trained?” | `07_tabular_hpo.py`, `08_tabular_model_creation.py`, `09_lstm_hpo.py`, `10_lstm_model_creation.py` |
-| “How are calibration / DCA / DeLong / SHAP done?” | `create_results/13`-`16`, `bootstrap_metrics.py`, `decision_curve.py` |
-| “What did a previous run report?” | checked-in `create_results/*.md` and `*.html` outputs |
+| How should the repo be run today? | `src/inspire_aki/`, `configs/`, `inspire-aki --help`, `docs/current/pipeline.md` |
+| What is the maintained package contract? | `src/inspire_aki/` and `tests/` |
+| What should a manuscript or reviewer response claim? | `docs/reviewer/` |
+| What did the historical scripts or notebooks do? | `legacy/` |
 
 ## Command Preferences
 
-- Use `rg` / `rg --files` for search and inventory.
-- Use targeted file reads, not whole-repo dumps.
-- Prefer `inspire-aki ...` over directly reassembling legacy script chains when the task is forward-looking refactor work.
-- Worker allocation in the refactor is centralized in `src/inspire_aki/runtime.py` and resolved per stage from detected CPU, RAM, and GPU resources.
-- Use `inspire-aki runtime inspect --config ...` before large runs if the host class changed.
-- Use `scripts/benchmark_runtime_profiles.sh` only as a non-CI benchmarking helper; it is not part of the canonical execution path.
-- Treat `<artifacts_dir>/predictions/raw/*.parquet` as the stage-owned prediction partitions and `<artifacts_dir>/predictions/raw_predictions.parquet` as the combined evaluation view.
-- Treat `reports.manuscript_sections` and `reports.shap_jobs` in `configs/aki/default.yaml` as the source of truth for report composition.
-- Treat `/media/volume/ncs_inspire_data/ncs_aki/data/inspire` as the current default raw INSPIRE mount for the refactor.
-- Treat `<artifacts_dir>/staging/` as intentional refactor staging, not stray output, for the partitioned timeseries and sequence path.
-- Use `docs/TODO/` for explicit queued work items and `docs/HANDOFF/` for dated session handoffs.
-- Treat notebooks as structured data:
-  - inspect with `jq` or targeted text extraction
-  - avoid editing them unless explicitly asked
+- Use `rg` / `rg --files` for search.
+- Prefer targeted reads over whole-repo dumps.
+- Prefer `inspire-aki ...` over rebuilding archived script chains.
+- Use `inspire-aki runtime inspect --config ...` before large runs on a new host class.
+- Treat notebooks as reference material unless a task explicitly requires editing them.
 
-## Feature Edit Policy
+## Edit Policy
 
-- Default to the smallest correct diff, not the broadest redesign.
-- Reuse existing extension points, helpers, CLI commands, config fields, and artifact contracts before introducing new ones.
-- Do not add parallel implementations of behavior that already exists in `src/inspire_aki/` unless the task explicitly calls for a replacement.
-- Avoid side-quest cleanup during feature work:
-  - no opportunistic renames, moves, large formatting passes, or pattern rewrites unless they are required for correctness
-  - no new dependency, abstraction layer, or configuration knob unless the current structure cannot support the requested behavior cleanly
-- Prefer patching the current call path over introducing a fresh wrapper or alternate pipeline.
-- If broader cleanup is genuinely needed, keep the required change separate from any optional follow-up and say so explicitly.
-- Keep validation proportional:
-  - run the smallest test/check that meaningfully covers the changed behavior
-  - reserve full pipeline reruns for changes that actually alter those stages
+- Default to the smallest correct diff.
+- Patch the maintained CLI path before touching archive material.
+- Avoid opportunistic renames, moves, or cleanup outside the requested change unless they are required.
+- Keep validation proportional to the change.
 
-## Instruction File Strategy
+## Doc Update Policy
 
-- Keep the root [../AGENTS.md](../AGENTS.md) short and repo-wide.
-- If one area needs special handling, place a closer `AGENTS.md` or `AGENTS.override.md` in that subtree instead of expanding the root into a long manual.
-
-## Things To Be Skeptical Of
-
-- any assumption that later scripts consume earlier outputs without path drift
-- any count mentioned only once in a notebook comment
-- any package/setup instructions that ignore `environment.yml` or the saved `1.2` versus `1.3.1` environment drift
-- any result that requires trusting checked-in model directories without corresponding code evidence
-- any assumption that `run all` exports legacy aliases automatically; it does not
-- any assumption that legacy `/home/server/...` paths are still the right default for this instance
-
-## When To Update Docs
-
-Update docs whenever:
-
-- label logic changes
-- feature derivation changes
-- canonical script order changes
-- model toggles or supported model families change
-- portability improves or worsens
-- manuscript-facing outputs materially change
-
-Minimum doc update set after a behavior change:
+After a meaningful behavior change, update:
 
 - `README.md`
 - `docs/current/pipeline.md`
-- `docs/legacy/07_manuscript_alignment.md` if the change affects a manuscript-facing claim
-- `docs/refactor/behavior_drift.md` if the refactor intentionally deviates from the brittle legacy path
+- `docs/reviewer/manuscript_alignment.md` if manuscript-facing behavior changed
+- `docs/reviewer/legacy_cli_differences.md` if the maintained pipeline intentionally diverges from archive behavior
+- `docs/reviewer/reproducibility.md` if leakage controls, portability, or reviewer-facing limitations changed
 
-## When Not To Edit
+## What Not To Treat As Source Of Truth
 
-- Do not edit checked-in model artifact directories unless explicitly asked.
-- Do not bulk-clean exploratory notebooks as a side quest.
-- Do not rewrite code for portability when the task is only documentation.
-- Do not treat zero-byte or obviously stray files as active sources.
-
-## Verification Loop For Future Changes
-
-After any meaningful code change:
-
-1. confirm the changed behavior in the relevant script/notebook
-2. update the matching docs
-3. re-check file links and command references
-4. record any new drift or caveat instead of hiding it
-
-## Why This Doc Exists
-
-This repo fits the pattern where a short `AGENTS.md` is useful, but deeper task-specific docs are necessary because the research surface is too large and too messy to encode safely in one agent file. That structure matches current OpenAI/Codex guidance more closely than a single giant instruction file would.
+- archived model directories
+- exploratory notebooks
+- stale handoff notes
+- comments that disagree with code or checked-in current docs
+- legacy operation-level repeated-CV habits when documenting the maintained CLI workflow

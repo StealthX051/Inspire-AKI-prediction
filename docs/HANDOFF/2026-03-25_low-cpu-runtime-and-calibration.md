@@ -61,9 +61,9 @@ The canonical docs are updated for the important behavior changes:
 
 - [README.md](/home/exouser/Inspire-AKI-prediction/README.md)
 - [docs/current/pipeline.md](/home/exouser/Inspire-AKI-prediction/docs/current/pipeline.md)
-- [docs/refactor/behavior_drift.md](/home/exouser/Inspire-AKI-prediction/docs/refactor/behavior_drift.md)
-- [docs/legacy/07_manuscript_alignment.md](/home/exouser/Inspire-AKI-prediction/docs/legacy/07_manuscript_alignment.md)
-- [docs/legacy/08_reproducibility_and_known_gaps.md](/home/exouser/Inspire-AKI-prediction/docs/legacy/08_reproducibility_and_known_gaps.md)
+- [docs/reviewer/legacy_cli_differences.md](/home/exouser/Inspire-AKI-prediction/docs/reviewer/legacy_cli_differences.md)
+- [docs/reviewer/manuscript_alignment.md](/home/exouser/Inspire-AKI-prediction/docs/reviewer/manuscript_alignment.md)
+- [docs/reviewer/reproducibility.md](/home/exouser/Inspire-AKI-prediction/docs/reviewer/reproducibility.md)
 
 Those docs now explicitly cover:
 
@@ -101,9 +101,9 @@ Residual warnings during tests:
 - The previous PID `1446153` was stopped because it was running the pre-fix sequence-HPO logic.
 - The restarted patched PID `1456669` completed sequence tuning successfully at `2026-03-25T03:55:35 UTC`.
 - New completed artifacts from that run:
-  - [artifacts/manifests/tune_sequence.json](/home/exouser/Inspire-AKI-prediction/artifacts/manifests/tune_sequence.json)
-  - [artifacts/tuning/sequence_best_params.json](/home/exouser/Inspire-AKI-prediction/artifacts/tuning/sequence_best_params.json)
-  - [artifacts/tuning/sequence_trials.parquet](/home/exouser/Inspire-AKI-prediction/artifacts/tuning/sequence_trials.parquet)
+  - `artifacts/manifests/tune_sequence.json`
+  - `artifacts/tuning/sequence_best_params.json`
+  - `artifacts/tuning/sequence_trials.parquet`
 - A later `train tabular` rerun got past the old AutoGluon DyStack/Raylet failure and advanced through:
   - `preop/autogluon/repeat_0/fold_0`
   - `preop/xgb/repeat_0/fold_0`
@@ -111,7 +111,8 @@ Residual warnings during tests:
 - That rerun then crashed in tabular MLP prediction with:
   - `ValueError: could not determine the shape of object type 'DataFrame'`
 - Primary traceback:
-  - [logs/20260325T040831Z_train_tabular.log](/home/exouser/Inspire-AKI-prediction/logs/20260325T040831Z_train_tabular.log)
+  - historical path: `logs/20260325T040831Z_train_tabular.log`
+  - that root log file was later removed from versioned repo content during the CLI-first cleanup
 - That MLP prediction issue is now patched as described above.
 - One important environment note remains:
   - the current `.venv` still needs `pip install 'setuptools<81'` before rerunning if you want AutoGluon optional families to import instead of being compatibility-skipped

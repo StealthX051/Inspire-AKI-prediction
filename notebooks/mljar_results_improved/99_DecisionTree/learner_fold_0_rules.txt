@@ -1,8 +1,0 @@
-if (preop_albumin > 3.05) and (andur <= 707.5) then class: 0 (proba: 99.84%) | based on 59,279 samples
-
-if (preop_albumin <= 3.05) and (preop_bun <= 26.5) then class: 0 (proba: 96.51%) | based on 1,518 samples
-
-if (preop_albumin <= 3.05) and (preop_bun > 26.5) then class: 0 (proba: 86.7%) | based on 376 samples
-
-if (preop_albumin > 3.05) and (andur > 707.5) then class: 0 (proba: 91.6%) | based on 119 samples
-

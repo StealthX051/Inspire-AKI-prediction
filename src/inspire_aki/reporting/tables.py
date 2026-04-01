@@ -496,7 +496,7 @@ def generate_table_outputs(artifacts: ArtifactManager) -> list[Path]:
                     raw_summary,
                     file_stem="performance_table",
                     title="Performance Metrics",
-                    caption="Legacy-style fold/run aggregation over corrected refactor predictions.",
+                    caption="Legacy-style fold/run aggregation over current CLI prediction artifacts.",
                 ),
                 config,
             )
@@ -516,7 +516,7 @@ def generate_table_outputs(artifacts: ArtifactManager) -> list[Path]:
                     calibrated_summary,
                     file_stem="performance_table_calibrated",
                     title="Calibrated Performance Metrics",
-                    caption="Legacy-style calibrated manuscript table using grouped isotonic refactor outputs.",
+                    caption="Legacy-style calibrated manuscript table using grouped isotonic CLI outputs.",
                 ),
                 config,
             )

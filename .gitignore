@@ -229,5 +229,7 @@ pip-selfcheck.json
 saved_data/
 artifacts/
 logs/
+benchmarks/
+legacy/code/notebooks/mljar_results_improved/
 
 preoperative_models/AutogluonModels/

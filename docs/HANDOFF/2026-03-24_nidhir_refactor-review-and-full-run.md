@@ -8,7 +8,7 @@
 ## What Changed
 
 - Reviewed refactored pipeline code against legacy behavior across preprocessing, tuning, training, evaluation, and reporting stages.
-- Expanded [docs/refactor/behavior_drift.md](/home/exouser/Inspire-AKI-prediction/docs/refactor/behavior_drift.md) substantially to document legacy-vs-refactor drift by stage.
+- Expanded [docs/reviewer/legacy_cli_differences.md](/home/exouser/Inspire-AKI-prediction/docs/reviewer/legacy_cli_differences.md) substantially to document legacy-versus-CLI drift by stage.
 - Fixed the consort DOT-label bug in [src/inspire_aki/reporting/consort.py](/home/exouser/Inspire-AKI-prediction/src/inspire_aki/reporting/consort.py) so labels now use audit `step` / `count` values instead of collapsing to `stage` / `N=NA`.
 - Fixed the random-forest SHAP class-axis bug in [src/inspire_aki/reporting/shap.py](/home/exouser/Inspire-AKI-prediction/src/inspire_aki/reporting/shap.py) so current SHAP 3D RF outputs are reduced to a 2D `(samples, features)` matrix before importance/beeswarm generation.
 - Fixed the DCA reporting bug in [src/inspire_aki/reporting/curves.py](/home/exouser/Inspire-AKI-prediction/src/inspire_aki/reporting/curves.py) so DCA figures are population-specific when a regime contains multiple populations.
@@ -41,9 +41,10 @@ tmux new-session -d -s aki_full \
    inspire-aki run all --config configs/aki/default.yaml |& tee logs/full_aki_run.log"
 ```
 
-- Relevant log paths:
-  - [/home/exouser/Inspire-AKI-prediction/logs/runtime_inspect_full_aki.log](/home/exouser/Inspire-AKI-prediction/logs/runtime_inspect_full_aki.log)
-  - [/home/exouser/Inspire-AKI-prediction/logs/full_aki_run.log](/home/exouser/Inspire-AKI-prediction/logs/full_aki_run.log)
+- Historical log paths at the time of this handoff:
+  - `/home/exouser/Inspire-AKI-prediction/logs/runtime_inspect_full_aki.log`
+  - `/home/exouser/Inspire-AKI-prediction/logs/full_aki_run.log`
+  - those root log files were later removed from versioned repo content during the CLI-first cleanup
 
 ## Useful Follow-Up Commands
 
@@ -55,7 +56,7 @@ tmux new-session -d -s aki_full \
 
 ## Risks / Next Read
 
-- [docs/refactor/behavior_drift.md](/home/exouser/Inspire-AKI-prediction/docs/refactor/behavior_drift.md) now contains a much broader set of review findings. It should be read through carefully to separate:
+- [docs/reviewer/legacy_cli_differences.md](/home/exouser/Inspire-AKI-prediction/docs/reviewer/legacy_cli_differences.md) now contains the maintained summary of those review findings. It should be read through carefully to separate:
   - intentional drift to keep
   - real bugs to fix
   - entries that might be overcalled and should be removed

@@ -22,7 +22,7 @@ from inspire_aki.pipelines.tune import run_tune_sequence, run_tune_tabular
 from inspire_aki.runtime import runtime_summary
 
 
-app = typer.Typer(help="CLI entrypoint for the refactored INSPIRE AKI pipeline.")
+app = typer.Typer(help="CLI entrypoint for the INSPIRE postoperative outcome pipeline.")
 preprocess_app = typer.Typer(help="Preprocessing stages.")
 tune_app = typer.Typer(help="Hyperparameter optimization stages.")
 train_app = typer.Typer(help="Model training stages.")

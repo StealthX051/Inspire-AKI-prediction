@@ -1,4 +1,4 @@
-"""INSPIRE AKI refactored package."""
+"""INSPIRE postoperative outcome CLI package."""
 
 __all__ = ["__version__"]
 

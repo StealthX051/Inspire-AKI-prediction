@@ -1,4 +1,4 @@
-# Review `behavior_drift.md` for Intentionality
+# Review `legacy_cli_differences.md` for Intentionality
 
 - Author: nidhir
 - Date: 2026-03-24
@@ -7,7 +7,7 @@
 
 ## Current Status
 
-- [docs/refactor/behavior_drift.md](/home/exouser/Inspire-AKI-prediction/docs/refactor/behavior_drift.md) was expanded during this session after reviewing many refactored modules against the legacy pipeline.
+- [docs/reviewer/legacy_cli_differences.md](/home/exouser/Inspire-AKI-prediction/docs/reviewer/legacy_cli_differences.md) now carries the maintained summary of legacy-versus-CLI drift after reviewing many package modules against the archived pipeline.
 
 ## Suggested Focus
 
