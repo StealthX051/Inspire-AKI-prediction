@@ -28,7 +28,12 @@ from inspire_aki.models.tabular import tabular_execution_policy
 from inspire_aki.models.weighting import safe_balanced_accuracy
 
 
-def _prepare_training_inputs(config_path: Path, *, include_sequence: bool = False) -> dict:
+def _prepare_training_inputs(
+    config_path: Path,
+    *,
+    include_sequence: bool = False,
+    include_generated_evaluation: bool = False,
+) -> dict:
     config = load_config(config_path)
     run_preop(config)
     run_intraop(config)
@@ -37,11 +42,13 @@ def _prepare_training_inputs(config_path: Path, *, include_sequence: bool = Fals
     if include_sequence:
         run_timeseries(config)
         run_sequence(config)
+    if include_generated_evaluation and config.get("evaluation_mode", "legacy_repeated_cv") != "legacy_repeated_cv":
+        run_evaluate_generate(config)
     return config
 
 
 def test_train_tabular_is_idempotent(synthetic_config: Path) -> None:
-    config = _prepare_training_inputs(synthetic_config)
+    config = _prepare_training_inputs(synthetic_config, include_generated_evaluation=True)
     artifacts = ArtifactManager(config)
 
     run_train_tabular(config)
@@ -111,6 +118,7 @@ def test_train_sequence_uses_precomputed_grouped_manifest_when_configured(monkey
 
 def test_train_tabular_uses_repeat_executor_for_svm(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_training_inputs(synthetic_config)
+    config["evaluation_mode"] = "legacy_repeated_cv"
     config["models"]["tabular_enabled"] = ["svm"]
     submissions: list[int] = []
     captured_max_workers: list[int] = []
@@ -146,7 +154,11 @@ def test_train_tabular_uses_repeat_executor_for_svm(monkeypatch, synthetic_confi
 
 
 def test_train_sequence_is_idempotent_and_preserves_tabular(monkeypatch, synthetic_config: Path) -> None:
-    config = _prepare_training_inputs(synthetic_config, include_sequence=True)
+    config = _prepare_training_inputs(
+        synthetic_config,
+        include_sequence=True,
+        include_generated_evaluation=True,
+    )
     config["models"]["sequence_enabled"] = ["lstm_only"]
     artifacts = ArtifactManager(config)
 
@@ -180,7 +192,11 @@ def test_train_sequence_is_idempotent_and_preserves_tabular(monkeypatch, synthet
 
 
 def test_train_tabular_preserves_existing_sequence_partition(monkeypatch, synthetic_config: Path) -> None:
-    config = _prepare_training_inputs(synthetic_config, include_sequence=True)
+    config = _prepare_training_inputs(
+        synthetic_config,
+        include_sequence=True,
+        include_generated_evaluation=True,
+    )
     config["models"]["sequence_enabled"] = ["lstm_only"]
     artifacts = ArtifactManager(config)
 
@@ -277,6 +293,7 @@ def test_run_all_relies_on_report_manuscript_instead_of_run_shap(monkeypatch, sy
 
 def test_tune_tabular_uses_pipeline_written_hpo_manifests(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_training_inputs(synthetic_config)
+    config["evaluation_mode"] = "legacy_repeated_cv"
     config["models"]["tabular_hpo_enabled"] = ["log_reg"]
     artifacts = ArtifactManager(config)
     captured: dict[str, pd.DataFrame] = {}
@@ -387,6 +404,7 @@ def test_tune_tabular_runs_grouped_nested_hpo_per_run_id(monkeypatch, synthetic_
 
 def test_tune_tabular_resumes_completed_per_study_outputs(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_training_inputs(synthetic_config)
+    config["evaluation_mode"] = "legacy_repeated_cv"
     config["models"]["tabular_hpo_enabled"] = ["log_reg"]
     artifacts = ArtifactManager(config)
 
@@ -434,6 +452,7 @@ def test_tabular_execution_policy_targets_low_cpu_models(monkeypatch) -> None:
 
 def test_tune_tabular_uses_regime_executor_for_svm(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_training_inputs(synthetic_config)
+    config["evaluation_mode"] = "legacy_repeated_cv"
     config["models"]["tabular_hpo_enabled"] = ["svm"]
     submissions: list[str] = []
     captured_max_workers: list[int] = []
@@ -492,6 +511,7 @@ def test_tune_tabular_uses_regime_executor_for_svm(monkeypatch, synthetic_config
 
 def test_tune_sequence_uses_pipeline_written_hpo_manifest(monkeypatch, synthetic_config: Path) -> None:
     config = _prepare_training_inputs(synthetic_config, include_sequence=True)
+    config["evaluation_mode"] = "legacy_repeated_cv"
     config["models"]["sequence_hpo_enabled"] = ["lstm_only"]
     artifacts = ArtifactManager(config)
     captured: dict[str, pd.DataFrame] = {}

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 import yaml
 
@@ -50,6 +52,55 @@ def test_run_all_grouped_smoke(synthetic_config: Path) -> None:
     assert (artifacts_dir / "reports" / "tables" / "performance_table_calibrated.html").exists()
 
 
+@pytest.mark.parametrize(
+    ("command", "runner_attr"),
+    [
+        (["preprocess", "preop"], "run_preop"),
+        (["preprocess", "intraop"], "run_intraop"),
+        (["preprocess", "tabular"], "run_tabular"),
+        (["preprocess", "labels"], "run_labels"),
+        (["preprocess", "timeseries"], "run_timeseries"),
+        (["preprocess", "sequence"], "run_sequence"),
+        (["tune", "tabular"], "run_tune_tabular"),
+        (["tune", "sequence"], "run_tune_sequence"),
+        (["train", "tabular"], "run_train_tabular"),
+        (["train", "sequence"], "run_train_sequence"),
+        (["evaluate", "calibrate"], "run_calibration"),
+        (["evaluate", "generate"], "run_evaluate_generate"),
+        (["evaluate", "metrics"], "run_metrics"),
+        (["evaluate", "delong"], "run_delong"),
+        (["evaluate", "dca"], "run_dca"),
+        (["evaluate", "reclassification"], "run_reclassification"),
+        (["explain", "shap"], "run_shap"),
+        (["report", "consort"], "run_consort"),
+        (["report", "tables"], "run_tables"),
+        (["report", "curves"], "run_curves"),
+        (["report", "manuscript"], "run_manuscript"),
+    ],
+)
+def test_stage_command_dispatches_to_current_runner(
+    monkeypatch,
+    synthetic_config: Path,
+    command: list[str],
+    runner_attr: str,
+) -> None:
+    runner = CliRunner()
+    calls: list[dict] = []
+
+    def _fake_runner(cfg):
+        calls.append(cfg)
+        return {"runner": runner_attr}
+
+    monkeypatch.setattr(cli_module, runner_attr, _fake_runner)
+
+    result = runner.invoke(app, [*command, "--config", str(synthetic_config)])
+
+    assert result.exit_code == 0, result.stdout
+    assert len(calls) == 1
+    payload = json.loads(result.stdout)
+    assert payload == {"runner": runner_attr}
+
+
 def test_stage_command_keyboard_interrupt_exits_cleanly(monkeypatch, synthetic_config: Path) -> None:
     runner = CliRunner()
 
@@ -78,6 +129,22 @@ def test_evaluate_generate_command_invokes_backend(monkeypatch, synthetic_config
 
     assert result.exit_code == 0, result.stdout
     assert calls == ["evaluate_generate"]
+
+
+def test_compat_export_legacy_command_emits_exported_paths(monkeypatch, synthetic_config: Path) -> None:
+    runner = CliRunner()
+    exported_paths = [
+        synthetic_config.parent / "compat_aki" / "preop_data.csv",
+        synthetic_config.parent / "compat_results" / "performance_table.csv",
+    ]
+
+    monkeypatch.setattr(cli_module, "export_legacy_datasets", lambda _artifacts: exported_paths)
+
+    result = runner.invoke(app, ["compat", "export-legacy", "--config", str(synthetic_config)])
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload == {"outputs": [str(path) for path in exported_paths]}
 
 
 def test_runtime_benchmark_relative_output_dir_uses_artifact_root(monkeypatch, synthetic_config: Path) -> None:

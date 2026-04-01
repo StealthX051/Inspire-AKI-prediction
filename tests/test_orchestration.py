@@ -127,6 +127,7 @@ def test_run_overlap_stages_interrupt_terminates_all_running_stages(monkeypatch,
 def test_run_all_overlap_executes_parallel_branch_before_tail(monkeypatch, synthetic_config: Path) -> None:
     runner = CliRunner()
     config = load_config(synthetic_config)
+    config["evaluation_mode"] = "legacy_repeated_cv"
     config["runtime"]["orchestration"]["mode"] = "overlap"
     order: list[str] = []
 
@@ -209,6 +210,7 @@ def test_run_all_grouped_overlap_inserts_evaluate_generate_before_tuning(monkeyp
 def test_run_all_serial_mode_preserves_stage_order(monkeypatch, synthetic_config: Path) -> None:
     runner = CliRunner()
     config = load_config(synthetic_config)
+    config["evaluation_mode"] = "legacy_repeated_cv"
     config["runtime"]["orchestration"]["mode"] = "serial"
     order: list[str] = []
 

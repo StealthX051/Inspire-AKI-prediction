@@ -15,6 +15,7 @@ from inspire_aki.features.intraop_tabular import build_intraop_features, safe_en
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.models.tabular import FittedTabularBundle, _AUTOGLUON_SAMPLE_WEIGHT_COLUMN, fit_tabular_model, predict_tabular_bundle
 from inspire_aki.models.weighting import balance_sample_weights, positive_balance_weight
+from inspire_aki.pipelines.evaluate_generate import run_evaluate_generate
 from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop, run_tabular
 from inspire_aki.pipelines.report import run_manuscript
 from inspire_aki.pipelines.train import run_train_tabular
@@ -22,12 +23,14 @@ from inspire_aki.reporting.reclassification import generate_reclassification_out
 from inspire_aki.reporting.shap import generate_shap_outputs
 
 
-def _prepare_reporting_inputs(config_path: Path) -> dict:
+def _prepare_reporting_inputs(config_path: Path, *, include_generated_evaluation: bool = True) -> dict:
     config = load_config(config_path)
     run_preop(config)
     run_intraop(config)
     run_tabular(config)
     run_labels(config)
+    if include_generated_evaluation and config.get("evaluation_mode", "legacy_repeated_cv") != "legacy_repeated_cv":
+        run_evaluate_generate(config)
     return config
 
 
@@ -141,13 +144,14 @@ def test_generate_shap_outputs_accepts_grouped_nested_manifest_names(synthetic_c
     artifacts = ArtifactManager(config)
 
     run_train_tabular(config)
-    bootstrap_path = artifacts.paths.artifact_path("datasets", "splits", "bootstrap_combined.parquet")
     grouped_path = artifacts.paths.artifact_path("datasets", "splits", "grouped_nested_cv_combined.parquet")
-    bootstrap_path.rename(grouped_path)
+    bootstrap_path = artifacts.paths.artifact_path("datasets", "splits", "bootstrap_combined.parquet")
 
     config["reports"]["shap_jobs"] = [{"dataset_regime": "combined", "model_key": "log_reg"}]
     outputs = generate_shap_outputs(artifacts, config)
 
+    assert grouped_path.exists()
+    assert not bootstrap_path.exists()
     assert artifacts.paths.artifact_path("explainability", "shap_importance_combined_log_reg.csv") in outputs
     assert artifacts.paths.artifact_path("reports", "figures", "shap_beeswarm_combined_log_reg.png") in outputs
 

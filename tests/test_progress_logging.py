@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 import inspire_aki.cli as cli_module
 from inspire_aki.cli import app
 from inspire_aki.config import load_config
+from inspire_aki.pipelines.evaluate_generate import run_evaluate_generate
 from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop, run_sequence, run_tabular, run_timeseries
 from inspire_aki.pipelines.train import run_train_sequence, run_train_tabular
 from inspire_aki.pipelines.tune import run_tune_sequence, run_tune_tabular
@@ -26,25 +27,55 @@ def _stub(name: str, calls: list[str]):
     return _impl
 
 
-def _prepare_tabular_inputs(config_path: Path) -> dict:
+def _simple_hpo_manifest(
+    source_df: pd.DataFrame,
+    *,
+    dataset_regime: str,
+    population_id: str,
+) -> pd.DataFrame:
+    op_ids = source_df["op_id"].astype(int).tolist()
+    if len(op_ids) <= 1:
+        split_names = ["train"] * len(op_ids)
+    elif len(op_ids) == 2:
+        split_names = ["train", "val"]
+    else:
+        split_names = ["train"] * (len(op_ids) - 2) + ["val", "holdout"]
+    return pd.DataFrame(
+        {
+            "op_id": op_ids,
+            "dataset_regime": [dataset_regime] * len(op_ids),
+            "population_id": [population_id] * len(op_ids),
+            "repeat_id": [0] * len(op_ids),
+            "fold_id": [0] * len(op_ids),
+            "split_name": split_names,
+        }
+    )
+
+
+def _prepare_tabular_inputs(config_path: Path, *, include_generated_evaluation: bool = True) -> dict:
     config = load_config(config_path)
     run_preop(config)
     run_intraop(config)
     run_tabular(config)
     run_labels(config)
+    if include_generated_evaluation and config.get("evaluation_mode", "legacy_repeated_cv") != "legacy_repeated_cv":
+        run_evaluate_generate(config)
     return config
 
 
-def _prepare_sequence_inputs(config_path: Path) -> dict:
-    config = _prepare_tabular_inputs(config_path)
+def _prepare_sequence_inputs(config_path: Path, *, include_generated_evaluation: bool = True) -> dict:
+    config = _prepare_tabular_inputs(config_path, include_generated_evaluation=False)
     run_timeseries(config)
     run_sequence(config)
+    if include_generated_evaluation and config.get("evaluation_mode", "legacy_repeated_cv") != "legacy_repeated_cv":
+        run_evaluate_generate(config)
     return config
 
 
 def test_run_all_emits_stage_progress_and_writes_run_events(monkeypatch, synthetic_config: Path) -> None:
     runner = CliRunner()
     config = load_config(synthetic_config)
+    config["evaluation_mode"] = "legacy_repeated_cv"
     calls: list[str] = []
 
     monkeypatch.setattr(cli_module, "_cfg", lambda _path: config)
@@ -177,6 +208,14 @@ def test_tune_tabular_writes_trial_progress_log(monkeypatch, synthetic_config: P
         return {"log_reg": {"C": 1.0}}, pd.DataFrame()
 
     monkeypatch.setattr("inspire_aki.pipelines.tune.tune_tabular_dataset", fake_tune_tabular_dataset)
+    monkeypatch.setattr(
+        "inspire_aki.pipelines.tune._build_hpo_manifest",
+        lambda source_df, _config, *, dataset_regime="dataset", population_id="population": _simple_hpo_manifest(
+            source_df,
+            dataset_regime=dataset_regime,
+            population_id=population_id,
+        ),
+    )
 
     run_tune_tabular(config)
 
@@ -203,6 +242,14 @@ def test_tune_sequence_writes_trial_progress_log(monkeypatch, synthetic_config: 
         return {"lstm_only": {"lr": 0.001}}, pd.DataFrame()
 
     monkeypatch.setattr("inspire_aki.pipelines.tune.tune_sequence_dataset", fake_tune_sequence_dataset)
+    monkeypatch.setattr(
+        "inspire_aki.pipelines.tune._build_hpo_manifest",
+        lambda source_df, _config, *, dataset_regime="dataset", population_id="population": _simple_hpo_manifest(
+            source_df,
+            dataset_regime=dataset_regime,
+            population_id=population_id,
+        ),
+    )
 
     run_tune_sequence(config)
 
