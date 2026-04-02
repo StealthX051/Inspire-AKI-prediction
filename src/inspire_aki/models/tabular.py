@@ -17,6 +17,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
 
+from inspire_aki.clinical_baselines import clinical_rule_probability_threshold
 from inspire_aki.evaluation.split_manager import train_validation_split
 from inspire_aki.models.weighting import balance_sample_weights, balance_weight_series, positive_balance_weight, safe_balanced_accuracy, weighted_resample_for_knn
 from inspire_aki.runtime import build_stage_runtime_plan, configure_torch_threads, thread_limited_context
@@ -396,6 +397,9 @@ def fit_tabular_model(
         raise ValueError(f"Unsupported tabular model key: {model_key}")
 
     metadata = {"seed": seed, "target": target}
+    rule_threshold = clinical_rule_probability_threshold(model_key, config)
+    if rule_threshold is not None:
+        metadata["prespecified_threshold"] = float(rule_threshold)
     bundle = FittedTabularBundle(model_key=model_key, feature_names=feature_cols, scaler=scaler, model=model, metadata=metadata)
     save_tabular_bundle(bundle, model_output_dir)
     return bundle
@@ -452,12 +456,14 @@ def predict_tabular_bundle(
         asa_idx = feature_cols.index("asa")
         asa_values = test_df[feature_cols].iloc[:, asa_idx].to_numpy()
         y_prob = (asa_values / 6.0).astype(float)
-        y_pred = (asa_values >= 4).astype(int)
+        threshold = float(bundle.metadata.get("prespecified_threshold", 0.5))
+        y_pred = (y_prob >= threshold).astype(int)
     elif bundle.model_key == "gs_aki_rule":
         count_idx = feature_cols.index("gs_aki_count")
         gs_aki_counts = pd.to_numeric(test_df[feature_cols].iloc[:, count_idx], errors="coerce").fillna(0).to_numpy()
         y_prob = np.clip(gs_aki_counts / 9.0, 0.0, 1.0).astype(float)
-        y_pred = (y_prob >= 0.5).astype(int)
+        threshold = float(bundle.metadata.get("prespecified_threshold", 0.5))
+        y_pred = (y_prob >= threshold).astype(int)
     else:
         raise ValueError(f"Unsupported tabular model key: {bundle.model_key}")
     return y_pred, y_prob
@@ -499,6 +505,7 @@ def raw_prediction_rows(
     test_df: pd.DataFrame,
     y_pred: np.ndarray,
     y_prob: np.ndarray,
+    threshold: float = 0.5,
 ) -> pd.DataFrame:
     frame = pd.DataFrame(
         {
@@ -514,7 +521,7 @@ def raw_prediction_rows(
             "y_prob_raw": y_prob,
             "y_prob_calibrated": np.nan,
             "y_pred": y_pred.astype(int),
-            "threshold": 0.5,
+            "threshold": float(threshold),
             "calibration_method": None,
             "run_id": [f"{dataset_regime}:{model_key}:r{repeat_id}:f{fold_id}"] * len(test_df),
             "source_index": test_df.index.values,

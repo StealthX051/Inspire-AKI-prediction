@@ -52,7 +52,7 @@ inspire-aki run all --config configs/aki/default.yaml
 ```
 
 The default AKI config now includes two preoperative clinical baselines alongside the learned models:
-`asa_rule` and `gs_aki_rule` (`Adapted GS-AKI`). `gs_aki_rule` is a maintained reviewer-response baseline that reuses the same patient-grouped manifests, calibration, metrics, and report flow as the rest of the current pipeline.
+`asa_rule` and `gs_aki_rule` (`Adapted GS-AKI`). `gs_aki_rule` is a maintained reviewer-response baseline that reuses the same patient-grouped manifests, metrics, and report flow as the rest of the current pipeline, but it is kept as a deterministic ordinal count/class score rather than isotonic-calibrated or threshold-optimized.
 
 Resume stage-by-stage when needed:
 
@@ -84,7 +84,8 @@ inspire-aki report manuscript --config configs/aki/default.yaml
 - Raw data location is configured through `paths.raw_inspire_dir`; the shipped configs target the mounted volume path `/media/volume/ncs_inspire_data/ncs_aki/data/inspire`.
 - Stage outputs, manifests, predictions, and reports are written under the configured `paths.artifacts_dir`.
 - The maintained shipped configs use patient-grouped evaluation modes. `evaluate generate` materializes manifests on `patient_id` so the same patient does not cross train/test or train/validation boundaries in grouped runs.
-- Calibration is also guarded against repeated-row leakage: the maintained pipeline fits isotonic calibration with grouped CV on `op_id`, keeping repeated prediction rows for the same operation together.
+- Calibration is guarded against repeated-row leakage: learned models use grouped isotonic calibration with CV on `op_id`, keeping repeated prediction rows for the same operation together.
+- The maintained rule baselines keep prespecified thresholds instead of data-chosen cutoffs. `asa_rule` stays a binary preop rule, while `gs_aki_rule` is evaluated primarily by ordinal count/class with a prespecified Class III+ high-risk threshold only when binary metrics are needed.
 - The default AKI run evaluates both maintained clinical baselines (`asa_rule` and the proxy-based `gs_aki_rule`) on that same grouped leakage-safe path; `gs_aki_rule` is restricted to the AKI outcome and the preop dataset regime.
 - `inspire-aki compat export-legacy` remains explicit and AKI-only; it is not part of `run all`.
 

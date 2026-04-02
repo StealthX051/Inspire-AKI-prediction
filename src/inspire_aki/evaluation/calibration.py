@@ -8,6 +8,7 @@ from joblib import Parallel, delayed
 from sklearn.calibration import IsotonicRegression
 from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
 
+from inspire_aki.clinical_baselines import clinical_rule_calibration_method, clinical_rule_probability_threshold
 from inspire_aki.evaluation.thresholds import find_optimal_fbeta_threshold
 from inspire_aki.runtime import build_stage_runtime_plan, thread_limited_context
 
@@ -21,47 +22,54 @@ class CalibrationResult:
 def _calibrate_group(group_df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame, dict[str, object]]:
     calibration_cfg = config["calibration"]
     group_df = group_df.sort_values(["repeat_id", "fold_id", "op_id"]).reset_index(drop=True).copy()
+    model_key = str(group_df["model_key"].iat[0])
     y_true = group_df["y_true"].astype(int).to_numpy()
     y_prob_raw = group_df["y_prob_raw"].astype(float).to_numpy()
 
-    method = calibration_cfg["method"]
-    if method != "isotonic":
-        raise ValueError(f"Unsupported calibration method: {method}")
-
-    unique_classes = np.unique(y_true)
-    groups = group_df["op_id"].to_numpy()
-    n_unique_groups = int(pd.Index(groups).nunique())
-    n_splits = min(calibration_cfg["cv_folds"], n_unique_groups)
-    if len(unique_classes) < 2 or n_unique_groups < 2 or n_splits < 2:
+    rule_threshold = clinical_rule_probability_threshold(model_key, config)
+    if rule_threshold is not None:
         y_prob_calibrated = y_prob_raw.copy()
-        threshold = 0.5
-        method_used = "identity"
+        threshold = float(rule_threshold)
+        method_used = str(clinical_rule_calibration_method(model_key) or "identity")
     else:
-        y_prob_calibrated = np.zeros_like(y_prob_raw, dtype=float)
-        try:
-            splitter = StratifiedGroupKFold(
-                n_splits=n_splits,
-                shuffle=True,
-                random_state=config["splits"]["random_state"],
+        method = calibration_cfg["method"]
+        if method != "isotonic":
+            raise ValueError(f"Unsupported calibration method: {method}")
+
+        unique_classes = np.unique(y_true)
+        groups = group_df["op_id"].to_numpy()
+        n_unique_groups = int(pd.Index(groups).nunique())
+        n_splits = min(calibration_cfg["cv_folds"], n_unique_groups)
+        if len(unique_classes) < 2 or n_unique_groups < 2 or n_splits < 2:
+            y_prob_calibrated = y_prob_raw.copy()
+            threshold = 0.5
+            method_used = "identity"
+        else:
+            y_prob_calibrated = np.zeros_like(y_prob_raw, dtype=float)
+            try:
+                splitter = StratifiedGroupKFold(
+                    n_splits=n_splits,
+                    shuffle=True,
+                    random_state=config["splits"]["random_state"],
+                )
+                splits = list(splitter.split(y_prob_raw.reshape(-1, 1), y_true, groups=groups))
+                method_used = "isotonic_stratified_group_cv"
+            except ValueError:
+                splitter = GroupKFold(n_splits=n_splits)
+                splits = list(splitter.split(y_prob_raw.reshape(-1, 1), y_true, groups=groups))
+                method_used = "isotonic_group_cv"
+            for train_idx, test_idx in splits:
+                calibrator = IsotonicRegression(out_of_bounds="clip")
+                calibrator.fit(y_prob_raw[train_idx], y_true[train_idx])
+                y_prob_calibrated[test_idx] = calibrator.predict(y_prob_raw[test_idx])
+            threshold = find_optimal_fbeta_threshold(
+                y_true,
+                y_prob_calibrated,
+                beta=2.0,
+                threshold_min=calibration_cfg["threshold_min"],
+                threshold_max=calibration_cfg["threshold_max"],
+                steps=calibration_cfg["threshold_steps"],
             )
-            splits = list(splitter.split(y_prob_raw.reshape(-1, 1), y_true, groups=groups))
-            method_used = "isotonic_stratified_group_cv"
-        except ValueError:
-            splitter = GroupKFold(n_splits=n_splits)
-            splits = list(splitter.split(y_prob_raw.reshape(-1, 1), y_true, groups=groups))
-            method_used = "isotonic_group_cv"
-        for train_idx, test_idx in splits:
-            calibrator = IsotonicRegression(out_of_bounds="clip")
-            calibrator.fit(y_prob_raw[train_idx], y_true[train_idx])
-            y_prob_calibrated[test_idx] = calibrator.predict(y_prob_raw[test_idx])
-        threshold = find_optimal_fbeta_threshold(
-            y_true,
-            y_prob_calibrated,
-            beta=2.0,
-            threshold_min=calibration_cfg["threshold_min"],
-            threshold_max=calibration_cfg["threshold_max"],
-            steps=calibration_cfg["threshold_steps"],
-        )
 
     group_df["y_prob_calibrated"] = y_prob_calibrated
     group_df["threshold"] = threshold
@@ -71,7 +79,7 @@ def _calibrate_group(group_df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame
     summary = {
         "dataset_regime": group_df["dataset_regime"].iat[0],
         "population_id": group_df["population_id"].iat[0],
-        "model_key": group_df["model_key"].iat[0],
+        "model_key": model_key,
         "calibration_method": method_used,
         "threshold": float(threshold),
         "n_rows": int(len(group_df)),

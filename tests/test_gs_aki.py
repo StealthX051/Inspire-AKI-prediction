@@ -330,12 +330,27 @@ def test_performance_table_orders_preop_asa_then_gs_aki_and_suppresses_rules_els
         caption="unit-test ordering",
     )
     sections = {
-        str(section.csv_df["dataset_regime"].iloc[0]): section.csv_df.reset_index(drop=True)
+        str(section.csv_df["dataset_regime"].iloc[0]): (
+            section.csv_df.reset_index(drop=True),
+            section.display_df.reset_index(drop=True),
+        )
         for section in spec.sections
     }
 
-    assert sections["preop"]["model_key"].tolist() == ["asa_rule", "gs_aki_rule", "log_reg"]
-    assert sections["intraop"]["model_key"].tolist() == ["log_reg"]
+    preop_csv, preop_display = sections["preop"]
+    intraop_csv, _intraop_display = sections["intraop"]
+
+    assert preop_csv["model_key"].tolist() == ["asa_rule", "gs_aki_rule", "log_reg"]
+    assert intraop_csv["model_key"].tolist() == ["log_reg"]
+
+    asa_row = preop_display.loc[preop_csv["model_key"] == "asa_rule"].iloc[0]
+    gs_aki_row = preop_display.loc[preop_csv["model_key"] == "gs_aki_rule"].iloc[0]
+    assert asa_row["sensitivity"] == "0.500"
+    assert gs_aki_row["sensitivity"] == "—"
+    assert gs_aki_row["specificity"] == "—"
+    assert gs_aki_row["precision"] == "—"
+    assert gs_aki_row["f_score"] == "—"
+    assert gs_aki_row["balanced_accuracy"] == "—"
 
 
 def test_gs_aki_rule_uses_dedicated_dataset_and_writes_incidence_outputs(synthetic_config: Path) -> None:
@@ -375,6 +390,9 @@ def test_gs_aki_rule_uses_dedicated_dataset_and_writes_incidence_outputs(synthet
 
     assert not gs_aki_predictions.empty
     assert set(gs_aki_predictions["dataset_regime"].astype(str)) == {"preop"}
+    assert set(gs_aki_predictions["calibration_method"].astype(str)) == {"identity_prespecified_class_iii_plus"}
+    assert gs_aki_predictions["threshold"].astype(float).nunique() == 1
+    assert float(gs_aki_predictions["threshold"].iloc[0]) == pytest.approx(4.0 / 9.0)
     assert incidence_path.exists()
     incidence_df = pd.read_csv(incidence_path)
     assert set(incidence_df["score_type"].astype(str)) == {"count", "class"}

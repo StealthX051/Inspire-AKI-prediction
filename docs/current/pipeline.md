@@ -31,7 +31,7 @@ These maintained grouped modes build manifests on `patient_id`, not isolated ope
 - `evaluate generate` resolves `patient_id` when needed and writes grouped split manifests plus split-audit tables under the artifact root.
 - Grouped holdout and grouped nested-CV modes enforce patient-disjoint outer and inner splits rather than rebuilding inline operation-level random splits inside model code.
 - The current grouped split logic stratifies at the patient level before assigning operations, which is the maintained path for reducing patient-overlap leakage.
-- `evaluate calibrate` uses grouped calibration CV on `op_id`, so repeated prediction rows for the same operation stay together during isotonic fitting.
+- `evaluate calibrate` uses grouped calibration CV on `op_id` for learned models, so repeated prediction rows for the same operation stay together during isotonic fitting; the deterministic rule baselines keep prespecified thresholds instead.
 - The archived operation-level repeated-CV workflow is preserved only for audit/reference questions and should not be described as the primary way to run the repo today.
 
 ## Stage Map
@@ -70,7 +70,7 @@ The package treats `predictions/raw/*.parquet` as stage-owned partitions and reb
 | Command | Main implementation | Primary outputs | Notes |
 | --- | --- | --- | --- |
 | `evaluate generate` | `pipelines/evaluate_generate.py:run_evaluate_generate` | grouped split manifests, split audits | Required for grouped holdout / grouped nested-CV execution; manifests are grouped on `patient_id` |
-| `evaluate calibrate` | `pipelines/evaluate.py:run_calibration` | `predictions/calibrated_predictions.parquet`, `evaluation/thresholds.csv` | Uses grouped calibration CV on `op_id` so repeated rows for the same operation stay together |
+| `evaluate calibrate` | `pipelines/evaluate.py:run_calibration` | `predictions/calibrated_predictions.parquet`, `evaluation/thresholds.csv` | Uses grouped isotonic calibration CV on `op_id` for learned models; `asa_rule` and `gs_aki_rule` keep prespecified identity mappings and thresholds |
 | `evaluate metrics` | `pipelines/evaluate.py:run_metrics` | `evaluation/metrics_by_fold.csv`, `evaluation/metrics_summary.csv`, optional bootstrap CI outputs | Summary metrics and confidence intervals |
 | `evaluate delong` | `pipelines/evaluate.py:run_delong` | raw and FDR-corrected DeLong tables | Pairwise AUROC testing |
 | `evaluate dca` | `pipelines/evaluate.py:run_dca` | `evaluation/dca_curves.csv`, optional CI bands | Decision-curve analysis outputs |
@@ -147,5 +147,6 @@ inspire-aki report manuscript --config configs/aki/default.yaml
 - Figures are emitted in `png` and `svg`.
 - Rerunning report stages replaces the canonical filenames under `reports/`.
 - When `gs_aki_rule` is enabled, the report stage adds the maintained preop baseline ordering `ASA Rule`, `Adapted GS-AKI`, then the learned preop models, plus a held-out GS-AKI incidence table by raw count and class.
+- In the main performance table, `ASA Rule` remains a prespecified binary rule, while `Adapted GS-AKI` is shown primarily with AUROC/AUPRC and blanks its threshold-dependent columns.
 - If model-selection policy changes, resume from `tune ...`, not `train ...`.
 - When documenting validation design, describe the maintained pipeline as patient-grouped evaluation plus `op_id`-grouped calibration, not the archived operation-level repeated-CV workflow.

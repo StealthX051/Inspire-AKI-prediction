@@ -9,6 +9,7 @@ from joblib import Parallel, delayed
 from scipy import stats
 from sklearn.metrics import auc, confusion_matrix, f1_score, precision_recall_curve, precision_score, recall_score, roc_auc_score
 
+from inspire_aki.clinical_baselines import clinical_rule_probability_threshold, main_performance_table_hidden_metrics
 from inspire_aki.config import active_outcome_config, active_target_column
 from inspire_aki.evaluation.thresholds import find_optimal_fbeta_threshold
 from inspire_aki.io.artifacts import ArtifactManager
@@ -141,7 +142,11 @@ def _performance_prediction_frame(predictions_df: pd.DataFrame, *, prob_col: str
     groups: list[pd.DataFrame] = []
     for _, group_df in frame.groupby(["dataset_regime", "population_id", "model_key"], sort=False):
         group = group_df.copy()
-        if use_existing_threshold and group["threshold"].notna().any():
+        model_key = str(group["model_key"].iat[0])
+        rule_threshold = clinical_rule_probability_threshold(model_key, config)
+        if rule_threshold is not None:
+            threshold = float(rule_threshold)
+        elif use_existing_threshold and group["threshold"].notna().any():
             threshold = float(group["threshold"].dropna().iloc[0])
         else:
             threshold = find_optimal_fbeta_threshold(
@@ -353,14 +358,25 @@ def _performance_table_spec(summary_df: pd.DataFrame, *, file_stem: str, title: 
                 lambda key, dataset_regime=dataset_regime: _dataset_model_sort_key(dataset_regime, str(key))
             )
             section_df = section_df.sort_values("model_order", kind="stable").reset_index(drop=True)
+            csv_df = section_df.drop(columns=["model_order"]).copy()
+            for row_idx, model_key in enumerate(csv_df["model_key"].astype(str).tolist()):
+                for metric in main_performance_table_hidden_metrics(model_key):
+                    csv_df.at[row_idx, metric] = np.nan
+                    csv_df.at[row_idx, f"{metric}_display"] = "—"
+                    csv_df.at[row_idx, f"{metric}_ci_display"] = ""
+                    lower_key = f"{metric}_ci_lower"
+                    upper_key = f"{metric}_ci_upper"
+                    if lower_key in csv_df.columns:
+                        csv_df.at[row_idx, lower_key] = np.nan
+                    if upper_key in csv_df.columns:
+                        csv_df.at[row_idx, upper_key] = np.nan
             display_cols = {
-                "model_name": section_df["model_name"],
+                "model_name": csv_df["model_name"],
             }
             for metric in _PERFORMANCE_METRICS:
-                display_cols[metric] = section_df[f"{metric}_display"]
-                display_cols[f"{metric}_ci_display"] = section_df[f"{metric}_ci_display"]
+                display_cols[metric] = csv_df[f"{metric}_display"]
+                display_cols[f"{metric}_ci_display"] = csv_df[f"{metric}_ci_display"]
             display_df = pd.DataFrame(display_cols)
-            csv_df = section_df.drop(columns=["model_order"])
             sections.append(TableSection(title=_DATASET_TITLES[dataset_regime], display_df=display_df, csv_df=csv_df))
 
     return TableSpec(

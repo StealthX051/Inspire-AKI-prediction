@@ -268,18 +268,42 @@ To stay compatible with the shared prediction artifact schema:
 y_prob_raw = gs_aki_count / 9.0
 ```
 
-- the default raw binary prediction is:
+- the prespecified high-risk rule is Class III or higher:
 
 ```text
-y_pred = (y_prob_raw >= 0.5)
+gs_aki_high_risk = (gs_aki_count >= 4)
 ```
 
-This scaling is an artifact-compatibility choice. It is not presented as a refit probability model for GS-AKI itself. Reviewer-facing interpretation should prioritize:
+which is equivalent to:
+
+```text
+y_pred = (y_prob_raw >= 4 / 9)
+```
+
+This scaling is an artifact-compatibility choice. It is not presented as a refit probability model for GS-AKI itself.
+
+The maintained pipeline does not isotonic-calibrate or threshold-optimize `gs_aki_rule`. During `evaluate calibrate`, GS-AKI keeps:
+
+```text
+y_prob_calibrated = y_prob_raw
+threshold = 4 / 9
+calibration_method = "identity_prespecified_class_iii_plus"
+```
+
+Reviewer-facing interpretation should prioritize:
 
 - raw count
 - class
 - held-out incidence by count
 - held-out incidence by class
+
+In the main performance table, GS-AKI is treated as an ordinal baseline:
+
+- AUROC and AUPRC are shown normally
+- threshold-dependent columns are intentionally blank
+- if binary GS-AKI metrics are needed, they should be interpreted as the prespecified Class III+ rule rather than a data-chosen cutoff
+
+ASA is handled differently. `asa_rule` remains a prespecified binary clinical rule in the main table, so its threshold-dependent columns stay populated.
 
 ## Output Artifacts
 

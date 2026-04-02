@@ -64,6 +64,10 @@ def _predict_tabular_bundle_compat(bundle, test_df: pd.DataFrame, target: str, *
         return predict_tabular_bundle(bundle, test_df, target)
 
 
+def _tabular_prediction_threshold(bundle) -> float:
+    return float(bundle.metadata.get("prespecified_threshold", 0.5))
+
+
 def _tabular_params(config: dict, artifacts: ArtifactManager, dataset_regime: str, model_key: str, *, run_id: int = 0) -> dict:
     tuning_path = artifacts.paths.artifact_path("tuning", "tabular_best_params.json")
     if tuning_path.exists():
@@ -392,6 +396,7 @@ def run_train_tabular(config: dict) -> dict[str, str]:
                                 test_df=test_df,
                                 y_pred=y_pred,
                                 y_prob=y_prob,
+                                threshold=_tabular_prediction_threshold(bundle),
                             )
                         )
                         progress.emit_event(
@@ -550,6 +555,7 @@ def run_train_tabular(config: dict) -> dict[str, str]:
                             test_df=test_df,
                             y_pred=y_pred,
                             y_prob=y_prob,
+                            threshold=_tabular_prediction_threshold(bundle),
                         )
                     )
                     progress.emit_event(

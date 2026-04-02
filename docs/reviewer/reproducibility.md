@@ -12,6 +12,7 @@ This repository is readable, testable, and partially runnable, but it is not ful
 | Non-nested evaluation design | Tuning runs once before downstream grouped evaluation | This is a methodological limitation, not a packaging bug |
 | Leakage-control drift from the archive | The maintained CLI now uses patient-grouped evaluation manifests and `op_id`-grouped calibration rather than the older operation-level workflow | Small metric or count drift versus historical outputs should be read as an intentional correctness fix, not as evidence that the current docs are describing the wrong process |
 | Adapted GS-AKI surgery proxy | INSPIRE does not ship a native intraperitoneal-surgery field, so the maintained GS-AKI baseline uses a repo-tracked 5-character ICD-10-PCS proxy map derived from CDC/NHSN and CMS resources plus explicit override review for residual observed code families | Treat GS-AKI as a maintained proxy-based clinical baseline rather than an exact source-variable reimplementation |
+| Rule-baseline threshold policy | The maintained pipeline keeps prespecified thresholds for `asa_rule` and `gs_aki_rule` instead of optimizing them on evaluation data | Reviewer-facing binary metrics for these rules should be read as fixed-rule summaries, not tuned operating points |
 | Archived-versus-current drift | The maintained CLI keeps several correctness and portability fixes relative to the archive | Exact historical point estimates and counts can drift even when the scientific intent is the same |
 | Historical artifacts removed from the primary repo surface | Large generated model and AutoML trees were curated out of the main repo during cleanup | Small reference outputs remain in-repo; removed heavy artifacts are recorded in the legacy manifest |
 
@@ -40,6 +41,7 @@ This repository is readable, testable, and partially runnable, but it is not ful
 - which workflow limitations are methodological versus operational
 - that the maintained CLI uses patient-grouped evaluation and `op_id`-grouped calibration to reduce leakage relative to the archive
 - that the maintained AKI config evaluates adapted GS-AKI on the same grouped manifests as the learned models, while still relying on a committed proxy map for the intraperitoneal factor
+- that the maintained main performance table treats adapted GS-AKI primarily as an ordinal count/class baseline rather than a tuned binary rule
 
 ## Unsafe Claims
 

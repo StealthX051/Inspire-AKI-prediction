@@ -56,6 +56,19 @@ def _gs_aki_config(config: dict[str, Any]) -> dict[str, Any]:
     return config["clinical_baselines"]["gs_aki"]
 
 
+def gs_aki_score_max(config: dict[str, Any]) -> int:
+    return int(_gs_aki_config(config)["score_max"])
+
+
+def gs_aki_high_risk_count_threshold(config: dict[str, Any]) -> int:
+    class_three_bounds = _gs_aki_config(config)["class_cutpoints"]["III"]
+    return int(class_three_bounds[0])
+
+
+def gs_aki_high_risk_probability_threshold(config: dict[str, Any]) -> float:
+    return float(gs_aki_high_risk_count_threshold(config) / gs_aki_score_max(config))
+
+
 def _resolve_map_path(config: dict[str, Any]) -> Path:
     path = Path(str(_gs_aki_config(config)["intraperitoneal_map_path"]))
     return path if path.is_absolute() else REPO_ROOT / path

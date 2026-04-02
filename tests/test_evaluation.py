@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from inspire_aki.evaluation.calibration import _calibrate_group, calibrate_prediction_groups
 from inspire_aki.evaluation.dca import decision_curve_table
@@ -43,7 +44,7 @@ def test_calibration_and_metric_tables(loaded_synthetic_config) -> None:
     assert set(calibrated.thresholds["model_key"]) == {"log_reg", "asa_rule"}
     assert calibrated.predictions["y_prob_calibrated"].notna().all()
     assert calibrated.predictions["calibration_method"].isin(
-        ["isotonic_stratified_group_cv", "isotonic_group_cv", "identity"]
+        ["isotonic_stratified_group_cv", "isotonic_group_cv", "identity", "identity_prespecified_asa_ge_3"]
     ).all()
 
     fold_metrics = compute_group_metrics(calibrated.predictions)
@@ -124,3 +125,47 @@ def test_calibration_grouped_cv_keeps_repeated_op_ids_together(monkeypatch, load
     assert seen["n_splits"] == min(loaded_synthetic_config["calibration"]["cv_folds"], 4)
     assert set(np.unique(seen["groups"])) == {101, 202, 303, 404}
     assert calibrated_df["y_prob_calibrated"].notna().all()
+
+
+def test_calibration_preserves_prespecified_rule_thresholds_for_asa_and_gs_aki(loaded_synthetic_config) -> None:
+    rows = []
+    for model_key, probs in [
+        ("asa_rule", [0.20, 0.50, 0.50, 0.83]),
+        ("gs_aki_rule", [1.0 / 9.0, 4.0 / 9.0, 4.0 / 9.0, 6.0 / 9.0]),
+    ]:
+        for idx, (truth, prob) in enumerate(zip([0, 0, 1, 1], probs), start=1):
+            rows.append(
+                {
+                    "op_id": idx,
+                    "dataset_regime": "preop",
+                    "population_id": "preop",
+                    "repeat_id": 0,
+                    "fold_id": idx % 2,
+                    "split_name": "test",
+                    "model_key": model_key,
+                    "target": "aki_boolean",
+                    "y_true": truth,
+                    "y_prob_raw": prob,
+                    "y_prob_calibrated": None,
+                    "y_pred": int(prob >= 0.5),
+                    "threshold": 0.5,
+                    "calibration_method": None,
+                    "run_id": f"preop:{model_key}",
+                }
+            )
+
+    calibrated = calibrate_prediction_groups(pd.DataFrame(rows), loaded_synthetic_config)
+
+    asa_threshold = calibrated.thresholds.loc[calibrated.thresholds["model_key"] == "asa_rule", "threshold"].iloc[0]
+    gs_aki_threshold = calibrated.thresholds.loc[calibrated.thresholds["model_key"] == "gs_aki_rule", "threshold"].iloc[0]
+    asa_method = calibrated.thresholds.loc[calibrated.thresholds["model_key"] == "asa_rule", "calibration_method"].iloc[0]
+    gs_aki_method = calibrated.thresholds.loc[calibrated.thresholds["model_key"] == "gs_aki_rule", "calibration_method"].iloc[0]
+
+    assert asa_threshold == pytest.approx(0.5)
+    assert gs_aki_threshold == pytest.approx(4.0 / 9.0)
+    assert asa_method == "identity_prespecified_asa_ge_3"
+    assert gs_aki_method == "identity_prespecified_class_iii_plus"
+
+    for model_key in ["asa_rule", "gs_aki_rule"]:
+        subset = calibrated.predictions.loc[calibrated.predictions["model_key"] == model_key]
+        assert np.allclose(subset["y_prob_calibrated"].to_numpy(), subset["y_prob_raw"].to_numpy())
