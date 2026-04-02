@@ -9,3 +9,14 @@ evaluation_mode: grouped_holdout
 
 splits:
   use_bootstrapping: false
+
+models:
+  tabular_enabled:
+    - log_reg
+    - autogluon
+    - xgb
+    - rf
+    - svm
+    - mlp
+    - knn
+    - asa_rule

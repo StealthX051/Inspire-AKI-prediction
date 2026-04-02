@@ -36,7 +36,7 @@ _PERFORMANCE_COLUMNS = [
 _PERFORMANCE_METRICS = ("auroc", "auprc", "sensitivity", "specificity", "precision", "f_score", "balanced_accuracy")
 _MODEL_ORDER_LOOKUP = {model_key: idx for idx, model_key in enumerate(MANUSCRIPT_MODEL_ORDER)}
 _DATASET_MODEL_ORDER = {
-    "preop": ("asa_rule", "autogluon", "xgb", "knn", "log_reg", "mlp", "rf", "svm"),
+    "preop": ("asa_rule", "gs_aki_rule", "autogluon", "xgb", "knn", "log_reg", "mlp", "rf", "svm"),
     "intraop": ("autogluon", "xgb", "knn", "log_reg", "lstm_only", "mlp", "rf", "svm"),
     "combined": ("autogluon", "xgb", "knn", "log_reg", "mlp", "hybrid", "rf", "svm"),
 }
@@ -340,7 +340,10 @@ def _performance_table_spec(summary_df: pd.DataFrame, *, file_stem: str, title: 
     sections: list[TableSection] = []
     if not summary_df.empty:
         ordered = summary_df.loc[
-            ~((summary_df["model_key"].astype(str) == "asa_rule") & (summary_df["dataset_regime"].astype(str) != "preop"))
+            ~(
+                summary_df["model_key"].astype(str).isin({"asa_rule", "gs_aki_rule"})
+                & (summary_df["dataset_regime"].astype(str) != "preop")
+            )
         ].copy()
         for dataset_regime in DATASET_REGIMES:
             section_df = ordered[ordered["dataset_regime"] == dataset_regime].copy()
@@ -475,6 +478,96 @@ def _build_fill_rate_frame(cohort_df: pd.DataFrame, artifacts: ArtifactManager) 
     return fill_df.sort_values(["fill_rate_pct", "variable"], ascending=[False, True], kind="stable").reset_index(drop=True)
 
 
+def _binomial_ci(successes: int, total: int) -> tuple[float, float]:
+    if total <= 0:
+        return np.nan, np.nan
+    interval = stats.binomtest(successes, total).proportion_ci(confidence_level=0.95, method="exact")
+    return float(interval.low), float(interval.high)
+
+
+def _gs_aki_incidence_frame(artifacts: ArtifactManager) -> pd.DataFrame:
+    dataset_path = artifacts.paths.artifact_path("datasets", "tabular", "tabular_gs_aki_labeled.csv")
+    if not dataset_path.exists():
+        return pd.DataFrame()
+    prediction_candidates = [
+        artifacts.paths.artifact_path("predictions", "calibrated_predictions.parquet"),
+        artifacts.paths.artifact_path("predictions", "raw_predictions.parquet"),
+    ]
+    prediction_path = next((path for path in prediction_candidates if path.exists()), None)
+    if prediction_path is None:
+        return pd.DataFrame()
+    predictions = pd.read_parquet(prediction_path)
+    heldout_ops = (
+        predictions.loc[
+            (predictions["model_key"].astype(str) == "gs_aki_rule")
+            & (predictions["dataset_regime"].astype(str) == "preop")
+            & (predictions["split_name"].astype(str) == "test"),
+            "op_id",
+        ]
+        .drop_duplicates()
+        .tolist()
+    )
+    if not heldout_ops:
+        return pd.DataFrame()
+    gs_aki_df = pd.read_csv(dataset_path)
+    target = active_target_column(artifacts.config)
+    if target not in gs_aki_df.columns:
+        return pd.DataFrame()
+    heldout_df = gs_aki_df.loc[gs_aki_df["op_id"].isin(heldout_ops), ["op_id", "gs_aki_count", "gs_aki_class", target]].drop_duplicates(
+        subset=["op_id"],
+        keep="last",
+    )
+    if heldout_df.empty:
+        return pd.DataFrame()
+
+    rows: list[dict[str, object]] = []
+    for score_type, score_column in [("count", "gs_aki_count"), ("class", "gs_aki_class")]:
+        grouped = heldout_df.groupby(score_column, sort=True)[target].agg(["count", "sum"]).reset_index()
+        for row in grouped.itertuples(index=False):
+            n_ops = int(row.count)
+            n_events = int(row.sum)
+            ci_lower, ci_upper = _binomial_ci(n_events, n_ops)
+            score_value = getattr(row, score_column)
+            rows.append(
+                {
+                    "score_type": score_type,
+                    "score_value": str(score_value),
+                    "n_ops": n_ops,
+                    "n_events": n_events,
+                    "event_rate": 0.0 if n_ops == 0 else float(n_events / n_ops),
+                    "ci_lower": ci_lower,
+                    "ci_upper": ci_upper,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _gs_aki_incidence_spec(incidence_df: pd.DataFrame) -> TableSpec:
+    display_df = incidence_df.copy()
+    display_df["event_rate_display"] = display_df["event_rate"].map(lambda value: f"{value:.3f}" if pd.notna(value) else "N/A")
+    display_df["ci_display"] = display_df.apply(
+        lambda row: "N/A"
+        if pd.isna(row["ci_lower"]) or pd.isna(row["ci_upper"])
+        else f"({row['ci_lower']:.3f}, {row['ci_upper']:.3f})",
+        axis=1,
+    )
+    return TableSpec(
+        file_stem="gs_aki_incidence_table",
+        title="Adapted GS-AKI Incidence by Score",
+        caption="Held-out operation-level outcome incidence by adapted GS-AKI raw count and class.",
+        columns=[
+            ColumnSpec("score_type", "Score Type", align="left"),
+            ColumnSpec("score_value", "Score", align="left"),
+            ColumnSpec("n_ops", "Operations"),
+            ColumnSpec("n_events", "Events"),
+            ColumnSpec("event_rate_display", "Event Rate"),
+            ColumnSpec("ci_display", "95% CI"),
+        ],
+        sections=[TableSection(title=None, display_df=display_df[["score_type", "score_value", "n_ops", "n_events", "event_rate_display", "ci_display"]], csv_df=incidence_df)],
+        include_section_column_in_csv=False,
+    )
+
+
 def generate_table_outputs(artifacts: ArtifactManager) -> list[Path]:
     config = artifacts.config
     outputs: list[Path] = []
@@ -521,6 +614,9 @@ def generate_table_outputs(artifacts: ArtifactManager) -> list[Path]:
                 config,
             )
         )
+    gs_aki_incidence = _gs_aki_incidence_frame(artifacts)
+    if not gs_aki_incidence.empty:
+        outputs.extend(write_table_outputs(artifacts, _gs_aki_incidence_spec(gs_aki_incidence), config))
 
     cohort_path = artifacts.paths.artifact_path("datasets", "tabular", "tabular_combined_unnormalized.csv")
     preop_path = artifacts.paths.artifact_path("features", "preop", "preop_features.csv")

@@ -11,3 +11,14 @@ splits:
   use_bootstrapping: true
   n_bootstrap_iterations: 25
   n_cv_folds: 5
+
+models:
+  tabular_enabled:
+    - log_reg
+    - autogluon
+    - xgb
+    - rf
+    - svm
+    - mlp
+    - knn
+    - asa_rule

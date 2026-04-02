@@ -4,6 +4,7 @@ from time import perf_counter
 
 import pandas as pd
 
+from inspire_aki.clinical_baselines import GS_AKI_DATASET_COLUMNS, build_gs_aki_features, gs_aki_enabled
 from inspire_aki.cohort.labels import derive_active_labels
 from inspire_aki.config import active_outcome_config, active_outcome_key, active_target_column
 from inspire_aki.cohort.preop import build_preop_features
@@ -23,6 +24,17 @@ def run_preop(config: dict) -> dict[str, str]:
     preop_df, audit_df = build_preop_features(config, artifacts.paths.raw_inspire_dir)
     preop_path = artifacts.write_dataframe(preop_df, "features", "preop", "preop_features.csv")
     audit_path = artifacts.write_dataframe(audit_df, "cohort", "preop_audit.csv")
+    outputs = {"preop": str(preop_path), "audit": str(audit_path)}
+    manifest_outputs = [artifacts.relative(preop_path), artifacts.relative(audit_path)]
+    metadata: dict[str, object] = {"n_rows": len(preop_df)}
+    if gs_aki_enabled(config):
+        gs_aki_df, gs_aki_audit_df = build_gs_aki_features(config, artifacts.paths.raw_inspire_dir, preop_df)
+        gs_aki_path = artifacts.write_dataframe(gs_aki_df, "features", "preop", "gs_aki_features.csv")
+        gs_aki_audit_path = artifacts.write_dataframe(gs_aki_audit_df, "cohort", "gs_aki_audit.csv")
+        outputs["gs_aki"] = str(gs_aki_path)
+        outputs["gs_aki_audit"] = str(gs_aki_audit_path)
+        manifest_outputs.extend([artifacts.relative(gs_aki_path), artifacts.relative(gs_aki_audit_path)])
+        metadata["n_gs_aki_rows"] = len(gs_aki_df)
     raw_ops = pd.read_csv(
         artifacts.paths.raw_inspire_dir / "operations.csv",
         usecols=["opstart_time", "opend_time"],
@@ -38,15 +50,12 @@ def run_preop(config: dict) -> dict[str, str]:
             artifacts.relative(artifacts.paths.raw_inspire_dir / "diagnosis.csv"),
             artifacts.relative(artifacts.paths.raw_inspire_dir / "ward_vitals.csv"),
         ],
-        outputs=[artifacts.relative(preop_path), artifacts.relative(audit_path)],
-        metadata={
-            "n_rows": len(preop_df),
-            "n_excluded_nonpositive_op_len": n_excluded_nonpositive_op_len,
-        },
+        outputs=manifest_outputs,
+        metadata=metadata | {"n_excluded_nonpositive_op_len": n_excluded_nonpositive_op_len},
         stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
         wall_time_seconds=perf_counter() - start,
     )
-    return {"preop": str(preop_path), "audit": str(audit_path)}
+    return outputs
 
 
 def run_intraop(config: dict) -> dict[str, str]:
@@ -152,6 +161,19 @@ def run_labels(config: dict) -> dict[str, str]:
         labeled_df = dataset_df.merge(labels_for_datasets, on="op_id", how="inner")
         out_path = artifacts.write_dataframe(labeled_df, "datasets", "tabular", f"tabular_{dataset_name}_labeled.csv")
         outputs[f"{dataset_name}_labeled"] = str(out_path)
+    if gs_aki_enabled(config):
+        gs_aki_path = artifacts.paths.artifact_path("features", "preop", "gs_aki_features.csv")
+        gs_aki_df = pd.read_csv(gs_aki_path)
+        gs_aki_cols = [column for column in GS_AKI_DATASET_COLUMNS if column in gs_aki_df.columns]
+        gs_aki_labeled = gs_aki_df[gs_aki_cols].merge(labels_for_datasets, on=["op_id", "subject_id"], how="inner")
+        preop_labeled_rows = len(pd.read_csv(artifacts.paths.artifact_path("datasets", "tabular", "tabular_preop_labeled.csv")))
+        if len(gs_aki_labeled) != preop_labeled_rows:
+            raise ValueError(
+                "GS-AKI labeled dataset did not align with the retained preop labeled cohort. "
+                f"gs_aki_rows={len(gs_aki_labeled)} preop_rows={preop_labeled_rows}"
+            )
+        out_path = artifacts.write_dataframe(gs_aki_labeled, "datasets", "tabular", "tabular_gs_aki_labeled.csv")
+        outputs["gs_aki_labeled"] = str(out_path)
 
     source_paths = {
         "operations": artifacts.paths.raw_inspire_dir / "operations.csv",
@@ -170,7 +192,12 @@ def run_labels(config: dict) -> dict[str, str]:
             artifacts.relative(source_paths[source_name])
             for source_name in outcome_cfg.get("required_sources", [])
         ],
-        outputs=[artifacts.relative(artifacts.paths.artifact_path("cohort", "labels.csv"))],
+        outputs=[artifacts.relative(artifacts.paths.artifact_path("cohort", "labels.csv"))]
+        + (
+            [artifacts.relative(artifacts.paths.artifact_path("datasets", "tabular", "tabular_gs_aki_labeled.csv"))]
+            if gs_aki_enabled(config)
+            else []
+        ),
         metadata={"n_labels": len(labels_df), "target": target},
         stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
         wall_time_seconds=perf_counter() - start,

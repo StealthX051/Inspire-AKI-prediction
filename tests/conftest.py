@@ -14,6 +14,7 @@ def _build_operations(n_ops: int) -> pd.DataFrame:
         subject_id = 1000 + op_id
         opstart = 10_000 + idx * 500
         opend = opstart + 120
+        icd10_pcs = "0DTP0" if idx % 2 == 0 else "0WJF4"
         rows.append(
             {
                 "op_id": op_id,
@@ -32,7 +33,7 @@ def _build_operations(n_ops: int) -> pd.DataFrame:
                 "orout_time": opend + 20,
                 "antype": "General",
                 "department": "GS",
-                "icd10_pcs": "0AB",
+                "icd10_pcs": icd10_pcs,
             }
         )
     return pd.DataFrame(rows)
@@ -145,6 +146,27 @@ def _write_workspace(base_path: Path) -> Path:
     _build_labs(operations).to_csv(raw_dir / "labs.csv", index=False)
     _build_ward_vitals(operations).to_csv(raw_dir / "ward_vitals.csv", index=False)
     _build_vitals(operations).to_csv(raw_dir / "vitals.csv", index=False)
+    gs_aki_map_path = base_path / "intraperitoneal_proxy_map_5char.csv"
+    pd.DataFrame(
+        [
+            {
+                "icd10_pcs_5char": "0DTP0",
+                "approach": "0",
+                "nhsn_category": "SB",
+                "intraperitoneal_proxy": 1,
+                "source": "synthetic_test_map",
+                "rationale": "small_bowel_open_positive",
+            },
+            {
+                "icd10_pcs_5char": "0WJF4",
+                "approach": "4",
+                "nhsn_category": "HER",
+                "intraperitoneal_proxy": 0,
+                "source": "synthetic_test_map",
+                "rationale": "hernia_negative",
+            },
+        ]
+    ).to_csv(gs_aki_map_path, index=False)
 
     config = {
         "paths": {
@@ -181,6 +203,11 @@ def _write_workspace(base_path: Path) -> Path:
             "sequence_enabled": [],
             "tabular_hpo_enabled": [],
             "sequence_hpo_enabled": [],
+        },
+        "clinical_baselines": {
+            "gs_aki": {
+                "intraperitoneal_map_path": str(gs_aki_map_path),
+            }
         },
         "calibration": {
             "cv_folds": 3,

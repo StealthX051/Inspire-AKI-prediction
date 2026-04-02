@@ -193,6 +193,8 @@ cython_debug/
 *.sqlite
 *.sqlite3
 
+!configs/clinical_baselines/intraperitoneal_proxy_map_5char.csv
+
 ### venv ###
 # Virtualenv
 # http://iamzed.com/2009/05/07/a-primer-on-virtualenv/
@@ -230,6 +232,7 @@ saved_data/
 artifacts/
 logs/
 benchmarks/
+external/
 legacy/code/notebooks/mljar_results_improved/
 
 preoperative_models/AutogluonModels/

@@ -10,6 +10,7 @@ MODEL_DISPLAY_NAMES = {
     "rf": "Random Forest",
     "knn": "KNN",
     "asa_rule": "ASA Rule",
+    "gs_aki_rule": "Adapted GS-AKI",
     "autogluon": "AutoGluon",
     "lstm_only": "LSTM",
     "lstm": "LSTM",
@@ -30,6 +31,7 @@ MODEL_COLORS = {
     "Random Forest": "crimson",
     "KNN": "gray",
     "ASA Rule": "orange",
+    "Adapted GS-AKI": "goldenrod",
     "AutoGluon": "blue",
     "LSTM": "darkorange",
     "Hybrid (MLP + LSTM)": "teal",
@@ -41,6 +43,7 @@ MANUSCRIPT_SECTIONS = ("consort", "tables", "curves", "statistics", "reclassific
 SUPPORTED_SHAP_MODELS = ("xgb", "rf", "log_reg")
 MANUSCRIPT_MODEL_ORDER = (
     "asa_rule",
+    "gs_aki_rule",
     "autogluon",
     "xgb",
     "knn",

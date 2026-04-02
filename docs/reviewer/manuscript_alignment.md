@@ -13,6 +13,7 @@ Archive code references below live under `legacy/code/`. Current package behavio
 | Dataset regimes | `legacy/code/data_preprocessing/03_create_base.py`, current tabular datasets | Preop-only, intraop-only, and combined datasets are part of both the archived and maintained workflows | No conflict at the high level |
 | Sequence path | `legacy/code/data_preprocessing/05_time_series_cleaner.py`, `legacy/code/data_preprocessing/06_create_lstm_trainable.py`, current sequence preprocessing | The sequence path pads to `200` steps and drops longer operations | This is important when explaining differences between tabular and sequence cohorts |
 | Missing-data handling | `legacy/code/data_preprocessing/03_create_base.py` | Historical preprocessing normalizes before imputation and uses a `-99` sentinel for higher-missingness columns | Reviewer language should describe the code-defined rule, even if it differs from cleaner textbook phrasing |
+| Reviewer-response clinical baselines | `src/inspire_aki/clinical_baselines/gs_aki.py`, `configs/clinical_baselines/intraperitoneal_proxy_map_5char.csv`, current AKI config | The maintained AKI pipeline now includes `asa_rule` plus an adapted GS-AKI baseline in the preop path | Adapted GS-AKI is the first maintained reviewer-feedback baseline extension; it is intentionally proxy-based rather than an exact recreation of the published source variables |
 | Class imbalance | archived HPO/train scripts, current model code | Current maintained training uses explicit inverse-frequency weighting across trainable model families | This is directionally manuscript-aligned and more uniform than the mixed historical implementation |
 | Evaluation design | archived HPO/train scripts, current configs and evaluation backends | The maintained shipped configs use patient-grouped evaluation modes built on `patient_id`; tuning still runs once before downstream evaluation | The design remains non-nested and should be described as such, but the maintained CLI closes the major patient-overlap leakage path from historical operation-level splitting |
 | Calibration and thresholds | `legacy/code/create_results/13_performance_metrics.ipynb`, current evaluation/reporting code | Isotonic calibration and F2-oriented thresholding remain part of the manuscript-facing workflow | The maintained pipeline keeps repeated rows for the same `op_id` together during calibration CV to avoid repeated-row leakage |
@@ -29,6 +30,8 @@ Archive code references below live under `legacy/code/`. Current package behavio
 - Current shipped configs default to patient-grouped evaluation modes rather than the historical operation-level repeated-CV path.
 - When stages are run manually, `evaluate generate` is the maintained entrypoint that materializes those patient-grouped manifests before tuning and training.
 - Calibration in the maintained CLI is grouped on `op_id`, so repeated predictions from the same operation do not leak across isotonic calibration folds.
+- The default AKI config now evaluates `asa_rule` and `gs_aki_rule` on the same maintained grouped manifests used by the learned models.
+- `gs_aki_rule` is implemented as one adapted preoperative clinical baseline only; the current code does not refit or recalibrate a separate GS-AKI family of models.
 
 ## Safe Reviewer Claims
 
@@ -38,3 +41,5 @@ Archive code references below live under `legacy/code/`. Current package behavio
 - where exact historical counts or point estimates may drift because of those fixes
 
 For intentional behavior differences that matter scientifically or methodologically, see [legacy_cli_differences.md](legacy_cli_differences.md).
+
+For the full source-backed implementation note behind the maintained adapted GS-AKI baseline, including the intraperitoneal proxy logic and explicit override table, see [gs_aki_adaptation.md](gs_aki_adaptation.md).

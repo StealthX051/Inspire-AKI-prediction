@@ -51,6 +51,9 @@ Run the full default AKI pipeline:
 inspire-aki run all --config configs/aki/default.yaml
 ```
 
+The default AKI config now includes two preoperative clinical baselines alongside the learned models:
+`asa_rule` and `gs_aki_rule` (`Adapted GS-AKI`). `gs_aki_rule` is a maintained reviewer-response baseline that reuses the same patient-grouped manifests, calibration, metrics, and report flow as the rest of the current pipeline.
+
 Resume stage-by-stage when needed:
 
 ```bash
@@ -82,6 +85,7 @@ inspire-aki report manuscript --config configs/aki/default.yaml
 - Stage outputs, manifests, predictions, and reports are written under the configured `paths.artifacts_dir`.
 - The maintained shipped configs use patient-grouped evaluation modes. `evaluate generate` materializes manifests on `patient_id` so the same patient does not cross train/test or train/validation boundaries in grouped runs.
 - Calibration is also guarded against repeated-row leakage: the maintained pipeline fits isotonic calibration with grouped CV on `op_id`, keeping repeated prediction rows for the same operation together.
+- The default AKI run evaluates both maintained clinical baselines (`asa_rule` and the proxy-based `gs_aki_rule`) on that same grouped leakage-safe path; `gs_aki_rule` is restricted to the AKI outcome and the preop dataset regime.
 - `inspire-aki compat export-legacy` remains explicit and AKI-only; it is not part of `run all`.
 
 ## Repo Map

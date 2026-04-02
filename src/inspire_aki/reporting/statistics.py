@@ -17,6 +17,7 @@ _DELONG_ABBREVIATIONS = {
     "MLP": "MLP",
     "KNN": "KNN",
     "ASA Rule": "ASA Rule",
+    "Adapted GS-AKI": "Adapted GS-AKI",
     "AutoGluon": "AutoGluon",
     "LSTM": "LSTM",
     "Hybrid (MLP + LSTM)": "MLP+LSTM",

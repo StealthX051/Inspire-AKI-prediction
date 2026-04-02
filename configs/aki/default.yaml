@@ -10,6 +10,22 @@ study:
 
 evaluation_mode: grouped_nested_cv
 
+clinical_baselines:
+  gs_aki:
+    intraperitoneal_map_path: configs/clinical_baselines/intraperitoneal_proxy_map_5char.csv
+    diabetes_prefixes: [E08, E09, E10, E11, E13]
+    hypertension_prefixes: [I10, I11, I12, I13, I15, I16, I1A]
+    chf_prefixes: [I50]
+    ascites_prefixes: [R18]
+    recent_window_days: 30
+    class_cutpoints:
+      I: [0, 2]
+      II: [3, 3]
+      III: [4, 4]
+      IV: [5, 5]
+      V: [6, 9]
+    score_max: 9
+
 cohorts:
   profiles:
     default_noncardiac_adult:
@@ -237,6 +253,7 @@ models:
     - mlp
     - knn
     - asa_rule
+    - gs_aki_rule
   sequence_enabled:
     - lstm_only
     - hybrid

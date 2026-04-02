@@ -8,6 +8,7 @@ Start here:
 
 - [manuscript_alignment.md](manuscript_alignment.md)
 - [reproducibility.md](reproducibility.md)
+- [gs_aki_adaptation.md](gs_aki_adaptation.md)
 - [legacy_cli_differences.md](legacy_cli_differences.md)
 
 Supporting materials:

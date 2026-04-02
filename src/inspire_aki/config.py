@@ -120,6 +120,25 @@ def _default_outcome_catalog() -> dict[str, Any]:
     }
 
 
+def _default_gs_aki_config() -> dict[str, Any]:
+    return {
+        "intraperitoneal_map_path": "configs/clinical_baselines/intraperitoneal_proxy_map_5char.csv",
+        "diabetes_prefixes": ["E08", "E09", "E10", "E11", "E13"],
+        "hypertension_prefixes": ["I10", "I11", "I12", "I13", "I15", "I16", "I1A"],
+        "chf_prefixes": ["I50"],
+        "ascites_prefixes": ["R18"],
+        "recent_window_days": 30,
+        "class_cutpoints": {
+            "I": [0, 2],
+            "II": [3, 3],
+            "III": [4, 4],
+            "IV": [5, 5],
+            "V": [6, 9],
+        },
+        "score_max": 9,
+    }
+
+
 def _infer_outcome_key_from_target(target: Any, catalog: dict[str, Any]) -> str | None:
     if not target:
         return None
@@ -168,6 +187,12 @@ def _normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(existing_catalog, dict):
         existing_catalog = {}
     outcomes_cfg["catalog"] = _deep_merge(_default_outcome_catalog(), existing_catalog)
+
+    clinical_baselines_cfg = normalized.setdefault("clinical_baselines", {})
+    existing_gs_aki = clinical_baselines_cfg.get("gs_aki", {})
+    if not isinstance(existing_gs_aki, dict):
+        existing_gs_aki = {}
+    clinical_baselines_cfg["gs_aki"] = _deep_merge(_default_gs_aki_config(), existing_gs_aki)
 
     study_cfg = normalized.setdefault("study", {})
     if not study_cfg.get("cohort_key"):
@@ -307,6 +332,53 @@ def validate_config(config: dict[str, Any]) -> None:
                 raise ValueError("models.autogluon.num_gpus must be 'auto' or a non-negative integer.") from exc
             if numeric_num_gpus < 0 or not numeric_num_gpus.is_integer():
                 raise ValueError("models.autogluon.num_gpus must be 'auto' or a non-negative integer.")
+
+    tabular_enabled = list(config.get("models", {}).get("tabular_enabled", []))
+    tabular_hpo_enabled = list(config.get("models", {}).get("tabular_hpo_enabled", []))
+    if "gs_aki_rule" in tabular_hpo_enabled:
+        raise ValueError("gs_aki_rule is a deterministic clinical baseline and cannot be added to models.tabular_hpo_enabled.")
+    if outcome_key != DEFAULT_OUTCOME_KEY and "gs_aki_rule" in tabular_enabled:
+        raise ValueError("gs_aki_rule is only supported for the AKI outcome.")
+    if "gs_aki_rule" in tabular_enabled:
+        gs_aki_cfg = config.get("clinical_baselines", {}).get("gs_aki", {})
+        required_keys = {
+            "intraperitoneal_map_path",
+            "diabetes_prefixes",
+            "hypertension_prefixes",
+            "chf_prefixes",
+            "ascites_prefixes",
+            "recent_window_days",
+            "class_cutpoints",
+            "score_max",
+        }
+        missing_keys = sorted(required_keys - set(gs_aki_cfg))
+        if missing_keys:
+            raise ValueError(f"clinical_baselines.gs_aki is missing required keys: {missing_keys}")
+        if int(gs_aki_cfg.get("recent_window_days", 0)) < 1:
+            raise ValueError("clinical_baselines.gs_aki.recent_window_days must be at least 1.")
+        if int(gs_aki_cfg.get("score_max", 0)) < 1:
+            raise ValueError("clinical_baselines.gs_aki.score_max must be at least 1.")
+        class_cutpoints = gs_aki_cfg.get("class_cutpoints", {})
+        expected_classes = ["I", "II", "III", "IV", "V"]
+        if list(class_cutpoints.keys()) != expected_classes:
+            raise ValueError("clinical_baselines.gs_aki.class_cutpoints must contain ordered keys I, II, III, IV, V.")
+        for class_name, bounds in class_cutpoints.items():
+            if not isinstance(bounds, list | tuple) or len(bounds) != 2:
+                raise ValueError(
+                    f"clinical_baselines.gs_aki.class_cutpoints['{class_name}'] must be a [min, max] pair."
+                )
+            lower, upper = int(bounds[0]), int(bounds[1])
+            if lower > upper:
+                raise ValueError(
+                    f"clinical_baselines.gs_aki.class_cutpoints['{class_name}'] must have min <= max."
+                )
+        map_path = Path(str(gs_aki_cfg["intraperitoneal_map_path"]))
+        if not map_path.is_absolute():
+            map_path = REPO_ROOT / map_path
+        if not map_path.exists():
+            raise ValueError(
+                "clinical_baselines.gs_aki.intraperitoneal_map_path must point to an existing committed CSV when gs_aki_rule is enabled."
+            )
 
     report_sections = config.get("reports", {}).get("manuscript_sections", [])
     unknown_sections = sorted(set(report_sections) - set(MANUSCRIPT_SECTIONS))

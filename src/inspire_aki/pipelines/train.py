@@ -6,7 +6,6 @@ from pathlib import Path
 from time import perf_counter
 
 import pandas as pd
-
 from inspire_aki.datasets.splits import build_bootstrap_split_manifest, grouped_manifest_to_training_manifest, subset_from_manifest
 from inspire_aki.evaluation.split_manager import evaluation_runs, subset_generated_manifest
 from inspire_aki.io.artifacts import ArtifactManager
@@ -113,6 +112,30 @@ def _load_grouped_evaluation_manifest(artifacts: ArtifactManager, config: dict, 
             "Run `inspire-aki evaluate generate --config ...` before training."
         )
     return pd.read_parquet(manifest_path), manifest_path
+
+
+def _tabular_training_feature_columns(dataset_df: pd.DataFrame, target: str, model_key: str) -> list[str]:
+    if model_key == "gs_aki_rule":
+        if "gs_aki_count" not in dataset_df.columns:
+            raise ValueError("gs_aki_rule training requires a gs_aki_count column in the dedicated labeled dataset.")
+        return ["gs_aki_count"]
+    return tabular_feature_columns(dataset_df, target)
+
+
+def _tabular_model_dataset(
+    *,
+    artifacts: ArtifactManager,
+    dataset_regime: str,
+    model_key: str,
+    default_dataset_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, Path]:
+    if model_key == "gs_aki_rule":
+        if dataset_regime != "preop":
+            raise ValueError("gs_aki_rule is only supported for the preop dataset regime.")
+        dataset_path = artifacts.paths.artifact_path("datasets", "tabular", "tabular_gs_aki_labeled.csv")
+        return pd.read_csv(dataset_path), dataset_path
+    dataset_path = artifacts.paths.artifact_path("datasets", "tabular", f"tabular_{dataset_regime}_labeled.csv")
+    return default_dataset_df, dataset_path
 
 
 def _load_or_build_training_manifest(
@@ -309,18 +332,34 @@ def run_train_tabular(config: dict) -> dict[str, str]:
             target = config["models"]["target"]
             dataset_inputs.append(artifacts.relative(dataset_path))
             split_inputs.append(artifacts.relative(manifest_path))
-            feature_cols = tabular_feature_columns(dataset_df, target)
             split_runs = evaluation_runs(manifest)
-            serial_models = [model_key for model_key in selected_models if model_key != "svm" or not svm_policy.train_parallel_by_repeat]
+            dataset_models = [model_key for model_key in selected_models if model_key != "gs_aki_rule" or dataset_regime == "preop"]
+            serial_models = [model_key for model_key in dataset_models if model_key != "svm" or not svm_policy.train_parallel_by_repeat]
 
             if serial_models:
                 for run in split_runs:
-                    train_df = subset_generated_manifest(dataset_df, manifest, split_name="train", run_id=run.run_id)
-                    test_df = subset_generated_manifest(dataset_df, manifest, split_name="test", run_id=run.run_id)
-                    prepared_fold = prepare_tabular_fold(train_df=train_df, test_df=test_df, feature_cols=feature_cols, target=target)
                     for model_key in serial_models:
+                        model_dataset_df, model_dataset_path = _tabular_model_dataset(
+                            artifacts=artifacts,
+                            dataset_regime=dataset_regime,
+                            model_key=model_key,
+                            default_dataset_df=dataset_df,
+                        )
+                        if model_key == "gs_aki_rule":
+                            model_input = artifacts.relative(model_dataset_path)
+                            if model_input not in dataset_inputs:
+                                dataset_inputs.append(model_input)
+                        feature_cols = _tabular_training_feature_columns(model_dataset_df, target, model_key)
                         if model_key == "asa_rule" and "asa" not in feature_cols:
                             continue
+                        train_df = subset_generated_manifest(model_dataset_df, manifest, split_name="train", run_id=run.run_id)
+                        test_df = subset_generated_manifest(model_dataset_df, manifest, split_name="test", run_id=run.run_id)
+                        prepared_fold = prepare_tabular_fold(
+                            train_df=train_df,
+                            test_df=test_df,
+                            feature_cols=feature_cols,
+                            target=target,
+                        )
                         model_dir = artifacts.paths.artifact_path(
                             "models",
                             "tabular",
@@ -370,7 +409,7 @@ def run_train_tabular(config: dict) -> dict[str, str]:
                             task_key=f"{dataset_regime}::{model_key}::run_{run.run_id}",
                         )
 
-            if "svm" in selected_models and svm_policy.train_parallel_by_repeat:
+            if "svm" in dataset_models and svm_policy.train_parallel_by_repeat:
                 tasks = [
                     TabularGeneratedRunTask(
                         dataset_regime=dataset_regime,
@@ -402,9 +441,14 @@ def run_train_tabular(config: dict) -> dict[str, str]:
             artifacts.write_manifest(
                 f"train_tabular_{dataset_regime}",
                 ["manifests", f"train_tabular_{dataset_regime}.json"],
-                inputs=[artifacts.relative(dataset_path), artifacts.relative(manifest_path)],
+                inputs=[artifacts.relative(dataset_path), artifacts.relative(manifest_path)]
+                + (
+                    [artifacts.relative(artifacts.paths.artifact_path("datasets", "tabular", "tabular_gs_aki_labeled.csv"))]
+                    if "gs_aki_rule" in dataset_models
+                    else []
+                ),
                 outputs=[],
-                metadata={"n_models": len(selected_models)},
+                metadata={"n_models": len(dataset_models)},
                 stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
                 wall_time_seconds=perf_counter() - start,
             )
@@ -441,18 +485,46 @@ def run_train_tabular(config: dict) -> dict[str, str]:
             split_outputs.append(artifacts.relative(manifest_path))
         else:
             split_inputs.append(artifacts.relative(manifest_path))
-        feature_cols = tabular_feature_columns(dataset_df, target)
         split_keys = manifest[["repeat_id", "fold_id"]].drop_duplicates().sort_values(["repeat_id", "fold_id"])
-        serial_models = [model_key for model_key in selected_models if model_key != "svm" or not svm_policy.train_parallel_by_repeat]
+        dataset_models = [model_key for model_key in selected_models if model_key != "gs_aki_rule" or dataset_regime == "preop"]
+        serial_models = [model_key for model_key in dataset_models if model_key != "svm" or not svm_policy.train_parallel_by_repeat]
 
         if serial_models:
             for row in split_keys.itertuples(index=False):
-                train_df = subset_from_manifest(dataset_df, manifest, repeat_id=row.repeat_id, fold_id=row.fold_id, split_name="train")
-                test_df = subset_from_manifest(dataset_df, manifest, repeat_id=row.repeat_id, fold_id=row.fold_id, split_name="test")
-                prepared_fold = prepare_tabular_fold(train_df=train_df, test_df=test_df, feature_cols=feature_cols, target=target)
                 for model_key in serial_models:
+                    model_dataset_df, model_dataset_path = _tabular_model_dataset(
+                        artifacts=artifacts,
+                        dataset_regime=dataset_regime,
+                        model_key=model_key,
+                        default_dataset_df=dataset_df,
+                    )
+                    if model_key == "gs_aki_rule":
+                        model_input = artifacts.relative(model_dataset_path)
+                        if model_input not in dataset_inputs:
+                            dataset_inputs.append(model_input)
+                    feature_cols = _tabular_training_feature_columns(model_dataset_df, target, model_key)
                     if model_key == "asa_rule" and "asa" not in feature_cols:
                         continue
+                    train_df = subset_from_manifest(
+                        model_dataset_df,
+                        manifest,
+                        repeat_id=row.repeat_id,
+                        fold_id=row.fold_id,
+                        split_name="train",
+                    )
+                    test_df = subset_from_manifest(
+                        model_dataset_df,
+                        manifest,
+                        repeat_id=row.repeat_id,
+                        fold_id=row.fold_id,
+                        split_name="test",
+                    )
+                    prepared_fold = prepare_tabular_fold(
+                        train_df=train_df,
+                        test_df=test_df,
+                        feature_cols=feature_cols,
+                        target=target,
+                    )
                     model_dir = artifacts.paths.artifact_path("models", "tabular", dataset_regime, model_key, f"repeat_{row.repeat_id}", f"fold_{row.fold_id}")
                     params = _tabular_params(config, artifacts, dataset_regime, model_key)
                     bundle = fit_tabular_model(
@@ -494,7 +566,7 @@ def run_train_tabular(config: dict) -> dict[str, str]:
                         task_key=f"{dataset_regime}::{model_key}::repeat_{row.repeat_id}::fold_{row.fold_id}",
                     )
 
-        if "svm" in selected_models and svm_policy.train_parallel_by_repeat:
+        if "svm" in dataset_models and svm_policy.train_parallel_by_repeat:
             svm_params = _tabular_params(config, artifacts, dataset_regime, "svm")
             repeat_ids = sorted(manifest["repeat_id"].unique().tolist())
             tasks = [
@@ -526,9 +598,15 @@ def run_train_tabular(config: dict) -> dict[str, str]:
         artifacts.write_manifest(
             f"train_tabular_{dataset_regime}",
             ["manifests", f"train_tabular_{dataset_regime}.json"],
-            inputs=[artifacts.relative(dataset_path)] + ([] if manifest_generated else [artifacts.relative(manifest_path)]),
+            inputs=[artifacts.relative(dataset_path)]
+            + ([] if manifest_generated else [artifacts.relative(manifest_path)])
+            + (
+                [artifacts.relative(artifacts.paths.artifact_path("datasets", "tabular", "tabular_gs_aki_labeled.csv"))]
+                if "gs_aki_rule" in dataset_models
+                else []
+            ),
             outputs=([artifacts.relative(manifest_path)] if manifest_generated else []),
-            metadata={"n_models": len(selected_models)},
+            metadata={"n_models": len(dataset_models)},
             stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
             wall_time_seconds=perf_counter() - start,
         )

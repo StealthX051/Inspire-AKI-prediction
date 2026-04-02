@@ -40,10 +40,10 @@ These maintained grouped modes build manifests on `patient_id`, not isolated ope
 
 | Command | Main implementation | Primary outputs | Notes |
 | --- | --- | --- | --- |
-| `preprocess preop` | `pipelines/preprocess.py:run_preop` | `features/preop/preop_features.csv`, `cohort/preop_audit.csv` | Builds the study cohort and preop features |
+| `preprocess preop` | `pipelines/preprocess.py:run_preop` | `features/preop/preop_features.csv`, `cohort/preop_audit.csv`, optional `features/preop/gs_aki_features.csv`, optional `cohort/gs_aki_audit.csv` | Builds the study cohort and preop features; when `gs_aki_rule` is enabled for AKI, this stage also derives the adapted GS-AKI factor dataset and audit |
 | `preprocess intraop` | `pipelines/preprocess.py:run_intraop` | `features/intraop/feature_engineered.csv` | Produces tabular intraop summaries and fails if non-finite values remain |
 | `preprocess tabular` | `pipelines/preprocess.py:run_tabular` | `datasets/tabular/tabular_{combined,preop,intraop}.csv`, `tabular_combined_unnormalized.csv`, `normalization_stats.csv`, `fill_rates.csv` | Assembles the tabular modeling datasets |
-| `preprocess labels` | `pipelines/preprocess.py:run_labels` | `cohort/labels.csv`, `cohort/labels_audit.csv`, labeled tabular datasets | Derives the active outcome and joins labels back onto the datasets |
+| `preprocess labels` | `pipelines/preprocess.py:run_labels` | `cohort/labels.csv`, `cohort/labels_audit.csv`, labeled tabular datasets, optional `datasets/tabular/tabular_gs_aki_labeled.csv` | Derives the active outcome and joins labels back onto the datasets; GS-AKI stays in its own dedicated labeled dataset and is not merged into the standard ML matrices |
 | `preprocess timeseries` | `pipelines/preprocess.py:run_timeseries` | `features/timeseries/time_series_cleaned.csv`, staging partitions | Cleans and interpolates labeled intraop time series |
 | `preprocess sequence` | `pipelines/preprocess.py:run_sequence` | `datasets/sequence/lstm_trainable.pkl`, staging partitions | Builds the padded sequence-ready dataset |
 
@@ -60,7 +60,7 @@ For grouped evaluation modes, `evaluate generate` must run before tuning. `run a
 
 | Command | Main implementation | Primary outputs | Notes |
 | --- | --- | --- | --- |
-| `train tabular` | `pipelines/train.py:run_train_tabular` | model bundles, `predictions/raw/tabular.parquet`, `predictions/raw_predictions.parquet` | Trains the enabled tabular models across supported dataset regimes |
+| `train tabular` | `pipelines/train.py:run_train_tabular` | model bundles, `predictions/raw/tabular.parquet`, `predictions/raw_predictions.parquet` | Trains the enabled tabular models across supported dataset regimes; `gs_aki_rule` is handled as a no-fit deterministic preop baseline sourced from `tabular_gs_aki_labeled.csv` |
 | `train sequence` | `pipelines/train.py:run_train_sequence` | model bundles, `predictions/raw/sequence.parquet`, `predictions/raw_predictions.parquet` | Trains the enabled sequence models |
 
 The package treats `predictions/raw/*.parquet` as stage-owned partitions and rebuilds the combined `raw_predictions.parquet` view from them.
@@ -146,5 +146,6 @@ inspire-aki report manuscript --config configs/aki/default.yaml
 - Tables are emitted in `html`, `md`, and `csv`.
 - Figures are emitted in `png` and `svg`.
 - Rerunning report stages replaces the canonical filenames under `reports/`.
+- When `gs_aki_rule` is enabled, the report stage adds the maintained preop baseline ordering `ASA Rule`, `Adapted GS-AKI`, then the learned preop models, plus a held-out GS-AKI incidence table by raw count and class.
 - If model-selection policy changes, resume from `tune ...`, not `train ...`.
 - When documenting validation design, describe the maintained pipeline as patient-grouped evaluation plus `op_id`-grouped calibration, not the archived operation-level repeated-CV workflow.

@@ -197,7 +197,7 @@ def _scale_if_needed(
     feature_cols: list[str],
     model_key: str,
 ) -> tuple[pd.DataFrame, pd.DataFrame, StandardScaler | None]:
-    if model_key in {"autogluon", "asa_rule"}:
+    if model_key in {"autogluon", "asa_rule", "gs_aki_rule"}:
         return train_df[feature_cols].copy(), test_df[feature_cols].copy(), None
     scaler = StandardScaler()
     x_train = pd.DataFrame(
@@ -262,7 +262,7 @@ def fit_tabular_model(
     training_workers = runtime_plan.train_model_threads
     policy = tabular_execution_policy(model_key)
     effective_thread_cap = thread_cap if thread_cap is not None else policy.train_thread_cap
-    if prepared_fold is None or model_key in {"autogluon", "asa_rule"}:
+    if prepared_fold is None or model_key in {"autogluon", "asa_rule", "gs_aki_rule"}:
         x_train, _, scaler = _scale_if_needed(train_df, train_df, feature_cols, model_key)
         y_train = train_df[target].values
         sample_weights = balance_sample_weights(y_train)
@@ -390,6 +390,8 @@ def fit_tabular_model(
         model.fit(**fit_kwargs)
     elif model_key == "asa_rule":
         model = None
+    elif model_key == "gs_aki_rule":
+        model = None
     else:
         raise ValueError(f"Unsupported tabular model key: {model_key}")
 
@@ -406,7 +408,7 @@ def predict_tabular_bundle(
     prepared_fold: PreparedTabularFold | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     feature_cols = bundle.feature_names
-    if bundle.scaler is None or bundle.model_key in {"autogluon", "asa_rule"}:
+    if bundle.scaler is None or bundle.model_key in {"autogluon", "asa_rule", "gs_aki_rule"}:
         x_test = test_df[feature_cols].copy()
     elif prepared_fold is not None and prepared_fold.feature_cols == feature_cols and prepared_fold.target == target:
         x_test = prepared_fold.x_test_scaled
@@ -451,6 +453,11 @@ def predict_tabular_bundle(
         asa_values = test_df[feature_cols].iloc[:, asa_idx].to_numpy()
         y_prob = (asa_values / 6.0).astype(float)
         y_pred = (asa_values >= 4).astype(int)
+    elif bundle.model_key == "gs_aki_rule":
+        count_idx = feature_cols.index("gs_aki_count")
+        gs_aki_counts = pd.to_numeric(test_df[feature_cols].iloc[:, count_idx], errors="coerce").fillna(0).to_numpy()
+        y_prob = np.clip(gs_aki_counts / 9.0, 0.0, 1.0).astype(float)
+        y_pred = (y_prob >= 0.5).astype(int)
     else:
         raise ValueError(f"Unsupported tabular model key: {bundle.model_key}")
     return y_pred, y_prob
