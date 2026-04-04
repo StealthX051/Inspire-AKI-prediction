@@ -34,6 +34,8 @@ def _build_operations(n_ops: int) -> pd.DataFrame:
                 "antype": "General",
                 "department": "GS",
                 "icd10_pcs": icd10_pcs,
+                "cpbon_time": None,
+                "cpboff_time": None,
             }
         )
     return pd.DataFrame(rows)

@@ -8,6 +8,8 @@ Start here:
 
 - [manuscript_alignment.md](manuscript_alignment.md)
 - [reproducibility.md](reproducibility.md)
+- [cardiothoracic_procedure_audit.md](cardiothoracic_procedure_audit.md)
+  - default operation-level noncardiac adjudication logic, cardiothoracic audit companion outputs, and manuscript-grade reference links
 - [gs_aki_adaptation.md](gs_aki_adaptation.md)
 - [legacy_cli_differences.md](legacy_cli_differences.md)
 

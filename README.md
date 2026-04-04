@@ -78,6 +78,22 @@ inspire-aki report tables --config configs/aki/default.yaml
 inspire-aki report manuscript --config configs/aki/default.yaml
 ```
 
+Run the cardiothoracic procedure audit explicitly when needed:
+
+```bash
+inspire-aki report procedure-audit --config configs/aki/default.yaml
+```
+
+The shipped default AKI config now points to the strict operation-level adjudicated noncardiac cohort used for the paper. The explicit procedure-audit report remains available as the transparency companion to that default filtering rule, but it is still not part of `report manuscript` or `run all`.
+
+If you want to rerun the same strict cohort into a separate artifact root for isolated review work, the compatibility alias remains available:
+
+```bash
+inspire-aki run all --config configs/aki/strict_noncardiac_review.yaml
+```
+
+The currently mounted `artifacts/default` tree may predate this default-cohort promotion. Regenerate it before citing updated cohort counts, event counts, or procedure-audit totals from the new default path.
+
 ## Data And Scope
 
 - This repo is not turnkey. End-to-end execution still requires private INSPIRE data.

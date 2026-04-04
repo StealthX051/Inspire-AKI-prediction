@@ -13,31 +13,68 @@ from inspire_aki.registry import MANUSCRIPT_SECTIONS, SUPPORTED_SHAP_MODELS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = REPO_ROOT / "configs" / "aki" / "default.yaml"
-DEFAULT_COHORT_KEY = "default_noncardiac_adult"
+LEGACY_NONCARDIAC_COHORT_KEY = "default_noncardiac_adult"
+STRICT_NONCARDIAC_AUDIT_COHORT_KEY = "strict_noncardiac_adult_procedure_audit"
+DEFAULT_COHORT_KEY = STRICT_NONCARDIAC_AUDIT_COHORT_KEY
 DEFAULT_OUTCOME_KEY = "aki"
 KNOWN_RAW_SOURCES = {"operations", "diagnosis", "labs", "ward_vitals"}
 KNOWN_OUTCOME_KINDS = {"aki", "diagnosis_window", "time_comparison", "composite"}
 
 
+def _default_procedure_audit_resolution_config(*, enabled: bool) -> dict[str, Any]:
+    return {
+        "enabled": enabled,
+        "exclude_audit_classes": ["cardiac_exclude"],
+        "exclude_manual_review_buckets": [
+            "cpb_positive_aortic_or_vascular",
+            "respiratory_plus_cpb",
+            "other_cpb_discordant_nonvascular_nonrespiratory",
+            "other_prefix_level_review",
+        ],
+        "retain_unresolved_cpb_negative_with_benign_neighbor": True,
+        "benign_neighbor_keywords": [
+            "scalp skin",
+            "sternum",
+            "chest wall",
+            "external ear",
+            "conjunctiva",
+            "breast",
+        ],
+    }
+
+
+def _legacy_noncardiac_adult_profile() -> dict[str, Any]:
+    return {
+        "preop_window_days": 90,
+        "postop_windows_days": [2, 7],
+        "max_preop_creatinine": 4.5,
+        "min_age": 18,
+        "max_asa_exclusive": 6,
+        "exclude_antype": ["Regional"],
+        "department_include": [],
+        "department_exclude": ["PED"],
+        "include_icd10_prefixes": [],
+        "exclude_icd10_prefixes": ["10", "0TY", "B50", "B51"],
+        "require_height_weight": True,
+        "require_positive_op_len": True,
+        "cardiovascular_prefix": "I",
+        "creatinine_item_name": "creatinine",
+        "dialysis_item_name": "crrt",
+        "procedure_audit_resolution": _default_procedure_audit_resolution_config(enabled=False),
+    }
+
+
+def _strict_noncardiac_adult_profile() -> dict[str, Any]:
+    strict_profile = copy.deepcopy(_legacy_noncardiac_adult_profile())
+    strict_profile["exclude_icd10_prefixes"] = [*strict_profile["exclude_icd10_prefixes"], "02"]
+    strict_profile["procedure_audit_resolution"] = _default_procedure_audit_resolution_config(enabled=True)
+    return strict_profile
+
+
 def _default_cohort_profiles() -> dict[str, Any]:
     return {
-        DEFAULT_COHORT_KEY: {
-            "preop_window_days": 90,
-            "postop_windows_days": [2, 7],
-            "max_preop_creatinine": 4.5,
-            "min_age": 18,
-            "max_asa_exclusive": 6,
-            "exclude_antype": ["Regional"],
-            "department_include": [],
-            "department_exclude": ["PED"],
-            "include_icd10_prefixes": [],
-            "exclude_icd10_prefixes": ["10", "0TY", "B50", "B51"],
-            "require_height_weight": True,
-            "require_positive_op_len": True,
-            "cardiovascular_prefix": "I",
-            "creatinine_item_name": "creatinine",
-            "dialysis_item_name": "crrt",
-        }
+        LEGACY_NONCARDIAC_COHORT_KEY: _legacy_noncardiac_adult_profile(),
+        STRICT_NONCARDIAC_AUDIT_COHORT_KEY: _strict_noncardiac_adult_profile(),
     }
 
 
@@ -139,6 +176,41 @@ def _default_gs_aki_config() -> dict[str, Any]:
     }
 
 
+def _default_procedure_audit_config() -> dict[str, Any]:
+    return {
+        "cms_order_zip_path": "external/cms_icd10pcs/april-1-2026-icd10pcs-order.zip",
+        "ct_department_code": "CTS",
+        "definite_cardiac_prefixes": ["02"],
+        "definite_thoracic_prefixes": ["0B"],
+        "manual_review_if_cpb_discordant": True,
+    }
+
+
+def _normalize_procedure_prefix_list(values: Any) -> list[str]:
+    if not isinstance(values, list | tuple):
+        return []
+    normalized: list[str] = []
+    for value in values:
+        prefix = str(value).strip().upper()
+        if not prefix:
+            continue
+        if prefix.isdigit() and len(prefix) == 1:
+            prefix = prefix.zfill(2)
+        normalized.append(prefix)
+    return normalized
+
+
+def _normalize_string_list(values: Any) -> list[str]:
+    if not isinstance(values, list | tuple):
+        return []
+    normalized: list[str] = []
+    for value in values:
+        item = str(value).strip()
+        if item:
+            normalized.append(item)
+    return normalized
+
+
 def _infer_outcome_key_from_target(target: Any, catalog: dict[str, Any]) -> str | None:
     if not target:
         return None
@@ -209,6 +281,42 @@ def _normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     if "target" not in models_cfg or models_cfg.get("target") in {None, ""}:
         models_cfg["target"] = normalized["outcome"].get("target_column")
 
+    cohort_cfg = normalized["cohort"]
+    procedure_audit_resolution = cohort_cfg.get("procedure_audit_resolution", {})
+    if not isinstance(procedure_audit_resolution, dict):
+        procedure_audit_resolution = {}
+    enabled = bool(procedure_audit_resolution.get("enabled", False))
+    cohort_cfg["procedure_audit_resolution"] = _deep_merge(
+        _default_procedure_audit_resolution_config(enabled=enabled),
+        procedure_audit_resolution,
+    )
+    cohort_cfg["procedure_audit_resolution"]["enabled"] = bool(
+        cohort_cfg["procedure_audit_resolution"].get("enabled", enabled)
+    )
+    cohort_cfg["procedure_audit_resolution"]["exclude_audit_classes"] = _normalize_string_list(
+        cohort_cfg["procedure_audit_resolution"].get("exclude_audit_classes", ["cardiac_exclude"])
+    )
+    cohort_cfg["procedure_audit_resolution"]["exclude_manual_review_buckets"] = _normalize_string_list(
+        cohort_cfg["procedure_audit_resolution"].get(
+            "exclude_manual_review_buckets",
+            [
+                "cpb_positive_aortic_or_vascular",
+                "respiratory_plus_cpb",
+                "other_cpb_discordant_nonvascular_nonrespiratory",
+                "other_prefix_level_review",
+            ],
+        )
+    )
+    cohort_cfg["procedure_audit_resolution"]["retain_unresolved_cpb_negative_with_benign_neighbor"] = bool(
+        cohort_cfg["procedure_audit_resolution"].get("retain_unresolved_cpb_negative_with_benign_neighbor", True)
+    )
+    cohort_cfg["procedure_audit_resolution"]["benign_neighbor_keywords"] = _normalize_string_list(
+        cohort_cfg["procedure_audit_resolution"].get(
+            "benign_neighbor_keywords",
+            ["scalp skin", "sternum", "chest wall", "external ear", "conjunctiva", "breast"],
+        )
+    )
+
     reports_cfg = normalized.setdefault("reports", {})
     if "batch_shap_jobs" in reports_cfg:
         reports_cfg["shap_jobs"] = copy.deepcopy(reports_cfg.pop("batch_shap_jobs"))
@@ -226,6 +334,22 @@ def _normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     reports_cfg.setdefault("generate_supplemental_outputs", True)
     reports_cfg.setdefault("shap_jobs", [])
     reports_cfg.setdefault("manuscript_sections", list(MANUSCRIPT_SECTIONS))
+    existing_procedure_audit = reports_cfg.get("procedure_audit", {})
+    if not isinstance(existing_procedure_audit, dict):
+        existing_procedure_audit = {}
+    reports_cfg["procedure_audit"] = _deep_merge(_default_procedure_audit_config(), existing_procedure_audit)
+    reports_cfg["procedure_audit"]["ct_department_code"] = str(
+        reports_cfg["procedure_audit"].get("ct_department_code", "CTS")
+    ).strip().upper()
+    reports_cfg["procedure_audit"]["definite_cardiac_prefixes"] = _normalize_procedure_prefix_list(
+        reports_cfg["procedure_audit"].get("definite_cardiac_prefixes", ["02"])
+    )
+    reports_cfg["procedure_audit"]["definite_thoracic_prefixes"] = _normalize_procedure_prefix_list(
+        reports_cfg["procedure_audit"].get("definite_thoracic_prefixes", ["0B"])
+    )
+    reports_cfg["procedure_audit"]["manual_review_if_cpb_discordant"] = bool(
+        reports_cfg["procedure_audit"].get("manual_review_if_cpb_discordant", True)
+    )
 
     compat_cfg = normalized.get("compat")
     if isinstance(compat_cfg, dict):

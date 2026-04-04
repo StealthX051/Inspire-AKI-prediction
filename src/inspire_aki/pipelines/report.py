@@ -7,6 +7,7 @@ from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.reporting.consort import generate_consort_outputs
 from inspire_aki.reporting.curves import generate_curve_outputs
 from inspire_aki.reporting.manuscript import generate_manuscript_outputs
+from inspire_aki.reporting.procedure_audit import generate_procedure_audit_outputs
 from inspire_aki.reporting.shap import generate_shap_outputs
 from inspire_aki.reporting.tables import generate_table_outputs
 from inspire_aki.runtime import build_stage_runtime_plan
@@ -84,6 +85,22 @@ def run_manuscript(config: dict) -> dict[str, list[str]]:
     artifacts.write_manifest(
         stage_name,
         ["manifests", "report_manuscript.json"],
+        outputs=[artifacts.relative(path) for path in map(Path, outputs)],
+        metadata={"n_outputs": len(outputs)},
+        stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),
+        wall_time_seconds=perf_counter() - start,
+    )
+    return {"outputs": outputs}
+
+
+def run_procedure_audit(config: dict) -> dict[str, list[str]]:
+    stage_name = "report_procedure_audit"
+    start = perf_counter()
+    artifacts = ArtifactManager(config)
+    outputs = [str(path) for path in generate_procedure_audit_outputs(artifacts, config)]
+    artifacts.write_manifest(
+        stage_name,
+        ["manifests", "report_procedure_audit.json"],
         outputs=[artifacts.relative(path) for path in map(Path, outputs)],
         metadata={"n_outputs": len(outputs)},
         stage_runtime_plan=build_stage_runtime_plan(config, stage_name).as_dict(),

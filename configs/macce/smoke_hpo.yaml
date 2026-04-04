@@ -2,7 +2,7 @@ paths:
   artifacts_dir: /media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_smoke_hpo
 
 study:
-  cohort_key: default_noncardiac_adult
+  cohort_key: strict_noncardiac_adult_procedure_audit
   outcome_key: macce
 
 evaluation_mode: grouped_holdout

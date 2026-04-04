@@ -9,6 +9,7 @@ import pandas as pd
 from inspire_aki.cohort.audit import record_count
 from inspire_aki.cohort.filters import apply_preop_filters
 from inspire_aki.io.csv import read_csv_optimized
+from inspire_aki.reporting.procedure_audit import annotate_operations_with_procedure_audit, normalize_op_ids
 from inspire_aki.runtime import build_stage_runtime_plan, thread_limited_context
 
 
@@ -63,6 +64,8 @@ def load_preop_sources(raw_inspire_dir: Path, config: dict, csv_read_threads: in
                 "department",
                 "antype",
                 "icd10_pcs",
+                "cpbon_time",
+                "cpboff_time",
             ],
         },
         "diagnosis": {
@@ -164,6 +167,27 @@ def build_preop_features(config: dict, raw_inspire_dir: Path) -> tuple[pd.DataFr
         ops_to_exclude = df_ops.loc[exclude_mask, "op_id"]
         df_preop = df_preop[~df_preop["op_id"].isin(ops_to_exclude)]
     record_count(audit, "after_prefix_exclusions", df_preop)
+
+    procedure_audit_resolution = cohort_cfg.get("procedure_audit_resolution", {})
+    if isinstance(procedure_audit_resolution, dict) and procedure_audit_resolution.get("enabled", False):
+        candidate_ops = df_ops.loc[
+            df_ops["op_id"].isin(df_preop["op_id"]),
+            ["op_id", "subject_id", "department", "icd10_pcs", "cpbon_time", "cpboff_time"],
+        ].copy()
+        annotated_ops, _ = annotate_operations_with_procedure_audit(candidate_ops, config)
+        ops_to_exclude = annotated_ops.loc[annotated_ops["final_noncardiac_action"] == "exclude", "op_id_norm"].astype("string")
+        excluded_count = int(ops_to_exclude.nunique())
+        preop_op_ids_norm = normalize_op_ids(df_preop["op_id"])
+        df_preop = df_preop.loc[~preop_op_ids_norm.isin(ops_to_exclude)].copy()
+        record_count(
+            audit,
+            "after_procedure_audit_resolution",
+            df_preop,
+            note=(
+                "Excluded operation-level procedure-audit cases from the final default noncardiac cohort."
+                f" Excluded ops: {excluded_count}."
+            ),
+        )
 
     tolerance = cohort_cfg["preop_window_days"] * 24 * 60
     preop_base = df_preop[["op_id", "subject_id", "opstart_time"]]

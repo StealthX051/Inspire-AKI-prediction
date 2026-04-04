@@ -75,6 +75,7 @@ def test_run_all_grouped_smoke(synthetic_config: Path) -> None:
         (["report", "consort"], "run_consort"),
         (["report", "tables"], "run_tables"),
         (["report", "curves"], "run_curves"),
+        (["report", "procedure-audit"], "run_procedure_audit"),
         (["report", "manuscript"], "run_manuscript"),
     ],
 )

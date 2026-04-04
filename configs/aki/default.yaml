@@ -5,7 +5,7 @@ paths:
   compat_base_dir: /media/volume/ncs_inspire_data/ncs_aki/data/base
   compat_results_dir: /media/volume/ncs_inspire_data/ncs_aki/data/AKI/results
 study:
-  cohort_key: default_noncardiac_adult
+  cohort_key: strict_noncardiac_adult_procedure_audit
   outcome_key: aki
 
 evaluation_mode: grouped_nested_cv
@@ -44,6 +44,54 @@ cohorts:
       cardiovascular_prefix: "I"
       creatinine_item_name: "creatinine"
       dialysis_item_name: "crrt"
+      procedure_audit_resolution:
+        enabled: false
+        exclude_audit_classes: ["cardiac_exclude"]
+        exclude_manual_review_buckets:
+          - cpb_positive_aortic_or_vascular
+          - respiratory_plus_cpb
+          - other_cpb_discordant_nonvascular_nonrespiratory
+          - other_prefix_level_review
+        retain_unresolved_cpb_negative_with_benign_neighbor: true
+        benign_neighbor_keywords:
+          - scalp skin
+          - sternum
+          - chest wall
+          - external ear
+          - conjunctiva
+          - breast
+    strict_noncardiac_adult_procedure_audit:
+      preop_window_days: 90
+      postop_windows_days: [2, 7]
+      max_preop_creatinine: 4.5
+      min_age: 18
+      max_asa_exclusive: 6
+      exclude_antype: ["Regional"]
+      department_include: []
+      department_exclude: ["PED"]
+      include_icd10_prefixes: []
+      exclude_icd10_prefixes: ["10", "0TY", "B50", "B51", "02"]
+      require_height_weight: true
+      require_positive_op_len: true
+      cardiovascular_prefix: "I"
+      creatinine_item_name: "creatinine"
+      dialysis_item_name: "crrt"
+      procedure_audit_resolution:
+        enabled: true
+        exclude_audit_classes: ["cardiac_exclude"]
+        exclude_manual_review_buckets:
+          - cpb_positive_aortic_or_vascular
+          - respiratory_plus_cpb
+          - other_cpb_discordant_nonvascular_nonrespiratory
+          - other_prefix_level_review
+        retain_unresolved_cpb_negative_with_benign_neighbor: true
+        benign_neighbor_keywords:
+          - scalp skin
+          - sternum
+          - chest wall
+          - external ear
+          - conjunctiva
+          - breast
 outcomes:
   catalog:
     aki:
@@ -365,6 +413,12 @@ reports:
   style_variant: legacy_manuscript
   highlight_best_values: true
   generate_supplemental_outputs: true
+  procedure_audit:
+    cms_order_zip_path: external/cms_icd10pcs/april-1-2026-icd10pcs-order.zip
+    ct_department_code: CTS
+    definite_cardiac_prefixes: ["02"]
+    definite_thoracic_prefixes: [0B]
+    manual_review_if_cpb_discordant: true
   max_display_features: 20
   manuscript_sections:
     - consort

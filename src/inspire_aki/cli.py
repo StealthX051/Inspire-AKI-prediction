@@ -16,7 +16,7 @@ from inspire_aki.orchestration import OverlapInterruptedError, run_overlap_stage
 from inspire_aki.pipelines.evaluate_generate import run_evaluate_generate
 from inspire_aki.pipelines.evaluate import run_calibration, run_dca, run_delong, run_metrics, run_reclassification
 from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop, run_sequence, run_tabular, run_timeseries
-from inspire_aki.pipelines.report import run_consort, run_curves, run_manuscript, run_shap, run_tables
+from inspire_aki.pipelines.report import run_consort, run_curves, run_manuscript, run_procedure_audit, run_shap, run_tables
 from inspire_aki.pipelines.train import run_train_sequence, run_train_tabular
 from inspire_aki.pipelines.tune import run_tune_sequence, run_tune_tabular
 from inspire_aki.runtime import runtime_summary
@@ -267,6 +267,11 @@ def report_curves(config: str | None = typer.Option(None, "--config")) -> None:
 @report_app.command("manuscript")
 def report_manuscript(config: str | None = typer.Option(None, "--config")) -> None:
     _run_command(stage_name="report_manuscript", config_path=config, runner=run_manuscript)
+
+
+@report_app.command("procedure-audit")
+def report_procedure_audit(config: str | None = typer.Option(None, "--config")) -> None:
+    _run_command(stage_name="report_procedure_audit", config_path=config, runner=run_procedure_audit)
 
 
 @compat_app.command("export-legacy")

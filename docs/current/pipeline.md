@@ -89,6 +89,7 @@ The package treats `predictions/raw/*.parquet` as stage-owned partitions and reb
 | `report consort` | `pipelines/report.py:run_consort` | `reports/tables/consort_audit.*`, `reports/figures/consort.{png,svg}`, DOT source | Standalone consort generation |
 | `report tables` | `pipelines/report.py:run_tables` | manuscript-facing tables in `html`, `md`, and `csv` | Performance, cohort, CI, DeLong, and reclassification tables |
 | `report curves` | `pipelines/report.py:run_curves` | ROC, PR, calibration, and DCA figures in `png` and `svg` | Fold/run aggregation happens here |
+| `report procedure-audit` | `pipelines/report.py:run_procedure_audit` | ICD-10-PCS audit tables plus `manifests/report_procedure_audit.json` | Explicit cardiothoracic/noncardiac procedure audit on final `cohort/labels.csv` `op_id`s joined back to raw `operations.csv`; transparency companion to the default strict noncardiac cohort, but still not part of `report manuscript` or `run all` |
 | `report manuscript` | `pipelines/report.py:run_manuscript` | combined outputs under `reports/` | Dispatches the configured manuscript sections, including SHAP when enabled |
 
 ### Compat And Runtime
@@ -137,6 +138,7 @@ For the shipped grouped configs, do not skip `evaluate generate` when resuming m
 source .venv/bin/activate
 inspire-aki report consort --config configs/aki/default.yaml
 inspire-aki report tables --config configs/aki/default.yaml
+inspire-aki report procedure-audit --config configs/aki/default.yaml
 inspire-aki report manuscript --config configs/aki/default.yaml
 ```
 
@@ -146,6 +148,13 @@ inspire-aki report manuscript --config configs/aki/default.yaml
 - Tables are emitted in `html`, `md`, and `csv`.
 - Figures are emitted in `png` and `svg`.
 - Rerunning report stages replaces the canonical filenames under `reports/`.
+- `report procedure-audit` is an explicit audit report stage. It audits final analytic-cohort `op_id` rows against raw `operations.csv`, verifies the observed `icd10_pcs` contract, uses the CMS order zip configured under `reports.procedure_audit`, and writes its audit tables under `reports/tables/`.
+- The current audit logic now auto-retains clearly noncardiac CTS-labeled service families and thoracic/mediastinal families, retains CPB-negative vascular families as explicit noncardiac-but-described cases, and narrows the residual clinician-review queue to unresolved prefixes, respiratory+CPB discordance, CPB-positive vascular families, and other CPB-discordant residuals.
+- `procedure_audit_clinician_review_summary.*`, `procedure_audit_manual_review.*`, and `procedure_audit_ct_manuscript_summary.*` are the main direct-review and manuscript-support surfaces for the residual cardiothoracic audit question.
+- The audit uses `icd10_pcs` as the primary procedure classifier and treats `department` only as the reviewer-facing cardiothoracic subset filter. The current code assumes the mounted data contract uses 5-character `icd10_pcs`, with `cpbon_time` and `cpboff_time` as secondary CPB sanity fields.
+- The same operation-level annotation logic is shared between the audit report and default cohort preprocessing. The code validates that every audited operation receives both an `audit_class` and a final `retain` or `exclude` action.
+- `configs/aki/default.yaml` now uses the strict operation-level adjudicated noncardiac cohort as the canonical paper cohort. `configs/aki/strict_noncardiac_review.yaml` remains only as a compatibility alias when the same cohort needs to be rerun into a separate artifact root.
+- Until the next full rerun, any existing on-disk `artifacts/default` outputs should be treated as stale relative to this default-cohort promotion; do not cite new cohort counts from those old outputs.
 - When `gs_aki_rule` is enabled, the report stage adds the maintained preop baseline ordering `ASA Rule`, `Adapted GS-AKI`, then the learned preop models, plus a held-out GS-AKI incidence table by raw count and class.
 - In the main performance table, `ASA Rule` remains a prespecified binary rule, while `Adapted GS-AKI` is shown primarily with AUROC/AUPRC and blanks its threshold-dependent columns.
 - If model-selection policy changes, resume from `tune ...`, not `train ...`.

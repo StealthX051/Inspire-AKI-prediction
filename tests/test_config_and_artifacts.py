@@ -11,9 +11,11 @@ def test_load_config_merges_override_and_preserves_defaults(synthetic_config) ->
     config = load_config(synthetic_config)
     assert config["paths"]["artifacts_dir"].endswith("artifacts")
     assert config["features"]["preop_lab_items"] == ["creatinine", "sodium"]
-    assert config["study"]["cohort_key"] == "default_noncardiac_adult"
+    assert config["study"]["cohort_key"] == "strict_noncardiac_adult_procedure_audit"
     assert config["study"]["outcome_key"] == "aki"
     assert config["cohort"]["min_age"] == 18
+    assert "02" in config["cohort"]["exclude_icd10_prefixes"]
+    assert config["cohort"]["procedure_audit_resolution"]["enabled"] is True
     assert config["outcome"]["target_column"] == "aki_boolean"
     assert config["models"]["target"] == "aki_boolean"
 
@@ -31,6 +33,8 @@ def test_load_config_normalizes_legacy_shap_key_and_removes_dead_compat(syntheti
     assert config["evaluation_mode"] == "grouped_nested_cv"
     assert "batch_shap_jobs" not in config["reports"]
     assert config["reports"]["shap_jobs"] == []
+    assert config["reports"]["procedure_audit"]["ct_department_code"] == "CTS"
+    assert config["reports"]["procedure_audit"]["definite_cardiac_prefixes"] == ["02"]
     assert config["reports"]["manuscript_sections"] == ["consort", "tables", "curves", "statistics", "reclassification", "shap"]
     assert config["reports"]["table_formats"] == ["html", "md", "csv"]
     assert config["reports"]["figure_formats"] == ["png", "svg"]
@@ -41,8 +45,14 @@ def test_load_config_normalizes_legacy_shap_key_and_removes_dead_compat(syntheti
 def test_default_config_validates() -> None:
     config = load_config()
     assert config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/default"
+    assert config["study"]["cohort_key"] == "strict_noncardiac_adult_procedure_audit"
+    assert "02" in config["cohort"]["exclude_icd10_prefixes"]
+    assert config["cohort"]["procedure_audit_resolution"]["enabled"] is True
+    assert "default_noncardiac_adult" in config["cohorts"]["profiles"]
+    assert config["cohorts"]["profiles"]["default_noncardiac_adult"]["procedure_audit_resolution"]["enabled"] is False
     assert config["evaluation_mode"] == "grouped_nested_cv"
     assert config["reports"]["shap_jobs"]
+    assert config["reports"]["procedure_audit"]["cms_order_zip_path"] == "external/cms_icd10pcs/april-1-2026-icd10pcs-order.zip"
     assert config["reports"]["manuscript_sections"] == ["consort", "tables", "curves", "statistics", "reclassification", "shap"]
     assert config["reports"]["figure_png_dpi"] == 600
     assert config["runtime"]["profile"] == "throughput"
@@ -84,11 +94,32 @@ def test_smoke_hpo_config_validates_and_limits_trials() -> None:
     assert config["models"]["sequence_hpo_enabled"] == ["lstm_only", "hybrid"]
 
 
+def test_strict_noncardiac_review_config_remains_a_strict_alias_with_separate_artifact_root() -> None:
+    default_config = load_config("configs/aki/default.yaml")
+    strict_config = load_config("configs/aki/strict_noncardiac_review.yaml")
+
+    assert default_config["study"]["cohort_key"] == "strict_noncardiac_adult_procedure_audit"
+    assert "02" in default_config["cohort"]["exclude_icd10_prefixes"]
+    assert default_config["cohort"]["procedure_audit_resolution"]["enabled"] is True
+
+    assert strict_config["study"]["cohort_key"] == "strict_noncardiac_adult_procedure_audit"
+    assert strict_config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/strict_noncardiac_review"
+    assert "02" in strict_config["cohort"]["exclude_icd10_prefixes"]
+    assert strict_config["reports"]["procedure_audit"]["definite_cardiac_prefixes"] == ["02"]
+    assert strict_config["cohort"]["procedure_audit_resolution"]["enabled"] is True
+    assert strict_config["cohort"]["procedure_audit_resolution"]["exclude_manual_review_buckets"] == [
+        "cpb_positive_aortic_or_vascular",
+        "respiratory_plus_cpb",
+        "other_cpb_discordant_nonvascular_nonrespiratory",
+        "other_prefix_level_review",
+    ]
+
+
 def test_macce_default_config_validates_and_switches_to_grouped_holdout() -> None:
     config = load_config("configs/macce/default.yaml")
 
     assert config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_default"
-    assert config["study"]["cohort_key"] == "default_noncardiac_adult"
+    assert config["study"]["cohort_key"] == "strict_noncardiac_adult_procedure_audit"
     assert config["study"]["outcome_key"] == "macce"
     assert config["evaluation_mode"] == "grouped_holdout"
     assert config["splits"]["use_bootstrapping"] is False
@@ -100,7 +131,7 @@ def test_macce_five_fold_config_validates_and_switches_to_grouped_nested_cv() ->
     config = load_config("configs/macce/five_fold.yaml")
 
     assert config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_5fold_cv"
-    assert config["study"]["cohort_key"] == "default_noncardiac_adult"
+    assert config["study"]["cohort_key"] == "strict_noncardiac_adult_procedure_audit"
     assert config["study"]["outcome_key"] == "macce"
     assert config["evaluation_mode"] == "grouped_nested_cv"
     assert config["splits"]["n_cv_folds"] == 5
@@ -112,6 +143,7 @@ def test_macce_smoke_configs_validate_and_limit_trials() -> None:
     smoke_hpo = load_config("configs/macce/smoke_hpo.yaml")
 
     assert smoke["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_smoke"
+    assert smoke["study"]["cohort_key"] == "strict_noncardiac_adult_procedure_audit"
     assert smoke["study"]["outcome_key"] == "macce"
     assert smoke["evaluation_mode"] == "grouped_holdout"
     assert smoke["models"]["target"] == "macce"
@@ -121,12 +153,24 @@ def test_macce_smoke_configs_validate_and_limit_trials() -> None:
     ]
 
     assert smoke_hpo["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_smoke_hpo"
+    assert smoke_hpo["study"]["cohort_key"] == "strict_noncardiac_adult_procedure_audit"
     assert smoke_hpo["study"]["outcome_key"] == "macce"
     assert smoke_hpo["evaluation_mode"] == "grouped_holdout"
     assert smoke_hpo["models"]["target"] == "macce"
     assert smoke_hpo["models"]["hpo"]["n_trials"] == 1
     assert smoke_hpo["models"]["tabular_hpo_enabled"] == ["log_reg", "xgb", "rf", "svm", "mlp", "knn"]
     assert smoke_hpo["models"]["sequence_hpo_enabled"] == ["lstm_only", "hybrid"]
+
+
+def test_legacy_noncardiac_profile_remains_selectable_explicitly() -> None:
+    config = load_config()
+    config["study"]["cohort_key"] = "default_noncardiac_adult"
+    config["cohort"] = config["cohorts"]["profiles"]["default_noncardiac_adult"].copy()
+
+    validate_config(config)
+
+    assert config["cohort"]["procedure_audit_resolution"]["enabled"] is False
+    assert "02" not in config["cohort"]["exclude_icd10_prefixes"]
 
 
 def test_validate_config_rejects_unsupported_shap_jobs(loaded_synthetic_config) -> None:

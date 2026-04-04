@@ -447,7 +447,7 @@ def _cohort_sections(merged_df: pd.DataFrame, config: dict) -> list[TableSection
         dept_rows = _department_rows(cohort_df, total_patients)
         sections.append(
             TableSection(
-                title="Department Surgery type, n (%)",
+                title="Department, n (%)",
                 display_df=pd.DataFrame(dept_rows),
                 csv_df=pd.DataFrame(dept_rows),
             )
@@ -458,7 +458,7 @@ def _cohort_sections(merged_df: pd.DataFrame, config: dict) -> list[TableSection
             {"characteristic": _DEPARTMENT_LABELS.get(label.upper(), label), "finding": _format_count_pct(float(count), total_patients)}
             for label, count in dept_counts.items()
         ]
-        sections.append(TableSection(title="Department Surgery type, n (%)", display_df=pd.DataFrame(dept_rows), csv_df=pd.DataFrame(dept_rows)))
+        sections.append(TableSection(title="Department, n (%)", display_df=pd.DataFrame(dept_rows), csv_df=pd.DataFrame(dept_rows)))
     return sections
 
 

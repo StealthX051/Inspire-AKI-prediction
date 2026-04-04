@@ -300,6 +300,7 @@ def test_cohort_characteristics_use_legacy_sex_encoding_and_deduped_departments(
     generate_table_outputs(artifacts)
 
     cohort_table = pd.read_csv(artifacts.paths.artifact_path("reports", "tables", "cohort_characteristics.csv"))
+    cohort_markdown = artifacts.paths.artifact_path("reports", "tables", "cohort_characteristics.md").read_text(encoding="utf-8")
     total_patients_row = cohort_table.loc[cohort_table["characteristic"] == "Total patients, n"].iloc[0]
     total_operations_row = cohort_table.loc[cohort_table["characteristic"] == "Total operations, n"].iloc[0]
     female_row = cohort_table.loc[cohort_table["characteristic"] == "Female sex, n (%)"].iloc[0]
@@ -312,6 +313,8 @@ def test_cohort_characteristics_use_legacy_sex_encoding_and_deduped_departments(
     assert not cohort_table["characteristic"].astype(str).str.contains("preop", case=False).any()
     assert "GS" not in cohort_table["characteristic"].tolist()
     assert "UR" not in cohort_table["characteristic"].tolist()
+    assert "Department, n (%)" in cohort_markdown
+    assert "Department Surgery type, n (%)" not in cohort_markdown
 
 
 def test_performance_tables_filter_asa_rule_and_render_column_gradients(loaded_synthetic_config) -> None:

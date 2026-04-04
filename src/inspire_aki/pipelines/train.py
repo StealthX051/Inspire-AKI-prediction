@@ -65,7 +65,10 @@ def _predict_tabular_bundle_compat(bundle, test_df: pd.DataFrame, target: str, *
 
 
 def _tabular_prediction_threshold(bundle) -> float:
-    return float(bundle.metadata.get("prespecified_threshold", 0.5))
+    metadata = getattr(bundle, "metadata", None)
+    if hasattr(metadata, "get"):
+        return float(metadata.get("prespecified_threshold", 0.5))
+    return 0.5
 
 
 def _tabular_params(config: dict, artifacts: ArtifactManager, dataset_regime: str, model_key: str, *, run_id: int = 0) -> dict:
