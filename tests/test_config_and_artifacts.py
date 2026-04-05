@@ -52,6 +52,15 @@ def test_default_config_validates() -> None:
     assert config["cohorts"]["profiles"]["default_noncardiac_adult"]["procedure_audit_resolution"]["enabled"] is False
     assert config["evaluation_mode"] == "grouped_nested_cv"
     assert config["reports"]["shap_jobs"]
+    assert all(job["plots"] == ["beeswarm", "scatter"] for job in config["reports"]["shap_jobs"])
+    assert config["reports"]["featured_shap_scatter_features"] == [
+        "BSA",
+        "max_hr",
+        "max_inibg_mbp",
+        "op_len",
+        "preop_hb",
+        "ward_rr",
+    ]
     assert config["reports"]["procedure_audit"]["cms_order_zip_path"] == "external/cms_icd10pcs/april-1-2026-icd10pcs-order.zip"
     assert config["reports"]["manuscript_sections"] == ["consort", "tables", "curves", "statistics", "reclassification", "shap"]
     assert config["reports"]["figure_png_dpi"] == 600
@@ -75,7 +84,14 @@ def test_smoke_config_validates_and_is_lightweight() -> None:
     assert config["models"]["tabular_hpo_enabled"] == []
     assert config["models"]["sequence_hpo_enabled"] == []
     assert config["reports"]["shap_jobs"] == [
-        {"run_name": "LogReg_Combined_Smoke", "model_key": "log_reg", "dataset_regime": "combined"}
+        {
+            "run_name": "LogReg_Combined_Smoke",
+            "model_key": "log_reg",
+            "dataset_regime": "combined",
+            "plots": ["beeswarm"],
+            "scatter_features": [],
+            "dependence_pairs": [],
+        }
     ]
 
 
@@ -149,7 +165,14 @@ def test_macce_smoke_configs_validate_and_limit_trials() -> None:
     assert smoke["models"]["target"] == "macce"
     assert smoke["models"]["tabular_enabled"] == ["log_reg"]
     assert smoke["reports"]["shap_jobs"] == [
-        {"run_name": "LogReg_Combined_Macce_Smoke", "model_key": "log_reg", "dataset_regime": "combined"}
+        {
+            "run_name": "LogReg_Combined_Macce_Smoke",
+            "model_key": "log_reg",
+            "dataset_regime": "combined",
+            "plots": ["beeswarm"],
+            "scatter_features": [],
+            "dependence_pairs": [],
+        }
     ]
 
     assert smoke_hpo["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/macce_smoke_hpo"
@@ -176,6 +199,33 @@ def test_legacy_noncardiac_profile_remains_selectable_explicitly() -> None:
 def test_validate_config_rejects_unsupported_shap_jobs(loaded_synthetic_config) -> None:
     loaded_synthetic_config["reports"]["shap_jobs"] = [{"dataset_regime": "combined", "model_key": "svm"}]
     with pytest.raises(ValueError, match="Unsupported SHAP model_key"):
+        validate_config(loaded_synthetic_config)
+
+
+def test_validate_config_rejects_unsupported_shap_plot_family(loaded_synthetic_config) -> None:
+    loaded_synthetic_config["reports"]["shap_jobs"] = [
+        {"dataset_regime": "combined", "model_key": "log_reg", "plots": ["beeswarm", "unknown"]}
+    ]
+    with pytest.raises(ValueError, match="Unsupported SHAP plot families"):
+        validate_config(loaded_synthetic_config)
+
+
+def test_validate_config_rejects_malformed_shap_dependence_pairs(loaded_synthetic_config) -> None:
+    loaded_synthetic_config["reports"]["shap_jobs"] = [
+        {
+            "dataset_regime": "combined",
+            "model_key": "log_reg",
+            "plots": ["dependence"],
+            "dependence_pairs": [{"main_feature": "creatinine"}],
+        }
+    ]
+    with pytest.raises(ValueError, match="main_feature and interaction_feature"):
+        validate_config(loaded_synthetic_config)
+
+
+def test_validate_config_rejects_nonlist_featured_shap_scatter_features(loaded_synthetic_config) -> None:
+    loaded_synthetic_config["reports"]["featured_shap_scatter_features"] = "BSA"
+    with pytest.raises(ValueError, match="featured_shap_scatter_features"):
         validate_config(loaded_synthetic_config)
 
 

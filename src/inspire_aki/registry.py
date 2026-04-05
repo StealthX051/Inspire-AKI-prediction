@@ -41,6 +41,7 @@ MODEL_COLORS = {
 DATASET_REGIMES = ("preop", "intraop", "combined")
 MANUSCRIPT_SECTIONS = ("consort", "tables", "curves", "statistics", "reclassification", "shap")
 SUPPORTED_SHAP_MODELS = ("xgb", "rf", "log_reg")
+SUPPORTED_SHAP_PLOT_FAMILIES = ("beeswarm", "scatter", "dependence")
 MANUSCRIPT_MODEL_ORDER = (
     "asa_rule",
     "gs_aki_rule",

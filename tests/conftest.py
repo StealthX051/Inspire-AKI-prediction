@@ -139,10 +139,10 @@ def _build_vitals(operations: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _write_workspace(base_path: Path) -> Path:
+def _write_workspace(base_path: Path, *, n_ops: int = 12) -> Path:
     raw_dir = base_path / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    operations = _build_operations(12)
+    operations = _build_operations(n_ops)
     operations.to_csv(raw_dir / "operations.csv", index=False)
     _build_diagnosis(operations).to_csv(raw_dir / "diagnosis.csv", index=False)
     _build_labs(operations).to_csv(raw_dir / "labs.csv", index=False)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from html import escape
 from pathlib import Path
@@ -27,6 +28,37 @@ def report_figure_png_dpi(config: dict | None) -> int:
     if not isinstance(config, dict):
         return 600
     return int(config.get("reports", {}).get("figure_png_dpi", config.get("reports", {}).get("figure_dpi", 600)))
+
+
+@contextmanager
+def report_figure_style_context(config: dict | None = None):
+    import matplotlib as mpl
+
+    style_variant = "legacy_manuscript"
+    if isinstance(config, dict):
+        style_variant = str(config.get("reports", {}).get("style_variant", "legacy_manuscript")).strip() or "legacy_manuscript"
+
+    rc_params = {
+        "font.family": "DejaVu Sans",
+        "axes.titlesize": 14,
+        "axes.titleweight": "bold",
+        "axes.labelsize": 12,
+        "axes.labelcolor": "#1f2933",
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "text.color": "#1f2933",
+        "axes.edgecolor": "#52606d",
+        "axes.linewidth": 1.1,
+        "figure.facecolor": "#ffffff",
+        "axes.facecolor": "#ffffff",
+        "savefig.facecolor": "#ffffff",
+        "legend.frameon": False,
+        "legend.fontsize": 10,
+    }
+    if style_variant == "legacy_manuscript":
+        rc_params["axes.grid"] = False
+    with mpl.rc_context(rc=rc_params):
+        yield
 
 
 @dataclass(frozen=True)

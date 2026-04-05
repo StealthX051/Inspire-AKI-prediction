@@ -79,6 +79,8 @@ inspire-aki report tables --config configs/aki/default.yaml
 inspire-aki report manuscript --config configs/aki/default.yaml
 ```
 
+The default full-study configs now emit maintained SHAP beeswarms plus raw-value SHAP scatter plots for enabled SHAP jobs. Scatter and manual dependence plots explain the full held-out split, while the explainer background rows remain sampled for reproducible runtime. The SHAP stage now also balances its worker budget across active jobs instead of fanning out equally across every configured job, which shortens wall-clock time on larger hosts. The current featured manuscript scatter copies for `BSA`, `max_hr`, `max_inibg_mbp`, `op_len`, `preop_hb`, and `ward_rr` are mirrored under `reports/figures/shap_scatter_featured/` when those features are available in the selected SHAP job output.
+
 Run the focused department reviewer-response audits when needed:
 
 ```bash

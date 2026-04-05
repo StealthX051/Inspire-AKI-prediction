@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from conftest import _write_workspace
 from inspire_aki.cohort.filters import apply_preop_filters
 from inspire_aki.config import load_config
 from inspire_aki.features.intraop_tabular import build_intraop_features, safe_entropy, safe_kurtosis, safe_skew, safe_trend
@@ -20,7 +21,14 @@ from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop,
 from inspire_aki.pipelines.report import run_manuscript
 from inspire_aki.pipelines.train import run_train_tabular
 from inspire_aki.reporting.reclassification import generate_reclassification_outputs
-from inspire_aki.reporting.shap import generate_shap_outputs
+from inspire_aki.reporting.shap import (
+    ShapExplanationBundle,
+    _build_shap_explanation_bundle,
+    _load_split,
+    _resolve_shap_parallelism,
+    _scatter_figure,
+    generate_shap_outputs,
+)
 
 
 def _prepare_reporting_inputs(config_path: Path, *, include_generated_evaluation: bool = True) -> dict:
@@ -154,6 +162,204 @@ def test_generate_shap_outputs_accepts_grouped_nested_manifest_names(synthetic_c
     assert not bootstrap_path.exists()
     assert artifacts.paths.artifact_path("explainability", "shap_importance_combined_log_reg.csv") in outputs
     assert artifacts.paths.artifact_path("reports", "figures", "shap_beeswarm_combined_log_reg.png") in outputs
+
+
+def test_generate_shap_outputs_writes_scatter_outputs_for_all_features(synthetic_config: Path) -> None:
+    config = _prepare_reporting_inputs(synthetic_config)
+    artifacts = ArtifactManager(config)
+
+    run_train_tabular(config)
+    config["reports"]["shap_jobs"] = [{"dataset_regime": "combined", "model_key": "log_reg", "plots": ["beeswarm", "scatter"]}]
+    shap_bundle = _build_shap_explanation_bundle(config, "combined", "log_reg")
+    assert shap_bundle is not None
+
+    outputs = generate_shap_outputs(artifacts, config)
+    scatter_outputs = [path for path in outputs if "reports/figures/shap_scatter/" in str(path)]
+
+    assert artifacts.paths.artifact_path("reports", "figures", "shap_beeswarm_combined_log_reg.png") in outputs
+    assert len(scatter_outputs) == len(shap_bundle.feature_names) * len(config["reports"]["figure_formats"])
+    first_feature = shap_bundle.importance.iloc[0]["feature"]
+    assert (
+        artifacts.paths.artifact_path(
+            "reports",
+            "figures",
+            "shap_scatter",
+            f"shap_scatter_combined_log_reg_{first_feature}.png",
+        )
+        in outputs
+    )
+
+
+def test_generate_shap_outputs_respects_scatter_feature_subset(synthetic_config: Path) -> None:
+    config = _prepare_reporting_inputs(synthetic_config)
+    artifacts = ArtifactManager(config)
+
+    run_train_tabular(config)
+    shap_bundle = _build_shap_explanation_bundle(config, "combined", "log_reg")
+    assert shap_bundle is not None
+    selected_features = shap_bundle.importance["feature"].head(2).astype(str).tolist()
+    config["reports"]["shap_jobs"] = [
+        {
+            "dataset_regime": "combined",
+            "model_key": "log_reg",
+            "plots": ["scatter"],
+            "scatter_features": selected_features,
+        }
+    ]
+
+    outputs = generate_shap_outputs(artifacts, config)
+    scatter_outputs = [path for path in outputs if "reports/figures/shap_scatter/" in str(path)]
+
+    assert len(scatter_outputs) == len(selected_features) * len(config["reports"]["figure_formats"])
+    for feature_name in selected_features:
+        assert (
+            artifacts.paths.artifact_path(
+                "reports",
+                "figures",
+                "shap_scatter",
+                f"shap_scatter_combined_log_reg_{feature_name}.png",
+            )
+            in outputs
+        )
+
+
+def test_generate_shap_outputs_writes_featured_scatter_copies(synthetic_config: Path) -> None:
+    config = _prepare_reporting_inputs(synthetic_config)
+    artifacts = ArtifactManager(config)
+
+    run_train_tabular(config)
+    shap_bundle = _build_shap_explanation_bundle(config, "combined", "log_reg")
+    assert shap_bundle is not None
+    featured_feature = str(shap_bundle.importance.iloc[0]["feature"])
+    config["reports"]["featured_shap_scatter_features"] = [featured_feature]
+    config["reports"]["shap_jobs"] = [{"dataset_regime": "combined", "model_key": "log_reg", "plots": ["scatter"]}]
+
+    outputs = generate_shap_outputs(artifacts, config)
+
+    assert (
+        artifacts.paths.artifact_path(
+            "reports",
+            "figures",
+            "shap_scatter_featured",
+            f"manuscript_shap_scatter_combined_log_reg_{featured_feature}.png",
+        )
+        in outputs
+    )
+
+
+def test_generate_shap_outputs_writes_only_requested_dependence_pairs(synthetic_config: Path) -> None:
+    config = _prepare_reporting_inputs(synthetic_config)
+    artifacts = ArtifactManager(config)
+
+    run_train_tabular(config)
+    shap_bundle = _build_shap_explanation_bundle(config, "combined", "log_reg")
+    assert shap_bundle is not None
+    pair = shap_bundle.importance["feature"].head(2).astype(str).tolist()
+    config["reports"]["shap_jobs"] = [
+        {
+            "dataset_regime": "combined",
+            "model_key": "log_reg",
+            "plots": ["dependence"],
+            "dependence_pairs": [{"main_feature": pair[0], "interaction_feature": pair[1]}],
+        }
+    ]
+
+    outputs = generate_shap_outputs(artifacts, config)
+    dependence_outputs = [path for path in outputs if "reports/figures/shap_dependence/" in str(path)]
+
+    assert len(dependence_outputs) == len(config["reports"]["figure_formats"])
+    assert (
+        artifacts.paths.artifact_path(
+            "reports",
+            "figures",
+            "shap_dependence",
+            f"shap_dependence_combined_log_reg_{pair[0]}_vs_{pair[1]}.png",
+        )
+        in outputs
+    )
+    assert (
+        artifacts.paths.artifact_path(
+            "reports",
+            "figures",
+            "shap_dependence",
+            f"shap_dependence_combined_log_reg_{pair[1]}_vs_{pair[0]}.png",
+        )
+        not in outputs
+    )
+
+
+def test_shap_explanation_bundle_uses_raw_display_values(synthetic_config: Path) -> None:
+    config = _prepare_reporting_inputs(synthetic_config)
+    artifacts = ArtifactManager(config)
+
+    run_train_tabular(config)
+    shap_bundle = _build_shap_explanation_bundle(config, "combined", "log_reg")
+    assert shap_bundle is not None
+
+    raw_lookup = pd.read_csv(artifacts.paths.artifact_path("datasets", "tabular", "tabular_combined_unnormalized.csv")).set_index("op_id")
+    test_df = pd.read_csv(artifacts.paths.artifact_path("datasets", "tabular", "tabular_combined_labeled.csv"))
+    manifest_path = artifacts.paths.artifact_path("datasets", "splits", "grouped_nested_cv_combined.parquet")
+    assert manifest_path.exists()
+    explain_rows = test_df.loc[shap_bundle.display_frame.index]
+    feature_name = shap_bundle.importance.iloc[0]["feature"]
+    expected = raw_lookup.loc[explain_rows["op_id"].tolist(), feature_name].reset_index(drop=True)
+    observed = shap_bundle.display_frame[feature_name].reset_index(drop=True)
+
+    pd.testing.assert_series_equal(observed, expected, check_names=False)
+
+
+def test_shap_explanation_bundle_uses_full_test_split_for_plots(tmp_path: Path) -> None:
+    config_path = _write_workspace(tmp_path, n_ops=1200)
+    config = _prepare_reporting_inputs(config_path)
+    artifacts = ArtifactManager(config)
+
+    run_train_tabular(config)
+    shap_bundle = _build_shap_explanation_bundle(config, "combined", "log_reg")
+    assert shap_bundle is not None
+
+    _, test_df = _load_split(artifacts, "combined")
+
+    assert len(test_df) > 200
+    assert len(shap_bundle.display_frame) == len(test_df)
+    assert shap_bundle.shap_values.shape[0] == len(test_df)
+    assert len(shap_bundle.y_true) == len(test_df)
+
+
+def test_resolve_shap_parallelism_balances_outer_and_inner_workers() -> None:
+    outer_jobs, per_job_workers = _resolve_shap_parallelism(9, 30)
+
+    assert outer_jobs == 5
+    assert per_job_workers == 6
+
+
+def test_resolve_shap_parallelism_gives_single_job_full_budget() -> None:
+    outer_jobs, per_job_workers = _resolve_shap_parallelism(1, 30)
+
+    assert outer_jobs == 1
+    assert per_job_workers == 30
+
+
+def test_shap_scatter_skips_trendline_for_constant_feature(loaded_synthetic_config) -> None:
+    bundle = ShapExplanationBundle(
+        dataset_regime="combined",
+        model_key="log_reg",
+        feature_names=("constant_feature", "other_feature"),
+        display_frame=pd.DataFrame({"constant_feature": [1.0, 1.0, 1.0], "other_feature": [0.1, 0.2, 0.3]}),
+        shap_values=np.array([[0.1, 0.0], [0.2, -0.1], [0.3, 0.2]]),
+        importance=pd.DataFrame(
+            {"feature": ["constant_feature", "other_feature"], "mean_abs_shap": [0.2, 0.1]}
+        ),
+        y_true=pd.Series([False, True, False]),
+    )
+
+    figure = _scatter_figure(bundle, "constant_feature", loaded_synthetic_config)
+    try:
+        _, labels = figure.axes[0].get_legend_handles_labels()
+        assert "Linear Trend" not in labels
+    finally:
+        import matplotlib.pyplot as plt
+
+        plt.close(figure)
 
 
 def test_generate_reclassification_outputs_skips_empty_summary(loaded_synthetic_config) -> None:

@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from inspire_aki.registry import MANUSCRIPT_SECTIONS, SUPPORTED_SHAP_MODELS
+from inspire_aki.registry import MANUSCRIPT_SECTIONS, SUPPORTED_SHAP_MODELS, SUPPORTED_SHAP_PLOT_FAMILIES
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -211,6 +211,36 @@ def _normalize_string_list(values: Any) -> list[str]:
     return normalized
 
 
+def _normalize_shap_dependence_pairs(values: Any) -> list[Any]:
+    if values is None:
+        return []
+    if not isinstance(values, list):
+        return copy.deepcopy(values)
+    normalized: list[Any] = []
+    for value in values:
+        if not isinstance(value, dict):
+            normalized.append(copy.deepcopy(value))
+            continue
+        normalized.append(
+            {
+                **copy.deepcopy(value),
+                "main_feature": str(value.get("main_feature", "")).strip(),
+                "interaction_feature": str(value.get("interaction_feature", "")).strip(),
+            }
+        )
+    return normalized
+
+
+def _normalize_shap_job(job: Any) -> Any:
+    if not isinstance(job, dict):
+        return copy.deepcopy(job)
+    normalized = copy.deepcopy(job)
+    normalized["plots"] = _normalize_string_list(normalized.get("plots", ["beeswarm"])) or ["beeswarm"]
+    normalized["scatter_features"] = _normalize_string_list(normalized.get("scatter_features", []))
+    normalized["dependence_pairs"] = _normalize_shap_dependence_pairs(normalized.get("dependence_pairs", []))
+    return normalized
+
+
 def _infer_outcome_key_from_target(target: Any, catalog: dict[str, Any]) -> str | None:
     if not target:
         return None
@@ -332,7 +362,10 @@ def _normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     reports_cfg.setdefault("style_variant", "legacy_manuscript")
     reports_cfg.setdefault("highlight_best_values", True)
     reports_cfg.setdefault("generate_supplemental_outputs", True)
-    reports_cfg.setdefault("shap_jobs", [])
+    reports_cfg["shap_jobs"] = [_normalize_shap_job(job) for job in reports_cfg.get("shap_jobs", [])]
+    reports_cfg["featured_shap_scatter_features"] = _normalize_string_list(
+        reports_cfg.get("featured_shap_scatter_features", [])
+    )
     reports_cfg.setdefault("manuscript_sections", list(MANUSCRIPT_SECTIONS))
     existing_procedure_audit = reports_cfg.get("procedure_audit", {})
     if not isinstance(existing_procedure_audit, dict):
@@ -518,9 +551,14 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError(f"Unknown reports.figure_formats values: {unknown_figure_formats}")
     if int(config.get("reports", {}).get("figure_png_dpi", 600)) < 72:
         raise ValueError("reports.figure_png_dpi must be at least 72.")
+    featured_scatter_features = config.get("reports", {}).get("featured_shap_scatter_features", [])
+    if not isinstance(featured_scatter_features, list):
+        raise ValueError("reports.featured_shap_scatter_features must be a list of feature names.")
 
     shap_jobs = config.get("reports", {}).get("shap_jobs", [])
     for job in shap_jobs:
+        if not isinstance(job, dict):
+            raise ValueError(f"SHAP job must be a mapping: {job!r}")
         model_key = job.get("model_key")
         if model_key not in SUPPORTED_SHAP_MODELS:
             raise ValueError(
@@ -528,6 +566,26 @@ def validate_config(config: dict[str, Any]) -> None:
             )
         if "dataset_regime" not in job:
             raise ValueError(f"SHAP job is missing dataset_regime: {job}")
+        plots = job.get("plots", ["beeswarm"])
+        if not isinstance(plots, list) or not plots:
+            raise ValueError(f"SHAP job plots must be a non-empty list: {job}")
+        unknown_plot_families = sorted(set(plots) - set(SUPPORTED_SHAP_PLOT_FAMILIES))
+        if unknown_plot_families:
+            raise ValueError(
+                f"Unsupported SHAP plot families {unknown_plot_families}. "
+                f"Supported plot families: {list(SUPPORTED_SHAP_PLOT_FAMILIES)}."
+            )
+        scatter_features = job.get("scatter_features", [])
+        if not isinstance(scatter_features, list):
+            raise ValueError(f"SHAP job scatter_features must be a list of feature names: {job}")
+        dependence_pairs = job.get("dependence_pairs", [])
+        if not isinstance(dependence_pairs, list):
+            raise ValueError(f"SHAP job dependence_pairs must be a list of mappings: {job}")
+        for pair in dependence_pairs:
+            if not isinstance(pair, dict):
+                raise ValueError(f"SHAP dependence pair must be a mapping: {pair!r}")
+            if not str(pair.get("main_feature", "")).strip() or not str(pair.get("interaction_feature", "")).strip():
+                raise ValueError(f"SHAP dependence pair must include main_feature and interaction_feature: {pair!r}")
 
 
 def load_config(config_path: str | Path | None = None) -> dict[str, Any]:

@@ -81,7 +81,7 @@ The package treats `predictions/raw/*.parquet` as stage-owned partitions and reb
 
 | Command | Main implementation | Primary outputs | Notes |
 | --- | --- | --- | --- |
-| `explain shap` | `pipelines/report.py:run_shap` and `reporting/shap.py` | `explainability/shap_importance_*.csv`, SHAP figures | Supported model families are enforced in code |
+| `explain shap` | `pipelines/report.py:run_shap` and `reporting/shap.py` | `explainability/shap_importance_*.csv`, SHAP beeswarms, raw-value scatter figures, optional manual dependence figures | Supported model families are enforced in code; shipped full-study configs enable beeswarm plus single-feature scatters, smoke configs stay beeswarm-only, scatter/dependence plots explain the full held-out split while background rows remain sampled, the SHAP runtime now balances worker budget across active jobs to reduce wall-clock time on larger hosts, and the current featured manuscript scatters are mirrored under `reports/figures/shap_scatter_featured/` when available |
 
 ### Report
 

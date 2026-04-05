@@ -419,6 +419,7 @@ reports:
     definite_cardiac_prefixes: ["02"]
     definite_thoracic_prefixes: [0B]
     manual_review_if_cpb_discordant: true
+  featured_shap_scatter_features: [BSA, max_hr, max_inibg_mbp, op_len, preop_hb, ward_rr]
   max_display_features: 20
   manuscript_sections:
     - consort
@@ -428,15 +429,15 @@ reports:
     - reclassification
     - shap
   shap_jobs:
-    - {run_name: XGBoost_Combined, model_key: xgb, dataset_regime: combined}
-    - {run_name: XGBoost_Preop, model_key: xgb, dataset_regime: preop}
-    - {run_name: XGBoost_Intraop, model_key: xgb, dataset_regime: intraop}
-    - {run_name: RandomForest_Combined, model_key: rf, dataset_regime: combined}
-    - {run_name: RandomForest_Preop, model_key: rf, dataset_regime: preop}
-    - {run_name: RandomForest_Intraop, model_key: rf, dataset_regime: intraop}
-    - {run_name: LogReg_Combined, model_key: log_reg, dataset_regime: combined}
-    - {run_name: LogReg_Preop, model_key: log_reg, dataset_regime: preop}
-    - {run_name: LogReg_Intraop, model_key: log_reg, dataset_regime: intraop}
+    - {run_name: XGBoost_Combined, model_key: xgb, dataset_regime: combined, plots: [beeswarm, scatter]}
+    - {run_name: XGBoost_Preop, model_key: xgb, dataset_regime: preop, plots: [beeswarm, scatter]}
+    - {run_name: XGBoost_Intraop, model_key: xgb, dataset_regime: intraop, plots: [beeswarm, scatter]}
+    - {run_name: RandomForest_Combined, model_key: rf, dataset_regime: combined, plots: [beeswarm, scatter]}
+    - {run_name: RandomForest_Preop, model_key: rf, dataset_regime: preop, plots: [beeswarm, scatter]}
+    - {run_name: RandomForest_Intraop, model_key: rf, dataset_regime: intraop, plots: [beeswarm, scatter]}
+    - {run_name: LogReg_Combined, model_key: log_reg, dataset_regime: combined, plots: [beeswarm, scatter]}
+    - {run_name: LogReg_Preop, model_key: log_reg, dataset_regime: preop, plots: [beeswarm, scatter]}
+    - {run_name: LogReg_Intraop, model_key: log_reg, dataset_regime: intraop, plots: [beeswarm, scatter]}
 runtime:
   profile: throughput
   cpu_reserve_fraction: 0.0625
@@ -464,7 +465,7 @@ runtime:
     evaluation_workers: 24
     bootstrap_workers: 24
     report_workers: 16
-    shap_workers: 6
+    shap_workers: 30
     train_model_threads: auto
     hpo_model_threads: auto
     dataloader_workers: auto
