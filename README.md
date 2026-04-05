@@ -88,7 +88,7 @@ Run the focused department reviewer-response audits when needed:
 .venv/bin/python scripts/department_ot_reviewer_report.py --config configs/aki/default.yaml
 ```
 
-These narrow audit scripts are maintained repo utilities under `scripts/`, not CLI stages. They default to writing reviewer-facing markdown/CSV outputs under repo-local `reports/`.
+These narrow audit scripts are maintained repo utilities under `scripts/`, not CLI stages. They now default to artifact-root reviewer outputs under `reports/reviewer_department_audit/`.
 
 Run the focused missingness reviewer workflow when needed:
 
@@ -96,7 +96,7 @@ Run the focused missingness reviewer workflow when needed:
 bash scripts/run_reviewer_missingness_sensitivity.sh
 ```
 
-This reviewer workflow is also intentionally outside `run all` and the CLI stage map. It reruns the combined `xgb` baseline into a fresh artifact root, then runs a fold-fit sensitivity analysis that replaces the `>10%` sentinel handling with median imputation plus explicit missingness indicators while preserving the current grouped split, calibration, and reporting logic.
+This reviewer workflow is also intentionally outside `run all` and the CLI stage map. It reruns the combined `xgb` baseline into a fresh artifact root, then runs a fold-fit sensitivity analysis that replaces the `>10%` sentinel handling with median imputation plus explicit missingness indicators while preserving the current grouped split, outer-train-only calibration, thresholding, and reporting logic. Its comparison tables and markdown summary now default to the chosen sensitivity artifact root under `reports/reviewer_missingness_sensitivity/`.
 
 Run the cardiothoracic procedure audit explicitly when needed:
 
@@ -119,8 +119,9 @@ The currently mounted `artifacts/default` tree may predate this default-cohort p
 - This repo is not turnkey. End-to-end execution still requires private INSPIRE data.
 - Raw data location is configured through `paths.raw_inspire_dir`; the shipped configs target the mounted volume path `/media/volume/ncs_inspire_data/ncs_aki/data/inspire`.
 - Stage outputs, manifests, predictions, and reports are written under the configured `paths.artifacts_dir`.
+- The mounted data/artifact volume in this environment is `/media/volume/ncs_inspire_data`, not `/media/volume`; check free space on that mountpoint before long runs.
 - The maintained shipped configs use patient-grouped evaluation modes. `evaluate generate` materializes manifests on `patient_id` so the same patient does not cross train/test or train/validation boundaries in grouped runs.
-- Calibration is guarded against repeated-row leakage: learned models use grouped isotonic calibration with CV on `op_id`, keeping repeated prediction rows for the same operation together.
+- Calibration and threshold selection are guarded against leakage in the maintained grouped modes: learned models generate outer-train OOF calibration predictions from patient-grouped inner folds, fit isotonic calibration on those outer-train rows only, choose thresholds on the same calibrated outer-train rows, and then apply both to untouched outer-test operations.
 - The maintained rule baselines keep prespecified thresholds instead of data-chosen cutoffs. `asa_rule` stays a binary preop rule, while `gs_aki_rule` is evaluated primarily by ordinal count/class with a prespecified Class III+ high-risk threshold only when binary metrics are needed.
 - The default AKI run evaluates both maintained clinical baselines (`asa_rule` and the proxy-based `gs_aki_rule`) on that same grouped leakage-safe path; `gs_aki_rule` is restricted to the AKI outcome and the preop dataset regime.
 - `inspire-aki compat export-legacy` remains explicit and AKI-only; it is not part of `run all`.

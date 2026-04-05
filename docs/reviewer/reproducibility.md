@@ -10,7 +10,7 @@ This repository is readable, testable, and partially runnable, but it is not ful
 | Historical path brittleness | Archived scripts and notebooks were developed against older absolute-path layouts | The legacy archive is for audit/reference, not a supported execution surface |
 | Host-dependent runtime planning | The maintained CLI resolves worker/thread budgets from the current machine | Behavior is more portable than the archive, but exact wall time and resource plans still vary by host |
 | Non-nested evaluation design | Tuning runs once before downstream grouped evaluation | This is a methodological limitation, not a packaging bug |
-| Leakage-control drift from the archive | The maintained CLI now uses patient-grouped evaluation manifests and `op_id`-grouped calibration rather than the older operation-level workflow | Small metric or count drift versus historical outputs should be read as an intentional correctness fix, not as evidence that the current docs are describing the wrong process |
+| Leakage-control drift from the archive | The maintained CLI now uses patient-grouped evaluation manifests plus outer-train-only calibration and threshold selection from patient-grouped OOF predictions rather than the older operation-level workflow | Small metric or count drift versus historical outputs should be read as an intentional correctness fix, not as evidence that the current docs are describing the wrong process |
 | Adapted GS-AKI surgery proxy | INSPIRE does not ship a native intraperitoneal-surgery field, so the maintained GS-AKI baseline uses a repo-tracked 5-character ICD-10-PCS proxy map derived from CDC/NHSN and CMS resources plus explicit override review for residual observed code families | Treat GS-AKI as a maintained proxy-based clinical baseline rather than an exact source-variable reimplementation |
 | Default cohort promotion can temporarily outpace stored artifacts | The strict operation-level noncardiac adjudication is now the canonical default cohort rule, but existing artifact trees may have been generated before that promotion | Treat mounted or checked-in artifact counts as stale until the relevant config is rerun under the promoted default |
 | Rule-baseline threshold policy | The maintained pipeline keeps prespecified thresholds for `asa_rule` and `gs_aki_rule` instead of optimizing them on evaluation data | Reviewer-facing binary metrics for these rules should be read as fixed-rule summaries, not tuned operating points |
@@ -41,11 +41,11 @@ This repository is readable, testable, and partially runnable, but it is not ful
 - what an archived script or notebook historically did
 - which artifacts are current, archived, or externalized
 - which workflow limitations are methodological versus operational
-- that the maintained CLI uses patient-grouped evaluation and `op_id`-grouped calibration to reduce leakage relative to the archive
+- that the maintained CLI uses patient-grouped evaluation plus outer-train-only calibration and threshold selection from patient-grouped OOF predictions to reduce leakage relative to the archive
 - that the maintained AKI config evaluates adapted GS-AKI on the same grouped manifests as the learned models, while still relying on a committed proxy map for the intraperitoneal factor
 - that the maintained main performance table treats adapted GS-AKI primarily as an ordinal count/class baseline rather than a tuned binary rule
 - that the current default cohort rule is the strict operation-level adjudicated noncardiac cohort, even if older stored artifact trees still reflect the previously shipped default
-- that the reviewer-specific missingness sensitivity workflow reuses patient-grouped outer splits, outer-train-only preprocessing, and `op_id`-grouped calibration
+- that the reviewer-specific missingness sensitivity workflow reuses patient-grouped outer splits, outer-train-only preprocessing, and outer-train-only grouped calibration and threshold selection
 
 ## Unsafe Claims
 

@@ -85,7 +85,9 @@ def test_train_tabular_uses_precomputed_grouped_manifest_when_configured(monkeyp
 
     run_train_tabular(config)
 
-    assert artifacts.paths.artifact_path("predictions", "raw", "tabular.parquet").exists()
+    partition_df = pd.read_parquet(artifacts.paths.artifact_path("predictions", "raw", "tabular.parquet"))
+    assert {"patient_id", "split_name"}.issubset(partition_df.columns)
+    assert {"calibration", "test"}.issubset(set(partition_df["split_name"]))
     assert not artifacts.paths.artifact_path("datasets", "splits", "bootstrap_preop.parquet").exists()
     manifest_payload = artifacts.read_json("manifests", "train_tabular.json")
     assert artifacts.relative(artifacts.paths.artifact_path("datasets", "splits", "grouped_nested_cv_preop.parquet")) in manifest_payload["inputs"]
@@ -110,7 +112,9 @@ def test_train_sequence_uses_precomputed_grouped_manifest_when_configured(monkey
 
     run_train_sequence(config)
 
-    assert artifacts.paths.artifact_path("predictions", "raw", "sequence.parquet").exists()
+    partition_df = pd.read_parquet(artifacts.paths.artifact_path("predictions", "raw", "sequence.parquet"))
+    assert {"patient_id", "split_name"}.issubset(partition_df.columns)
+    assert {"calibration", "test"}.issubset(set(partition_df["split_name"]))
     assert not artifacts.paths.artifact_path("datasets", "splits", "bootstrap_sequence.parquet").exists()
     manifest_payload = artifacts.read_json("manifests", "train_sequence.json")
     assert artifacts.relative(artifacts.paths.artifact_path("datasets", "splits", "grouped_nested_cv_sequence.parquet")) in manifest_payload["inputs"]

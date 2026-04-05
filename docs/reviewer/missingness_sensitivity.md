@@ -48,7 +48,7 @@ These reviewer utilities are maintained repo scripts under `scripts/`; they are 
 - Continuous scaling is also fit on outer-train rows only.
 - Indicator columns remain explicit `0/1` columns and are excluded from scaling.
 - No fresh HPO is run by default; the workflow reuses `models.tabular_hpo_params.combined.xgb`.
-- Calibration reuses the maintained grouped isotonic path on held-out predictions with `op_id` grouping.
+- Calibration and threshold selection reuse the maintained grouped path: outer-train OOF predictions are generated from patient-grouped inner folds, isotonic fitting happens on those outer-train rows only, and the learned calibrator and threshold are then applied to untouched outer-test rows.
 
 ## Reproduction
 
@@ -67,7 +67,7 @@ python scripts/combined_xgb_missingness_sensitivity.py \
   --config configs/aki/reviewer_combined_xgb_baseline.yaml \
   --baseline-artifacts-dir /media/volume/ncs_inspire_data/ncs_aki/artifacts/reviewer_combined_xgb_baseline \
   --sensitivity-artifacts-dir /media/volume/ncs_inspire_data/ncs_aki/artifacts/reviewer_combined_xgb_baseline_median_plus_indicator_gt10 \
-  --out-dir reports
+  --out-dir /media/volume/ncs_inspire_data/ncs_aki/artifacts/reviewer_combined_xgb_baseline_median_plus_indicator_gt10/reports/reviewer_missingness_sensitivity
 ```
 
 ## Expected Outputs
@@ -76,15 +76,15 @@ The reviewer workflow writes:
 
 - baseline artifacts under the baseline config artifact root
 - sensitivity artifacts under a separate reviewer artifact root
-- repo-local comparison outputs under `reports/`
+- comparison tables and markdown summary under the chosen `out_dir`, which defaults to `<sensitivity_artifacts_dir>/reports/reviewer_missingness_sensitivity/`
 
-Key repo-local comparison outputs:
+Key comparison outputs:
 
-- `reports/missingness_sensitivity_performance_comparison.csv`
-- `reports/missingness_sensitivity_shap_comparison.csv`
-- `reports/missingness_sensitivity_converted_features.csv`
-- `reports/missingness_sensitivity_indicator_ranks.csv`
-- `reports/missingness_sensitivity_summary.md`
+- `missingness_sensitivity_performance_comparison.csv`
+- `missingness_sensitivity_shap_comparison.csv`
+- `missingness_sensitivity_converted_features.csv`
+- `missingness_sensitivity_indicator_ranks.csv`
+- `missingness_sensitivity_summary.md`
 
 The generated markdown summary is the reviewer-facing result surface. It records the design decision, leakage safeguards, affected features, side-by-side performance deltas, indicator ranks, and two draft reviewer-response variants keyed to the observed results.
 
@@ -92,9 +92,9 @@ The generated markdown summary is the reviewer-facing result surface. It records
 
 Preferred framing for the response letter:
 
-“We agree that missingness may itself be informative in routinely collected perioperative data. Our concern was therefore not whether the model could learn from missingness, but whether encoding missing values as a fixed sentinel could conflate missingness with the continuous value itself and affect tree-based interpretability. To address this, we performed a targeted sensitivity analysis in the combined GBT model, replacing the sentinel encoding used for variables with >10% missingness with median imputation plus explicit missingness indicators, while preserving the original KNN-based handling for variables with <10% missingness and otherwise keeping the grouped evaluation and grouped calibration framework unchanged.”
+“We agree that missingness may itself be informative in routinely collected perioperative data. Our concern was therefore not whether the model could learn from missingness, but whether encoding missing values as a fixed sentinel could conflate missingness with the continuous value itself and affect tree-based interpretability. To address this, we performed a targeted sensitivity analysis in the combined GBT model, replacing the sentinel encoding used for variables with >10% missingness with median imputation plus explicit missingness indicators, while preserving the original KNN-based handling for variables with <10% missingness and otherwise keeping the grouped evaluation plus outer-train-only calibration and thresholding framework unchanged.”
 
-The generated `reports/missingness_sensitivity_summary.md` file adds two reviewer-response variants after a run:
+The generated `missingness_sensitivity_summary.md` file adds two reviewer-response variants after a run:
 
 - Version A for broadly stable performance and SHAP conclusions
 - Version B for meaningful attribution shifts that warrant interpretive caution

@@ -5,9 +5,11 @@ from pathlib import Path
 import pandas as pd
 
 from inspire_aki.reporting.department_os_audit import (
+    _load_context,
     build_patient_level_department_counts,
     compare_department_indicator,
     current_department_label_frame,
+    default_reviewer_output_dir,
     load_raw_department_dictionary,
 )
 
@@ -83,3 +85,9 @@ def test_build_patient_level_department_counts_uses_last_operation_per_subject()
     assert int(patient_counts.loc["OT", "n_patients"]) == 1
     assert float(patient_counts.loc["OS", "pct_patients"]) == 50.0
     assert float(patient_counts.loc["OT", "pct_patients"]) == 50.0
+
+
+def test_department_audit_default_output_dir_uses_artifact_root(synthetic_config: Path) -> None:
+    context = _load_context(config_path=synthetic_config, raw_dir=None, artifacts_dir=None, out_dir=None)
+
+    assert context.out_dir == default_reviewer_output_dir(context.paths)

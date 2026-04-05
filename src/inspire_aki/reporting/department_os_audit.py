@@ -21,6 +21,7 @@ from inspire_aki.reporting.tables import _DEPARTMENT_LABELS as REPORT_DEPARTMENT
 ANTYPE_CATEGORIES = ("General", "MAC", "Neuraxial", "Regional")
 SUMMARY_SLICES = ("overall", "OS", "OT", "GS", "NS", "UR")
 TOP_ICD10PCS4_N = 10
+DEFAULT_REVIEWER_OUTPUT_DIRNAME = "reviewer_department_audit"
 PROCEDURE_NAME_CANDIDATES = (
     "op_name",
     "opname",
@@ -56,8 +57,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="Config path to load. Defaults to configs/aki/default.yaml.")
     parser.add_argument("--raw-dir", default=None, help="Optional override for paths.raw_inspire_dir.")
     parser.add_argument("--artifacts-dir", default=None, help="Optional override for paths.artifacts_dir.")
-    parser.add_argument("--out-dir", default=None, help="Optional output directory. Defaults to repo-local reports/.")
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help="Optional output directory. Defaults to <artifacts_dir>/reports/reviewer_department_audit/.",
+    )
     return parser
+
+
+def default_reviewer_output_dir(paths: ProjectPaths) -> Path:
+    return paths.artifact_path("reports", DEFAULT_REVIEWER_OUTPUT_DIRNAME)
 
 
 def _load_context(
@@ -75,7 +84,7 @@ def _load_context(
         config["paths"]["artifacts_dir"] = str(Path(artifacts_dir))
 
     paths = ProjectPaths.from_config(config)
-    resolved_out_dir = Path(out_dir) if out_dir is not None else (paths.repo_root / "reports")
+    resolved_out_dir = Path(out_dir) if out_dir is not None else default_reviewer_output_dir(paths)
     if not resolved_out_dir.is_absolute():
         resolved_out_dir = paths.repo_root / resolved_out_dir
     resolved_out_dir.mkdir(parents=True, exist_ok=True)

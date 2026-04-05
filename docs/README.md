@@ -2,7 +2,7 @@
 
 This repo keeps the documentation surface intentionally small. Start in one of these three lanes:
 
-The maintained public docs describe the CLI-first workflow with patient-grouped evaluation and grouped calibration safeguards. The legacy archive is for audit/reference only.
+The maintained public docs describe the CLI-first workflow with patient-grouped evaluation and outer-train-only grouped calibration and threshold safeguards. The legacy archive is for audit/reference only.
 
 ## Current CLI Docs
 
@@ -15,6 +15,7 @@ The maintained public docs describe the CLI-first workflow with patient-grouped 
 - [reviewer/manuscript_alignment.md](reviewer/manuscript_alignment.md)
 - [reviewer/missingness_sensitivity.md](reviewer/missingness_sensitivity.md)
 - [reviewer/ophthalmology_department_audit.md](reviewer/ophthalmology_department_audit.md)
+- [reviewer/cardiothoracic_procedure_audit.md](reviewer/cardiothoracic_procedure_audit.md)
 - [reviewer/reproducibility.md](reviewer/reproducibility.md)
 - [reviewer/gs_aki_adaptation.md](reviewer/gs_aki_adaptation.md)
 - [reviewer/legacy_cli_differences.md](reviewer/legacy_cli_differences.md)

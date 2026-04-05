@@ -129,9 +129,13 @@ def _performance_prediction_frame(predictions_df: pd.DataFrame, *, prob_col: str
         model_key = str(group["model_key"].iat[0])
         rule_threshold = clinical_rule_probability_threshold(model_key, config)
         if rule_threshold is not None:
-            threshold = float(rule_threshold)
+            group["report_threshold"] = float(rule_threshold)
         elif use_existing_threshold and group["threshold"].notna().any():
-            threshold = float(group["threshold"].dropna().iloc[0])
+            thresholds = pd.to_numeric(group["threshold"], errors="coerce")
+            if thresholds.notna().any():
+                group["report_threshold"] = thresholds.fillna(float(thresholds.dropna().iloc[0]))
+            else:
+                group["report_threshold"] = 0.5
         else:
             threshold = find_optimal_fbeta_threshold(
                 group["y_true"].astype(int).to_numpy(),
@@ -141,8 +145,8 @@ def _performance_prediction_frame(predictions_df: pd.DataFrame, *, prob_col: str
                 threshold_max=config["calibration"]["threshold_max"],
                 steps=config["calibration"]["threshold_steps"],
             )
-        group["report_threshold"] = threshold
-        group["report_y_pred"] = (group["report_y_prob"] >= threshold).astype(int)
+            group["report_threshold"] = float(threshold)
+        group["report_y_pred"] = (group["report_y_prob"] >= group["report_threshold"].astype(float)).astype(int)
         groups.append(group)
     return pd.concat(groups, ignore_index=True) if groups else pd.DataFrame()
 
@@ -580,7 +584,7 @@ def generate_table_outputs(artifacts: ArtifactManager) -> list[Path]:
             raw_predictions,
             prob_col="y_prob_raw",
             config=config,
-            use_existing_threshold=False,
+            use_existing_threshold=True,
         )
         outputs.extend(
             write_table_outputs(

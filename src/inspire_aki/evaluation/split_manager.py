@@ -297,9 +297,12 @@ def subset_generated_manifest(
     manifest: pd.DataFrame,
     *,
     split_name: str,
+    split_scope: str = "outer",
     repeat_id: int | None = None,
     fold_id: int | None = None,
     run_id: int | None = None,
+    inner_repeat_id: int | None = None,
+    inner_fold_id: int | None = None,
 ) -> pd.DataFrame:
     if run_id is not None:
         run = evaluation_run_for_run_id(manifest, run_id)
@@ -309,13 +312,30 @@ def subset_generated_manifest(
         raise ValueError("subset_generated_manifest requires either run_id or both repeat_id and fold_id.")
 
     if {"outer_repeat_id", "outer_fold_id", "split_scope"}.issubset(manifest.columns):
-        subset = manifest[
-            (manifest["split_scope"] == "outer")
-            & (manifest["split_name"] == split_name)
-            & (manifest["outer_repeat_id"] == repeat_id)
-            & (manifest["outer_fold_id"] == fold_id)
-        ]
+        if split_scope == "outer":
+            subset = manifest[
+                (manifest["split_scope"] == "outer")
+                & (manifest["split_name"] == split_name)
+                & (manifest["outer_repeat_id"] == repeat_id)
+                & (manifest["outer_fold_id"] == fold_id)
+            ]
+        elif split_scope == "inner":
+            if inner_fold_id is None:
+                raise ValueError("subset_generated_manifest requires inner_fold_id when split_scope='inner'.")
+            inner_repeat = 0 if inner_repeat_id is None else inner_repeat_id
+            subset = manifest[
+                (manifest["split_scope"] == "inner")
+                & (manifest["split_name"] == split_name)
+                & (manifest["outer_repeat_id"] == repeat_id)
+                & (manifest["outer_fold_id"] == fold_id)
+                & (manifest["inner_repeat_id"] == inner_repeat)
+                & (manifest["inner_fold_id"] == inner_fold_id)
+            ]
+        else:
+            raise ValueError(f"Unsupported split_scope '{split_scope}'.")
     else:
+        if split_scope != "outer":
+            raise ValueError("Legacy manifests do not support inner split_scope access.")
         subset = manifest[
             (manifest["split_name"] == split_name)
             & (manifest["repeat_id"] == repeat_id)
@@ -323,6 +343,23 @@ def subset_generated_manifest(
         ]
     op_ids = subset["op_id"]
     return df[df["op_id"].isin(op_ids)].copy()
+
+
+def generated_inner_fold_ids(
+    manifest: pd.DataFrame,
+    *,
+    repeat_id: int,
+    fold_id: int,
+) -> list[int]:
+    required = {"outer_repeat_id", "outer_fold_id", "split_scope", "inner_fold_id"}
+    if not required.issubset(manifest.columns):
+        return []
+    inner = manifest[
+        (manifest["split_scope"] == "inner")
+        & (manifest["outer_repeat_id"] == repeat_id)
+        & (manifest["outer_fold_id"] == fold_id)
+    ]
+    return sorted(int(value) for value in inner["inner_fold_id"].dropna().unique().tolist())
 
 
 def build_grouped_holdout_manifest(

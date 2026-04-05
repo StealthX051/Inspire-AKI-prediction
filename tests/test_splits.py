@@ -111,6 +111,25 @@ def test_grouped_nested_manifest_assigns_each_operation_once_to_outer_test() -> 
     assert_group_integrity(manifest, split_scope="inner")
 
 
+def test_grouped_nested_manifest_assigns_each_outer_train_operation_once_to_inner_validation() -> None:
+    bundle = build_grouped_nested_cv_manifest(
+        _grouped_df(),
+        target="aki_boolean",
+        dataset_family="tabular_common",
+        outer_n_splits=5,
+        inner_n_splits=3,
+        random_state=7,
+    )
+    manifest = bundle.manifest
+    inner_val = manifest[(manifest["split_scope"] == "inner") & (manifest["split_name"] == "val")].copy()
+
+    op_counts = inner_val.groupby(["outer_fold_id", "op_id"]).size()
+    patient_fold_counts = inner_val.groupby(["outer_fold_id", "patient_id"])["inner_fold_id"].nunique()
+
+    assert op_counts.eq(1).all()
+    assert patient_fold_counts.eq(1).all()
+
+
 def test_grouped_leakage_checks_fail_closed_on_patient_overlap() -> None:
     manifest = pd.DataFrame(
         [

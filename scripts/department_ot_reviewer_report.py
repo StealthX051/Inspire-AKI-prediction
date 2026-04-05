@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
@@ -19,7 +18,11 @@ OT_TOP_GROUPS_NAME = "department_ot_top_icd10pcs4.csv"
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate a compact reviewer-facing report for ophthalmology-coded cases.")
     parser.add_argument("--config", default="configs/aki/default.yaml", help="Config path to load.")
-    parser.add_argument("--out-dir", default="reports", help="Output directory for markdown and CSV artifacts.")
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help="Optional output directory. Defaults to <artifacts_dir>/reports/reviewer_department_audit/.",
+    )
     return parser
 
 
@@ -73,7 +76,7 @@ def _distribution_summary(series: pd.Series, *, total: int, labels: list[str]) -
     return "; ".join(parts)
 
 
-def _load_review_frame(config_path: str, out_dir: str) -> tuple[object, pd.DataFrame]:
+def _load_review_frame(config_path: str, out_dir: str | None) -> tuple[object, pd.DataFrame]:
     context = _load_context(config_path=config_path, raw_dir=None, artifacts_dir=None, out_dir=out_dir)
     audit_df, _, _ = load_final_audit_cohort(context)
 
@@ -356,9 +359,7 @@ def _build_markdown_report(
 def main() -> None:
     args = build_arg_parser().parse_args()
     context, review_df = _load_review_frame(args.config, args.out_dir)
-    out_dir = Path(args.out_dir)
-    if not out_dir.is_absolute():
-        out_dir = context.paths.repo_root / out_dir
+    out_dir = context.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
     cms_reference = build_cms_prefix_reference(

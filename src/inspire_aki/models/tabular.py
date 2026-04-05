@@ -506,15 +506,17 @@ def raw_prediction_rows(
     y_pred: np.ndarray,
     y_prob: np.ndarray,
     threshold: float = 0.5,
+    split_name: str = "test",
 ) -> pd.DataFrame:
     frame = pd.DataFrame(
         {
             "op_id": test_df["op_id"].values,
+            "patient_id": test_df["patient_id"].values if "patient_id" in test_df.columns else pd.Series(pd.NA, index=test_df.index, dtype="object").values,
             "dataset_regime": dataset_regime,
             "population_id": population_id,
             "repeat_id": repeat_id,
             "fold_id": fold_id,
-            "split_name": "test",
+            "split_name": split_name,
             "model_key": model_key,
             "target": target,
             "y_true": test_df[target].astype(int).values,

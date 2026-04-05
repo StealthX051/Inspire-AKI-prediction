@@ -70,7 +70,13 @@ def _decision_curve_group_worker(
         prevalence = float(np.mean(y_true))
         model_nb = calculate_net_benefit_for_thresholds(y_true, y_prob, pt_grid)
         treat_all = prevalence - (1 - prevalence) * (pt_grid / (1 - pt_grid))
-        threshold_optimal = float(group_df["threshold"].iloc[0]) if "threshold" in group_df.columns and not group_df.empty else np.nan
+        threshold_optimal = np.nan
+        if "threshold" in group_df.columns and not group_df.empty:
+            thresholds = pd.to_numeric(group_df["threshold"], errors="coerce").dropna()
+            if not thresholds.empty:
+                unique = np.unique(thresholds.to_numpy(dtype=float))
+                if unique.size == 1:
+                    threshold_optimal = float(unique[0])
         ci_lower, ci_upper = _bootstrap_dca_ci(
             y_true,
             y_prob,

@@ -7,7 +7,7 @@ from time import perf_counter
 
 import pandas as pd
 from inspire_aki.datasets.splits import build_bootstrap_split_manifest, grouped_manifest_to_training_manifest, subset_from_manifest
-from inspire_aki.evaluation.split_manager import evaluation_runs, subset_generated_manifest
+from inspire_aki.evaluation.split_manager import evaluation_runs, generated_inner_fold_ids, subset_generated_manifest
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.io.predictions import materialize_raw_predictions, write_prediction_partition
 from inspire_aki.io.progress import ProgressLogger
@@ -119,6 +119,157 @@ def _load_grouped_evaluation_manifest(artifacts: ArtifactManager, config: dict, 
             "Run `inspire-aki evaluate generate --config ...` before training."
         )
     return pd.read_parquet(manifest_path), manifest_path
+
+
+def _grouped_tabular_calibration_predictions(
+    *,
+    artifacts: ArtifactManager,
+    config: dict,
+    dataset_regime: str,
+    population_id: str,
+    model_key: str,
+    dataset_df: pd.DataFrame,
+    manifest: pd.DataFrame,
+    repeat_id: int,
+    fold_id: int,
+    target: str,
+    params: dict,
+) -> pd.DataFrame:
+    feature_cols = _tabular_training_feature_columns(dataset_df, target, model_key)
+    if model_key == "asa_rule" and "asa" not in feature_cols:
+        return pd.DataFrame()
+
+    prediction_frames: list[pd.DataFrame] = []
+    inner_fold_ids = generated_inner_fold_ids(manifest, repeat_id=repeat_id, fold_id=fold_id)
+    for inner_fold_id in inner_fold_ids:
+        train_df = subset_generated_manifest(
+            dataset_df,
+            manifest,
+            split_name="train",
+            split_scope="inner",
+            repeat_id=repeat_id,
+            fold_id=fold_id,
+            inner_fold_id=inner_fold_id,
+        )
+        val_df = subset_generated_manifest(
+            dataset_df,
+            manifest,
+            split_name="val",
+            split_scope="inner",
+            repeat_id=repeat_id,
+            fold_id=fold_id,
+            inner_fold_id=inner_fold_id,
+        )
+        prepared_fold = prepare_tabular_fold(train_df=train_df, test_df=val_df, feature_cols=feature_cols, target=target)
+        model_dir = artifacts.paths.artifact_path(
+            "models",
+            "tabular",
+            dataset_regime,
+            model_key,
+            f"repeat_{repeat_id}",
+            f"fold_{fold_id}",
+            f"calibration_inner_{inner_fold_id}",
+        )
+        bundle = fit_tabular_model(
+            model_key=model_key,
+            train_df=train_df,
+            feature_cols=feature_cols,
+            target=target,
+            params=params,
+            config=config,
+            model_output_dir=model_dir,
+            seed=config["splits"]["random_state"] + repeat_id * 1000 + fold_id * 100 + inner_fold_id,
+            prepared_fold=prepared_fold,
+        )
+        y_pred, y_prob = _predict_tabular_bundle_compat(bundle, val_df, target, prepared_fold=prepared_fold)
+        prediction_frames.append(
+            tabular_prediction_rows(
+                dataset_regime=dataset_regime,
+                population_id=population_id,
+                model_key=model_key,
+                target=target,
+                repeat_id=repeat_id,
+                fold_id=fold_id,
+                test_df=val_df,
+                y_pred=y_pred,
+                y_prob=y_prob,
+                threshold=_tabular_prediction_threshold(bundle),
+                split_name="calibration",
+            )
+        )
+    return pd.concat(prediction_frames, ignore_index=True) if prediction_frames else pd.DataFrame()
+
+
+def _grouped_sequence_calibration_predictions(
+    *,
+    artifacts: ArtifactManager,
+    config: dict,
+    dataset_regime: str,
+    population_id: str,
+    model_key: str,
+    sequence_df: pd.DataFrame,
+    manifest: pd.DataFrame,
+    repeat_id: int,
+    fold_id: int,
+    target: str,
+    params: dict,
+) -> pd.DataFrame:
+    feature_cols_tab = sequence_feature_columns(sequence_df, target)
+    prediction_frames: list[pd.DataFrame] = []
+    inner_fold_ids = generated_inner_fold_ids(manifest, repeat_id=repeat_id, fold_id=fold_id)
+    for inner_fold_id in inner_fold_ids:
+        train_df = subset_generated_manifest(
+            sequence_df,
+            manifest,
+            split_name="train",
+            split_scope="inner",
+            repeat_id=repeat_id,
+            fold_id=fold_id,
+            inner_fold_id=inner_fold_id,
+        )
+        val_df = subset_generated_manifest(
+            sequence_df,
+            manifest,
+            split_name="val",
+            split_scope="inner",
+            repeat_id=repeat_id,
+            fold_id=fold_id,
+            inner_fold_id=inner_fold_id,
+        )
+        model_dir = artifacts.paths.artifact_path(
+            "models",
+            "sequence",
+            model_key,
+            f"repeat_{repeat_id}",
+            f"fold_{fold_id}",
+            f"calibration_inner_{inner_fold_id}",
+        )
+        bundle = fit_sequence_model(
+            model_key=model_key,
+            train_df=train_df,
+            feature_cols_tab=feature_cols_tab,
+            target=target,
+            params=params,
+            config=config,
+            model_output_dir=model_dir,
+            seed=config["splits"]["random_state"] + repeat_id * 1000 + fold_id * 100 + inner_fold_id,
+        )
+        y_pred, y_prob = predict_sequence_bundle(bundle, val_df)
+        prediction_frames.append(
+            sequence_prediction_rows(
+                dataset_regime=dataset_regime,
+                population_id=population_id,
+                model_key=model_key,
+                target=target,
+                repeat_id=repeat_id,
+                fold_id=fold_id,
+                test_df=val_df,
+                y_pred=y_pred,
+                y_prob=y_prob,
+                split_name="calibration",
+            )
+        )
+    return pd.concat(prediction_frames, ignore_index=True) if prediction_frames else pd.DataFrame()
 
 
 def _tabular_training_feature_columns(dataset_df: pd.DataFrame, target: str, model_key: str) -> list[str]:
@@ -402,6 +553,21 @@ def run_train_tabular(config: dict) -> dict[str, str]:
                                 threshold=_tabular_prediction_threshold(bundle),
                             )
                         )
+                        calibration_predictions = _grouped_tabular_calibration_predictions(
+                            artifacts=artifacts,
+                            config=config,
+                            dataset_regime=dataset_regime,
+                            population_id=dataset_regime,
+                            model_key=model_key,
+                            dataset_df=model_dataset_df,
+                            manifest=manifest,
+                            repeat_id=int(run.repeat_id),
+                            fold_id=int(run.fold_id),
+                            target=target,
+                            params=params,
+                        )
+                        if not calibration_predictions.empty:
+                            prediction_frames.append(calibration_predictions)
                         progress.emit_event(
                             event_type="model_fit_complete",
                             stage=stage_name,
@@ -445,6 +611,23 @@ def run_train_tabular(config: dict) -> dict[str, str]:
                                 status="running",
                                 **event,
                             )
+                svm_dataset_df = dataset_df
+                for run in split_runs:
+                    calibration_predictions = _grouped_tabular_calibration_predictions(
+                        artifacts=artifacts,
+                        config=config,
+                        dataset_regime=dataset_regime,
+                        population_id=dataset_regime,
+                        model_key="svm",
+                        dataset_df=svm_dataset_df,
+                        manifest=manifest,
+                        repeat_id=int(run.repeat_id),
+                        fold_id=int(run.fold_id),
+                        target=target,
+                        params=_tabular_params(config, artifacts, dataset_regime, "svm", run_id=int(run.run_id)),
+                    )
+                    if not calibration_predictions.empty:
+                        prediction_frames.append(calibration_predictions)
 
             artifacts.write_manifest(
                 f"train_tabular_{dataset_regime}",
@@ -701,6 +884,21 @@ def run_train_sequence(config: dict) -> dict[str, str]:
                         y_prob=y_prob,
                     )
                 )
+                calibration_predictions = _grouped_sequence_calibration_predictions(
+                    artifacts=artifacts,
+                    config=config,
+                    dataset_regime=dataset_regime,
+                    population_id=population_id,
+                    model_key=model_key,
+                    sequence_df=sequence_df,
+                    manifest=manifest,
+                    repeat_id=int(run.repeat_id),
+                    fold_id=int(run.fold_id),
+                    target=target,
+                    params=params,
+                )
+                if not calibration_predictions.empty:
+                    prediction_frames.append(calibration_predictions)
 
         if not prediction_frames:
             progress.stage_end(stage_name, wall_time_seconds=perf_counter() - start, message="sequence training skipped; no predictions produced")

@@ -12,6 +12,8 @@ from inspire_aki.clinical_baselines import clinical_rule_calibration_method, cli
 from inspire_aki.evaluation.thresholds import find_optimal_fbeta_threshold
 from inspire_aki.runtime import build_stage_runtime_plan, thread_limited_context
 
+_STRICT_GROUPED_EVALUATION_MODES = {"grouped_holdout", "grouped_nested_cv"}
+
 
 @dataclass
 class CalibrationResult:
@@ -19,7 +21,90 @@ class CalibrationResult:
     thresholds: pd.DataFrame
 
 
-def _calibrate_group(group_df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame, dict[str, object]]:
+def _grouped_threshold_summary(
+    *,
+    group_df: pd.DataFrame,
+    calibration_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    method_used: str,
+    threshold: float,
+) -> dict[str, object]:
+    return {
+        "dataset_regime": group_df["dataset_regime"].iat[0],
+        "population_id": group_df["population_id"].iat[0],
+        "model_key": group_df["model_key"].iat[0],
+        "repeat_id": int(group_df["repeat_id"].iat[0]),
+        "fold_id": int(group_df["fold_id"].iat[0]),
+        "calibration_method": method_used,
+        "threshold": float(threshold),
+        "n_calibration_rows": int(len(calibration_df)),
+        "n_calibration_positive": int(calibration_df["y_true"].astype(int).sum()) if not calibration_df.empty else 0,
+        "n_test_rows": int(len(test_df)),
+        "n_test_positive": int(test_df["y_true"].astype(int).sum()) if not test_df.empty else 0,
+    }
+
+
+def _calibrate_grouped_outer_fold(group_df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame, dict[str, object]]:
+    calibration_cfg = config["calibration"]
+    group_df = group_df.sort_values(["split_name", "op_id"]).reset_index(drop=True).copy()
+    model_key = str(group_df["model_key"].iat[0])
+    calibration_df = group_df[group_df["split_name"].astype(str) == "calibration"].copy()
+    test_df = group_df[group_df["split_name"].astype(str) == "test"].copy()
+    if test_df.empty:
+        raise ValueError("Grouped calibration requires test predictions for each outer fold.")
+
+    rule_threshold = clinical_rule_probability_threshold(model_key, config)
+    if rule_threshold is not None:
+        y_prob_calibrated = test_df["y_prob_raw"].astype(float).to_numpy(copy=True)
+        threshold = float(rule_threshold)
+        method_used = str(clinical_rule_calibration_method(model_key) or "identity")
+    else:
+        if calibration_df.empty:
+            raise ValueError(
+                "Grouped calibration requires split_name='calibration' rows generated from outer-train OOF predictions."
+            )
+        method = calibration_cfg["method"]
+        if method != "isotonic":
+            raise ValueError(f"Unsupported calibration method: {method}")
+
+        y_true = calibration_df["y_true"].astype(int).to_numpy()
+        y_prob_raw = calibration_df["y_prob_raw"].astype(float).to_numpy()
+        unique_classes = np.unique(y_true)
+        if len(unique_classes) < 2:
+            calibration_probs = y_prob_raw.copy()
+            y_prob_calibrated = test_df["y_prob_raw"].astype(float).to_numpy(copy=True)
+            threshold = 0.5
+            method_used = "identity_insufficient_calibration_support"
+        else:
+            calibrator = IsotonicRegression(out_of_bounds="clip")
+            calibrator.fit(y_prob_raw, y_true)
+            calibration_probs = calibrator.predict(y_prob_raw)
+            y_prob_calibrated = calibrator.predict(test_df["y_prob_raw"].astype(float).to_numpy())
+            threshold = find_optimal_fbeta_threshold(
+                y_true,
+                calibration_probs,
+                beta=2.0,
+                threshold_min=calibration_cfg["threshold_min"],
+                threshold_max=calibration_cfg["threshold_max"],
+                steps=calibration_cfg["threshold_steps"],
+            )
+            method_used = "isotonic_outer_train_oof"
+
+    test_df["y_prob_calibrated"] = y_prob_calibrated
+    test_df["threshold"] = threshold
+    test_df["y_pred"] = (test_df["y_prob_calibrated"] >= threshold).astype(int)
+    test_df["calibration_method"] = method_used
+    summary = _grouped_threshold_summary(
+        group_df=group_df,
+        calibration_df=calibration_df,
+        test_df=test_df,
+        method_used=method_used,
+        threshold=threshold,
+    )
+    return test_df, summary
+
+
+def _calibrate_legacy_group(group_df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame, dict[str, object]]:
     calibration_cfg = config["calibration"]
     group_df = group_df.sort_values(["repeat_id", "fold_id", "op_id"]).reset_index(drop=True).copy()
     model_key = str(group_df["model_key"].iat[0])
@@ -80,12 +165,21 @@ def _calibrate_group(group_df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame
         "dataset_regime": group_df["dataset_regime"].iat[0],
         "population_id": group_df["population_id"].iat[0],
         "model_key": model_key,
+        "repeat_id": pd.NA,
+        "fold_id": pd.NA,
         "calibration_method": method_used,
         "threshold": float(threshold),
         "n_rows": int(len(group_df)),
         "n_positive": int(y_true.sum()),
     }
     return group_df, summary
+
+
+def _calibrate_group(group_df: pd.DataFrame, config: dict) -> tuple[pd.DataFrame, dict[str, object]]:
+    evaluation_mode = config.get("evaluation_mode", "legacy_repeated_cv")
+    if evaluation_mode in _STRICT_GROUPED_EVALUATION_MODES:
+        return _calibrate_grouped_outer_fold(group_df, config)
+    return _calibrate_legacy_group(group_df, config)
 
 
 def _calibrate_group_worker(group_df: pd.DataFrame, config: dict, nested_blas_threads: int) -> tuple[pd.DataFrame, dict[str, object]]:
@@ -97,7 +191,11 @@ def calibrate_prediction_groups(predictions_df: pd.DataFrame, config: dict) -> C
     if predictions_df.empty:
         return CalibrationResult(predictions=predictions_df.copy(), thresholds=pd.DataFrame())
 
-    group_cols = ["dataset_regime", "population_id", "model_key"]
+    evaluation_mode = config.get("evaluation_mode", "legacy_repeated_cv")
+    if evaluation_mode in _STRICT_GROUPED_EVALUATION_MODES:
+        group_cols = ["dataset_regime", "population_id", "model_key", "repeat_id", "fold_id"]
+    else:
+        group_cols = ["dataset_regime", "population_id", "model_key"]
     groups = [group_df.copy() for _, group_df in predictions_df.groupby(group_cols, sort=False)]
     runtime_plan = build_stage_runtime_plan(config, "evaluate_calibration", {"group_count": len(groups)})
     results = Parallel(n_jobs=max(1, runtime_plan.evaluation_workers), backend="loky")(

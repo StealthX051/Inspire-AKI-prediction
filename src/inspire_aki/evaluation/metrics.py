@@ -24,6 +24,16 @@ def _safe_auc(y_true: np.ndarray, y_prob: np.ndarray) -> tuple[float, float]:
     return roc_auc_score(y_true, y_prob), average_precision_score(y_true, y_prob)
 
 
+def _summary_threshold(group_df: pd.DataFrame) -> float:
+    thresholds = pd.to_numeric(group_df["threshold"], errors="coerce").dropna()
+    if thresholds.empty:
+        return np.nan
+    unique = np.unique(thresholds.to_numpy(dtype=float))
+    if unique.size == 1:
+        return float(unique[0])
+    return float(thresholds.mean())
+
+
 def _metric_summary(group_df: pd.DataFrame) -> dict[str, float | int | str]:
     y_true = group_df["y_true"].astype(int).to_numpy()
     y_prob = group_df["y_prob_calibrated"].fillna(group_df["y_prob_raw"]).astype(float).to_numpy()
@@ -41,7 +51,7 @@ def _metric_summary(group_df: pd.DataFrame) -> dict[str, float | int | str]:
         "specificity": tn / (tn + fp) if (tn + fp) else np.nan,
         "precision": precision_score(y_true, y_pred, zero_division=0),
         "f1": f1_score(y_true, y_pred, zero_division=0),
-        "threshold": float(group_df["threshold"].iloc[0]),
+        "threshold": _summary_threshold(group_df),
     }
 
 
@@ -81,11 +91,12 @@ def _summary_group_worker(
         row.update(_metric_summary(group_df))
         y_true = group_df["y_true"].astype(int).to_numpy()
         y_prob = group_df["y_prob_calibrated"].fillna(group_df["y_prob_raw"]).astype(float).to_numpy()
-        threshold = float(group_df["threshold"].iloc[0])
+        y_pred = group_df["y_pred"].astype(int).to_numpy()
         bootstrap_df = bootstrap_metric_intervals(
             y_true,
             y_prob,
-            threshold,
+            None,
+            y_pred=y_pred,
             n_bootstrap=config["evaluation"]["bootstrap_reps"],
             random_state=config["splits"]["random_state"],
             n_jobs=bootstrap_jobs,

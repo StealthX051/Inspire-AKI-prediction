@@ -13,13 +13,18 @@ from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.io.predictions import read_raw_predictions
 from inspire_aki.runtime import build_stage_runtime_plan
 
+_STRICT_GROUPED_EVALUATION_MODES = {"grouped_holdout", "grouped_nested_cv"}
+
 
 def run_calibration(config: dict) -> dict[str, str]:
     stage_name = "evaluate_calibration"
     start = perf_counter()
     artifacts = ArtifactManager(config)
     predictions_df = read_raw_predictions(artifacts)
-    group_count = len(predictions_df.groupby(["dataset_regime", "population_id", "model_key"]))
+    group_cols = ["dataset_regime", "population_id", "model_key"]
+    if config.get("evaluation_mode", "legacy_repeated_cv") in _STRICT_GROUPED_EVALUATION_MODES:
+        group_cols = [*group_cols, "repeat_id", "fold_id"]
+    group_count = len(predictions_df.groupby(group_cols))
     result = calibrate_prediction_groups(predictions_df, config)
     pred_path = artifacts.write_dataframe(result.predictions, "predictions", "calibrated_predictions.parquet")
     outputs = {"predictions": str(pred_path)}
@@ -30,7 +35,8 @@ def run_calibration(config: dict) -> dict[str, str]:
         "evaluate_calibration",
         ["manifests", "evaluate_calibration.json"],
             inputs=[artifacts.relative(artifacts.paths.artifact_path("predictions", "raw_predictions.parquet"))],
-            outputs=[artifacts.relative(artifacts.paths.artifact_path("predictions", "calibrated_predictions.parquet"))],
+            outputs=[artifacts.relative(artifacts.paths.artifact_path("predictions", "calibrated_predictions.parquet"))]
+            + ([artifacts.relative(threshold_path)] if "thresholds" in outputs else []),
             metadata={"n_rows": len(result.predictions)},
             stage_runtime_plan=build_stage_runtime_plan(config, stage_name, {"group_count": group_count}).as_dict(),
             wall_time_seconds=perf_counter() - start,

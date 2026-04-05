@@ -18,8 +18,19 @@ from sklearn.metrics import (
 )
 
 
-def _metric_row(y_true: np.ndarray, y_prob: np.ndarray, threshold: float) -> dict[str, float]:
-    y_pred = (y_prob >= threshold).astype(int)
+def _metric_row(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    threshold: float | None = None,
+    *,
+    y_pred: np.ndarray | None = None,
+) -> dict[str, float]:
+    if y_pred is None:
+        if threshold is None:
+            raise ValueError("bootstrap metric computation requires either threshold or y_pred.")
+        y_pred = (y_prob >= threshold).astype(int)
+    else:
+        y_pred = np.asarray(y_pred, dtype=int)
     if len(np.unique(y_true)) < 2:
         auroc = np.nan
         auprc = np.nan
@@ -55,8 +66,9 @@ def _metric_row(y_true: np.ndarray, y_prob: np.ndarray, threshold: float) -> dic
 def _bootstrap_chunk(
     y_true: np.ndarray,
     y_prob: np.ndarray,
-    threshold: float,
+    threshold: float | None,
     *,
+    y_pred: np.ndarray | None,
     n_bootstrap: int,
     random_state: int,
 ) -> list[dict[str, float]]:
@@ -69,15 +81,17 @@ def _bootstrap_chunk(
         y_prob_boot = y_prob[idx]
         if len(np.unique(y_true_boot)) < 2:
             continue
-        bootstrap_rows.append(_metric_row(y_true_boot, y_prob_boot, threshold))
+        y_pred_boot = None if y_pred is None else y_pred[idx]
+        bootstrap_rows.append(_metric_row(y_true_boot, y_prob_boot, threshold, y_pred=y_pred_boot))
     return bootstrap_rows
 
 
 def bootstrap_metric_intervals(
     y_true: np.ndarray,
     y_prob: np.ndarray,
-    threshold: float,
+    threshold: float | None,
     *,
+    y_pred: np.ndarray | None = None,
     n_bootstrap: int,
     random_state: int,
     n_jobs: int = 1,
@@ -90,6 +104,7 @@ def bootstrap_metric_intervals(
             y_true,
             y_prob,
             threshold,
+            y_pred=y_pred,
             n_bootstrap=n_bootstrap,
             random_state=random_state,
         )
@@ -102,6 +117,7 @@ def bootstrap_metric_intervals(
                 y_true,
                 y_prob,
                 threshold,
+                y_pred=y_pred,
                 n_bootstrap=batch_size,
                 random_state=random_state + batch_idx,
             )

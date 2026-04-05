@@ -2,7 +2,7 @@
 
 These docs collect the durable context most useful for manuscript revisions, reviewer responses, and publication-facing repo review.
 
-They assume the maintained CLI workflow, which now uses patient-grouped evaluation manifests and grouped calibration on `op_id` rather than the archived operation-level process.
+They assume the maintained CLI workflow, which now uses patient-grouped evaluation manifests plus outer-train-only calibration and threshold selection from patient-grouped OOF predictions rather than the archived operation-level process.
 
 Start here:
 

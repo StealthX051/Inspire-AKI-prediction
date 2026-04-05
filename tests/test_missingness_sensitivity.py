@@ -24,6 +24,7 @@ from inspire_aki.pipelines.train import run_train_tabular
 from inspire_aki.reporting.missingness_sensitivity import (
     _load_combined_inputs,
     _resolve_context,
+    default_reviewer_output_dir,
     missing_indicator_name,
     prepare_missingness_sensitivity_fold,
     run_missingness_sensitivity_analysis,
@@ -330,6 +331,24 @@ def test_missingness_sensitivity_rebuilds_inputs_from_upstream_feature_artifacts
 
     assert loaded_value == pytest.approx(float(expected_base.loc[target_op_id, high_missing_feature]))
     assert loaded_value != pytest.approx(987654.0)
+
+
+def test_missingness_sensitivity_default_output_dir_uses_sensitivity_artifact_root(
+    synthetic_config: Path,
+    tmp_path: Path,
+) -> None:
+    baseline_root = tmp_path / "baseline_artifacts"
+    config_path, _high_missing_feature, _low_missing_feature = _prepare_reviewer_baseline(synthetic_config, baseline_root)
+    sensitivity_root = tmp_path / "sensitivity_artifacts"
+
+    context = _resolve_context(
+        config_path=config_path,
+        baseline_artifacts_dir=None,
+        sensitivity_artifacts_dir=sensitivity_root,
+        out_dir=None,
+    )
+
+    assert context.out_dir == default_reviewer_output_dir(context.sensitivity_artifacts)
 
 
 def test_reviewer_missingness_wrapper_uses_active_environment_bins(tmp_path: Path) -> None:

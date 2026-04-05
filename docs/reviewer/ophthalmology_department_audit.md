@@ -24,13 +24,19 @@ These scripts are maintained reviewer-response utilities under `scripts/`; they 
 
 ## Key Outputs
 
-- [reports/department_os_audit.md](../../reports/department_os_audit.md)
-- [reports/department_os_summary.csv](../../reports/department_os_summary.csv)
-- [reports/department_os_top_icd10pcs4.csv](../../reports/department_os_top_icd10pcs4.csv)
-- [reports/department_raw_counts.csv](../../reports/department_raw_counts.csv)
-- [reports/department_ot_reviewer_report.md](../../reports/department_ot_reviewer_report.md)
-- [reports/department_ot_summary.csv](../../reports/department_ot_summary.csv)
-- [reports/department_ot_top_icd10pcs4.csv](../../reports/department_ot_top_icd10pcs4.csv)
+Default output directory:
+
+- `<artifacts_dir>/reports/reviewer_department_audit/`
+
+Expected files:
+
+- `department_os_audit.md`
+- `department_os_summary.csv`
+- `department_os_top_icd10pcs4.csv`
+- `department_raw_counts.csv`
+- `department_ot_reviewer_report.md`
+- `department_ot_summary.csv`
+- `department_ot_top_icd10pcs4.csv`
 
 ## Current Position
 
@@ -47,4 +53,4 @@ These scripts are maintained reviewer-response utilities under `scripts/`; they 
 .venv/bin/python scripts/department_ot_reviewer_report.py --config configs/aki/default.yaml
 ```
 
-Both commands default to repo-local `reports/` outputs.
+Both commands default to the configured artifact root under `reports/reviewer_department_audit/`.

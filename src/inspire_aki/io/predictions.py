@@ -19,6 +19,7 @@ PREDICTION_PRIMARY_KEY = [
 PREDICTION_SORT_COLUMNS = ["dataset_regime", "model_key", "repeat_id", "fold_id", "op_id"]
 PREDICTION_COLUMNS = [
     "op_id",
+    "patient_id",
     "dataset_regime",
     "population_id",
     "repeat_id",

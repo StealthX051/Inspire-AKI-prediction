@@ -8,7 +8,8 @@ usage() {
 Usage: bash scripts/run_reviewer_missingness_sensitivity.sh [CONFIG_PATH] [SENSITIVITY_ARTIFACTS_DIR] [OUT_DIR]
 
 Runs a fresh reviewer baseline rerun for the combined xgb model and then launches
-the reviewer-specific missingness sensitivity analysis.
+the reviewer-specific missingness sensitivity analysis. By default, comparison
+outputs are written under the sensitivity artifact root.
 EOF
 }
 
@@ -19,7 +20,7 @@ fi
 
 CONFIG_PATH="${1:-$REPO_ROOT/configs/aki/reviewer_combined_xgb_baseline.yaml}"
 SENSITIVITY_ARTIFACTS_DIR="${2:-/media/volume/ncs_inspire_data/ncs_aki/artifacts/reviewer_combined_xgb_baseline_median_plus_indicator_gt10}"
-OUT_DIR="${3:-$REPO_ROOT/reports}"
+OUT_DIR="${3:-$SENSITIVITY_ARTIFACTS_DIR/reports/reviewer_missingness_sensitivity}"
 
 if [[ ! -f "$CONFIG_PATH" ]]; then
   echo "Reviewer baseline config not found: $CONFIG_PATH" >&2

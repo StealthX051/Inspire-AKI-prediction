@@ -15,7 +15,7 @@ from inspire_aki.config import REPO_ROOT, active_target_column, config_hash, loa
 from inspire_aki.datasets.tabular import assemble_tabular_base_frame, tabular_ignore_columns
 from inspire_aki.evaluation.calibration import calibrate_prediction_groups
 from inspire_aki.evaluation.metrics import compute_group_metrics, summarize_group_metrics
-from inspire_aki.evaluation.split_manager import evaluation_runs, subset_generated_manifest
+from inspire_aki.evaluation.split_manager import evaluation_runs, generated_inner_fold_ids, subset_generated_manifest
 from inspire_aki.features.normalization import apply_outlier_replacement_plan, fit_outlier_replacement_plan
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.io.predictions import materialize_raw_predictions, write_prediction_partition
@@ -47,6 +47,7 @@ CONVERTED_FEATURES_NAME = "missingness_sensitivity_converted_features.csv"
 INDICATOR_RANKS_NAME = "missingness_sensitivity_indicator_ranks.csv"
 BASELINE_FIGURE_STEM = "shap_beeswarm_combined_xgb"
 SENSITIVITY_STRATEGY_NAME = "median_plus_indicator_gt10"
+DEFAULT_REVIEWER_OUTPUT_DIRNAME = "reviewer_missingness_sensitivity"
 _SHAP_BACKGROUND_SAMPLE_N = 200
 
 
@@ -100,13 +101,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--out-dir",
         default=None,
-        help="Optional repo-local comparison output directory. Defaults to repo-root reports/.",
+        help="Optional comparison output directory. Defaults to <sensitivity_artifacts_dir>/reports/reviewer_missingness_sensitivity/.",
     )
     return parser
 
 
 def missing_indicator_name(feature_name: str) -> str:
     return f"{feature_name}_missing_flag"
+
+
+def default_reviewer_output_dir(artifacts: ArtifactManager) -> Path:
+    return artifacts.paths.artifact_path("reports", DEFAULT_REVIEWER_OUTPUT_DIRNAME)
 
 
 def _markdown_table(frame: pd.DataFrame, *, columns: list[str] | None = None) -> str:
@@ -276,7 +281,7 @@ def _resolve_context(
         sensitivity_config["paths"]["artifacts_dir"] = str(Path(sensitivity_artifacts_dir))
     sensitivity_artifacts = ArtifactManager(sensitivity_config)
 
-    resolved_out_dir = Path(out_dir) if out_dir is not None else (REPO_ROOT / "reports")
+    resolved_out_dir = Path(out_dir) if out_dir is not None else default_reviewer_output_dir(sensitivity_artifacts)
     if not resolved_out_dir.is_absolute():
         resolved_out_dir = REPO_ROOT / resolved_out_dir
     resolved_out_dir.mkdir(parents=True, exist_ok=True)
@@ -388,6 +393,9 @@ def _fit_sensitivity_bundle_for_fold(
     artifacts: ArtifactManager,
     target: str,
     params: dict[str, Any],
+    split_name: str = "test",
+    model_dir_suffix: str | None = None,
+    seed_offset: int = 0,
 ) -> tuple[pd.DataFrame, Path]:
     y_train = prepared_fold.train_model_df[target].to_numpy()
     manual_fold = PreparedTabularFold(
@@ -408,6 +416,7 @@ def _fit_sensitivity_bundle_for_fold(
         "xgb",
         f"repeat_{run.repeat_id}",
         f"fold_{run.fold_id}",
+        *(tuple() if model_dir_suffix is None else (model_dir_suffix,)),
     )
     bundle = fit_tabular_model(
         model_key="xgb",
@@ -417,7 +426,7 @@ def _fit_sensitivity_bundle_for_fold(
         params=params,
         config=config,
         model_output_dir=model_dir,
-        seed=int(config["splits"]["random_state"]) + int(run.repeat_id) * 100 + int(run.fold_id),
+        seed=int(config["splits"]["random_state"]) + int(run.repeat_id) * 100 + int(run.fold_id) + int(seed_offset),
         prepared_fold=manual_fold,
     )
     y_pred, y_prob = predict_tabular_bundle(bundle, prepared_fold.test_model_df, target, prepared_fold=manual_fold)
@@ -431,6 +440,7 @@ def _fit_sensitivity_bundle_for_fold(
         test_df=prepared_fold.test_model_df,
         y_pred=y_pred,
         y_prob=y_prob,
+        split_name=split_name,
     )
     return predictions, model_dir
 
@@ -751,6 +761,44 @@ def run_missingness_sensitivity_analysis(
             params=params,
         )
         prediction_frames.append(predictions)
+        for inner_fold_id in generated_inner_fold_ids(manifest, repeat_id=int(run.repeat_id), fold_id=int(run.fold_id)):
+            inner_train_df = subset_generated_manifest(
+                modeling_df,
+                manifest,
+                split_name="train",
+                split_scope="inner",
+                repeat_id=int(run.repeat_id),
+                fold_id=int(run.fold_id),
+                inner_fold_id=int(inner_fold_id),
+            )
+            inner_val_df = subset_generated_manifest(
+                modeling_df,
+                manifest,
+                split_name="val",
+                split_scope="inner",
+                repeat_id=int(run.repeat_id),
+                fold_id=int(run.fold_id),
+                inner_fold_id=int(inner_fold_id),
+            )
+            inner_prepared_fold = prepare_missingness_sensitivity_fold(
+                train_df=inner_train_df,
+                test_df=inner_val_df,
+                feature_cols=feature_cols,
+                fill_rates=fill_rates,
+                config=context.config,
+            )
+            calibration_predictions, _ = _fit_sensitivity_bundle_for_fold(
+                prepared_fold=inner_prepared_fold,
+                run=run,
+                config=context.config,
+                artifacts=context.sensitivity_artifacts,
+                target=target,
+                params=params,
+                split_name="calibration",
+                model_dir_suffix=f"calibration_inner_{int(inner_fold_id)}",
+                seed_offset=int(inner_fold_id) + 1,
+            )
+            prediction_frames.append(calibration_predictions)
         if int(run.repeat_id) == 0 and int(run.fold_id) == 0:
             shap_fold = prepared_fold
             shap_model_dir = model_dir

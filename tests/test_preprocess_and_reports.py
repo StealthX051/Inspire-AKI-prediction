@@ -17,7 +17,7 @@ from inspire_aki.pipelines.train import run_train_tabular
 from inspire_aki.pipelines.tune import run_tune_tabular
 from inspire_aki.reporting.consort import generate_consort_outputs
 from inspire_aki.reporting.curves import generate_curve_outputs
-from inspire_aki.reporting.tables import _performance_summary_frame, _performance_table_spec, generate_table_outputs
+from inspire_aki.reporting.tables import _performance_prediction_frame, _performance_summary_frame, _performance_table_spec, generate_table_outputs
 from inspire_aki.reporting.rendering import write_table_outputs
 
 
@@ -544,3 +544,54 @@ def test_grouped_holdout_performance_summary_uses_bootstrap_ci(loaded_synthetic_
     assert row["auroc_ci_display"] != "N/A"
     assert row["auprc_ci_display"] != "N/A"
     assert row["balanced_accuracy_ci_display"] != "N/A"
+
+
+def test_performance_prediction_frame_uses_row_level_stored_thresholds(loaded_synthetic_config) -> None:
+    rows = [
+        {
+            "op_id": 1,
+            "patient_id": 1,
+            "dataset_regime": "combined",
+            "population_id": "combined",
+            "repeat_id": 0,
+            "fold_id": 0,
+            "split_name": "test",
+            "model_key": "log_reg",
+            "target": "aki_boolean",
+            "y_true": 1,
+            "y_prob_raw": 0.30,
+            "y_prob_calibrated": 0.30,
+            "y_pred": 0,
+            "threshold": 0.20,
+            "calibration_method": "isotonic_outer_train_oof",
+            "run_id": "combined:log_reg:r0:f0",
+        },
+        {
+            "op_id": 2,
+            "patient_id": 2,
+            "dataset_regime": "combined",
+            "population_id": "combined",
+            "repeat_id": 0,
+            "fold_id": 1,
+            "split_name": "test",
+            "model_key": "log_reg",
+            "target": "aki_boolean",
+            "y_true": 1,
+            "y_prob_raw": 0.30,
+            "y_prob_calibrated": 0.30,
+            "y_pred": 0,
+            "threshold": 0.80,
+            "calibration_method": "isotonic_outer_train_oof",
+            "run_id": "combined:log_reg:r0:f1",
+        },
+    ]
+
+    report_df = _performance_prediction_frame(
+        pd.DataFrame(rows),
+        prob_col="y_prob_calibrated",
+        config=loaded_synthetic_config,
+        use_existing_threshold=True,
+    )
+
+    assert report_df["report_threshold"].tolist() == pytest.approx([0.20, 0.80])
+    assert report_df["report_y_pred"].tolist() == [1, 0]
