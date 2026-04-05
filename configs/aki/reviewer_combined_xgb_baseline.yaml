@@ -1,0 +1,13 @@
+paths:
+  artifacts_dir: /media/volume/ncs_inspire_data/ncs_aki/artifacts/reviewer_combined_xgb_baseline
+
+models:
+  tabular_enabled:
+    - xgb
+  sequence_enabled: []
+  tabular_hpo_enabled: []
+  sequence_hpo_enabled: []
+
+reports:
+  shap_jobs:
+    - {run_name: XGBoost_Combined_Reviewer_Baseline, model_key: xgb, dataset_regime: combined, plots: [beeswarm]}

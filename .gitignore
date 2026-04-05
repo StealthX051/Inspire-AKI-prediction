@@ -214,6 +214,8 @@ cython_debug/
 scripts/*
 !scripts/department_os_audit.py
 !scripts/department_ot_reviewer_report.py
+!scripts/combined_xgb_missingness_sensitivity.py
+!scripts/run_reviewer_missingness_sensitivity.sh
 pyvenv.cfg
 .venv
 pip-selfcheck.json

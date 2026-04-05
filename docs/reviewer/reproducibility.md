@@ -14,6 +14,7 @@ This repository is readable, testable, and partially runnable, but it is not ful
 | Adapted GS-AKI surgery proxy | INSPIRE does not ship a native intraperitoneal-surgery field, so the maintained GS-AKI baseline uses a repo-tracked 5-character ICD-10-PCS proxy map derived from CDC/NHSN and CMS resources plus explicit override review for residual observed code families | Treat GS-AKI as a maintained proxy-based clinical baseline rather than an exact source-variable reimplementation |
 | Default cohort promotion can temporarily outpace stored artifacts | The strict operation-level noncardiac adjudication is now the canonical default cohort rule, but existing artifact trees may have been generated before that promotion | Treat mounted or checked-in artifact counts as stale until the relevant config is rerun under the promoted default |
 | Rule-baseline threshold policy | The maintained pipeline keeps prespecified thresholds for `asa_rule` and `gs_aki_rule` instead of optimizing them on evaluation data | Reviewer-facing binary metrics for these rules should be read as fixed-rule summaries, not tuned operating points |
+| Reviewer missingness sensitivity is intentionally separate | The default preprocess path applies missingness handling before grouped manifests exist, so the reviewer alternative is implemented as its own grouped workflow rather than as a global CLI toggle | Read the sensitivity outputs as a targeted reviewer analysis that preserves the manuscript default path while fitting imputation and scaling on outer-train rows only |
 | Archived-versus-current drift | The maintained CLI keeps several correctness and portability fixes relative to the archive | Exact historical point estimates and counts can drift even when the scientific intent is the same |
 | Historical artifacts removed from the primary repo surface | Large generated model and AutoML trees were curated out of the main repo during cleanup | Small reference outputs remain in-repo; removed heavy artifacts are recorded in the legacy manifest |
 
@@ -44,6 +45,7 @@ This repository is readable, testable, and partially runnable, but it is not ful
 - that the maintained AKI config evaluates adapted GS-AKI on the same grouped manifests as the learned models, while still relying on a committed proxy map for the intraperitoneal factor
 - that the maintained main performance table treats adapted GS-AKI primarily as an ordinal count/class baseline rather than a tuned binary rule
 - that the current default cohort rule is the strict operation-level adjudicated noncardiac cohort, even if older stored artifact trees still reflect the previously shipped default
+- that the reviewer-specific missingness sensitivity workflow reuses patient-grouped outer splits, outer-train-only preprocessing, and `op_id`-grouped calibration
 
 ## Unsafe Claims
 
@@ -58,4 +60,5 @@ This repository is readable, testable, and partially runnable, but it is not ful
 - cite `docs/current/` for the maintained interface
 - cite `docs/reviewer/` for manuscript and limitation language
 - cite [gs_aki_adaptation.md](gs_aki_adaptation.md) when the question is specifically about how the maintained adapted GS-AKI baseline and intraperitoneal proxy were implemented
+- cite [missingness_sensitivity.md](missingness_sensitivity.md) when the question is specifically about the combined `xgb` missing-data reviewer sensitivity analysis and why it stays separate from the default CLI
 - cite `legacy/` only when the historical workflow itself is the subject of the question

@@ -35,7 +35,7 @@ inspire-aki --help
 - CLI entrypoint: `inspire-aki`
 - Shipped configs: `configs/aki/` and `configs/macce/`
 - Helper wrappers: `scripts/run_smoke_test.sh`, `scripts/benchmark_runtime_profiles.sh`
-- Focused reviewer-response audit utilities: `scripts/department_os_audit.py`, `scripts/department_ot_reviewer_report.py`
+- Focused reviewer-response audit utilities: `scripts/department_os_audit.py`, `scripts/department_ot_reviewer_report.py`, `scripts/combined_xgb_missingness_sensitivity.py`, `scripts/run_reviewer_missingness_sensitivity.sh`
 - Tests: `tests/`
 
 ## Typical Runs
@@ -89,6 +89,14 @@ Run the focused department reviewer-response audits when needed:
 ```
 
 These narrow audit scripts are maintained repo utilities under `scripts/`, not CLI stages. They default to writing reviewer-facing markdown/CSV outputs under repo-local `reports/`.
+
+Run the focused missingness reviewer workflow when needed:
+
+```bash
+bash scripts/run_reviewer_missingness_sensitivity.sh
+```
+
+This reviewer workflow is also intentionally outside `run all` and the CLI stage map. It reruns the combined `xgb` baseline into a fresh artifact root, then runs a fold-fit sensitivity analysis that replaces the `>10%` sentinel handling with median imputation plus explicit missingness indicators while preserving the current grouped split, calibration, and reporting logic.
 
 Run the cardiothoracic procedure audit explicitly when needed:
 

@@ -131,6 +131,27 @@ def test_strict_noncardiac_review_config_remains_a_strict_alias_with_separate_ar
     ]
 
 
+def test_reviewer_combined_xgb_baseline_config_is_narrow_and_valid() -> None:
+    config = load_config("configs/aki/reviewer_combined_xgb_baseline.yaml")
+
+    assert config["paths"]["artifacts_dir"] == "/media/volume/ncs_inspire_data/ncs_aki/artifacts/reviewer_combined_xgb_baseline"
+    assert config["evaluation_mode"] == "grouped_nested_cv"
+    assert config["models"]["tabular_enabled"] == ["xgb"]
+    assert config["models"]["sequence_enabled"] == []
+    assert config["models"]["tabular_hpo_enabled"] == []
+    assert config["models"]["sequence_hpo_enabled"] == []
+    assert config["reports"]["shap_jobs"] == [
+        {
+            "run_name": "XGBoost_Combined_Reviewer_Baseline",
+            "model_key": "xgb",
+            "dataset_regime": "combined",
+            "plots": ["beeswarm"],
+            "scatter_features": [],
+            "dependence_pairs": [],
+        }
+    ]
+
+
 def test_macce_default_config_validates_and_switches_to_grouped_holdout() -> None:
     config = load_config("configs/macce/default.yaml")
 

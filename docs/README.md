@@ -13,6 +13,7 @@ The maintained public docs describe the CLI-first workflow with patient-grouped 
 
 - [reviewer/README.md](reviewer/README.md)
 - [reviewer/manuscript_alignment.md](reviewer/manuscript_alignment.md)
+- [reviewer/missingness_sensitivity.md](reviewer/missingness_sensitivity.md)
 - [reviewer/ophthalmology_department_audit.md](reviewer/ophthalmology_department_audit.md)
 - [reviewer/reproducibility.md](reviewer/reproducibility.md)
 - [reviewer/gs_aki_adaptation.md](reviewer/gs_aki_adaptation.md)

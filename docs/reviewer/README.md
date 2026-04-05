@@ -8,6 +8,8 @@ Start here:
 
 - [manuscript_alignment.md](manuscript_alignment.md)
 - [reproducibility.md](reproducibility.md)
+- [missingness_sensitivity.md](missingness_sensitivity.md)
+  - reviewer-specific combined `xgb` missing-data sensitivity workflow and the design decision to keep it separate from the default CLI path
 - [ophthalmology_department_audit.md](ophthalmology_department_audit.md)
   - focused reviewer-response note for the `department_OS` / `department_OT` provenance fix and the ophthalmology subgroup interpretation
 - [cardiothoracic_procedure_audit.md](cardiothoracic_procedure_audit.md)

@@ -7,7 +7,7 @@ from inspire_aki.features.missingness import impute_with_current_behavior
 from inspire_aki.features.normalization import fit_and_apply_standard_scaler, replace_outliers
 
 
-def build_tabular_datasets(preop_df: pd.DataFrame, intraop_df: pd.DataFrame, config: dict) -> dict[str, pd.DataFrame]:
+def assemble_tabular_base_frame(preop_df: pd.DataFrame, intraop_df: pd.DataFrame) -> pd.DataFrame:
     missing_sources = []
     if "op_id" not in preop_df.columns:
         missing_sources.append("preop_df")
@@ -38,11 +38,20 @@ def build_tabular_datasets(preop_df: pd.DataFrame, intraop_df: pd.DataFrame, con
 
     int_columns = df.select_dtypes(include=["int"]).columns
     df[int_columns] = df[int_columns].astype(float)
+    return df
 
+
+def tabular_ignore_columns(df: pd.DataFrame, config: dict) -> set[str]:
     ignore_cols = set(config["features"]["base_ignore_cols"])
     for col in df.columns:
         if ("department" in col) or ("_isna" in col) or ("aki" in col):
             ignore_cols.add(col)
+    return ignore_cols
+
+
+def build_tabular_datasets(preop_df: pd.DataFrame, intraop_df: pd.DataFrame, config: dict) -> dict[str, pd.DataFrame]:
+    df = assemble_tabular_base_frame(preop_df, intraop_df)
+    ignore_cols = tabular_ignore_columns(df, config)
 
     df_unnormalized = replace_outliers(df, ignore_cols, config)
     cols_to_norm = [col for col in df_unnormalized.columns if col not in ignore_cols and pd.api.types.is_numeric_dtype(df_unnormalized[col])]
