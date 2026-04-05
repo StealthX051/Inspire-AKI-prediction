@@ -194,6 +194,11 @@ cython_debug/
 *.sqlite3
 
 !configs/clinical_baselines/intraperitoneal_proxy_map_5char.csv
+!reports/department_os_summary.csv
+!reports/department_os_top_icd10pcs4.csv
+!reports/department_raw_counts.csv
+!reports/department_ot_summary.csv
+!reports/department_ot_top_icd10pcs4.csv
 
 ### venv ###
 # Virtualenv
@@ -205,6 +210,10 @@ cython_debug/
 [Ll]ib64
 [Ll]ocal
 [Ss]cripts
+!scripts/
+scripts/*
+!scripts/department_os_audit.py
+!scripts/department_ot_reviewer_report.py
 pyvenv.cfg
 .venv
 pip-selfcheck.json

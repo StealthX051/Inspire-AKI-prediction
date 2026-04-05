@@ -14,6 +14,7 @@ from inspire_aki.config import active_outcome_config, active_target_column
 from inspire_aki.evaluation.thresholds import find_optimal_fbeta_threshold
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.registry import DATASET_REGIMES, MANUSCRIPT_MODEL_ORDER, model_display_name
+from inspire_aki.reporting.department_labels import DEPARTMENT_LABELS as SHARED_DEPARTMENT_LABELS
 from inspire_aki.reporting.rendering import CellFormatRule, ColumnSpec, TableSection, TableSpec, write_table_outputs
 from inspire_aki.runtime import build_stage_runtime_plan, thread_limited_context
 
@@ -41,24 +42,7 @@ _DATASET_MODEL_ORDER = {
     "intraop": ("autogluon", "xgb", "knn", "log_reg", "lstm_only", "mlp", "rf", "svm"),
     "combined": ("autogluon", "xgb", "knn", "log_reg", "mlp", "hybrid", "rf", "svm"),
 }
-_DEPARTMENT_LABELS = {
-    "UR": "Urology",
-    "RO": "Radiation Oncology",
-    "RAD": "Radiology",
-    "PS": "Plastic Surgery",
-    "PED": "Pediatric Surgery",
-    "OT": "Orthopedic Surgery",
-    "OS": "Oral Surgery",
-    "OL": "Otorhinolaryngology",
-    "OG": "Obstetrics and Gynecology",
-    "NS": "Neurosurgery",
-    "IM": "Internal Medicine",
-    "GS": "General Surgery",
-    "EM": "Emergency Medicine",
-    "DM": "Dermatology",
-    "CTS": "Cardiothoracic Surgery",
-    "AN": "Anesthesiology",
-}
+_DEPARTMENT_LABELS = SHARED_DEPARTMENT_LABELS
 
 
 def _format_mean_sd(series: pd.Series) -> str:

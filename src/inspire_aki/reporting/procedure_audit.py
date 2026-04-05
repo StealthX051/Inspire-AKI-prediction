@@ -11,27 +11,11 @@ import pandas as pd
 from inspire_aki.config import REPO_ROOT
 from inspire_aki.io.artifacts import ArtifactManager
 from inspire_aki.io.csv import read_csv_optimized
+from inspire_aki.reporting.department_labels import DEPARTMENT_LABELS as SHARED_DEPARTMENT_LABELS
 from inspire_aki.reporting.rendering import ColumnSpec, TableSection, TableSpec, write_table_outputs
 
 
-_DEPARTMENT_LABELS = {
-    "UR": "Urology",
-    "RO": "Radiation Oncology",
-    "RAD": "Radiology",
-    "PS": "Plastic Surgery",
-    "PED": "Pediatric Surgery",
-    "OT": "Orthopedic Surgery",
-    "OS": "Oral Surgery",
-    "OL": "Otorhinolaryngology",
-    "OG": "Obstetrics and Gynecology",
-    "NS": "Neurosurgery",
-    "IM": "Internal Medicine",
-    "GS": "General Surgery",
-    "EM": "Emergency Medicine",
-    "DM": "Dermatology",
-    "CTS": "Cardiothoracic Surgery",
-    "AN": "Anesthesiology",
-}
+_DEPARTMENT_LABELS = SHARED_DEPARTMENT_LABELS
 _ORDER_LINE_RE = re.compile(
     r"^\s*(?P<seq>\d+)\s+(?P<code>[0-9A-HJ-NP-Z]{3,7})\s+(?P<valid>[01])\s+(?P<short>.+?)\s{2,}(?P<long>.+?)\s*$"
 )

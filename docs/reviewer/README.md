@@ -8,6 +8,8 @@ Start here:
 
 - [manuscript_alignment.md](manuscript_alignment.md)
 - [reproducibility.md](reproducibility.md)
+- [ophthalmology_department_audit.md](ophthalmology_department_audit.md)
+  - focused reviewer-response note for the `department_OS` / `department_OT` provenance fix and the ophthalmology subgroup interpretation
 - [cardiothoracic_procedure_audit.md](cardiothoracic_procedure_audit.md)
   - default operation-level noncardiac adjudication logic, cardiothoracic audit companion outputs, and manuscript-grade reference links
 - [gs_aki_adaptation.md](gs_aki_adaptation.md)

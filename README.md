@@ -35,6 +35,7 @@ inspire-aki --help
 - CLI entrypoint: `inspire-aki`
 - Shipped configs: `configs/aki/` and `configs/macce/`
 - Helper wrappers: `scripts/run_smoke_test.sh`, `scripts/benchmark_runtime_profiles.sh`
+- Focused reviewer-response audit utilities: `scripts/department_os_audit.py`, `scripts/department_ot_reviewer_report.py`
 - Tests: `tests/`
 
 ## Typical Runs
@@ -77,6 +78,15 @@ inspire-aki report consort --config configs/aki/default.yaml
 inspire-aki report tables --config configs/aki/default.yaml
 inspire-aki report manuscript --config configs/aki/default.yaml
 ```
+
+Run the focused department reviewer-response audits when needed:
+
+```bash
+.venv/bin/python scripts/department_os_audit.py --config configs/aki/default.yaml
+.venv/bin/python scripts/department_ot_reviewer_report.py --config configs/aki/default.yaml
+```
+
+These narrow audit scripts are maintained repo utilities under `scripts/`, not CLI stages. They default to writing reviewer-facing markdown/CSV outputs under repo-local `reports/`.
 
 Run the cardiothoracic procedure audit explicitly when needed:
 

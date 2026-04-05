@@ -14,6 +14,7 @@ For archived scripts and notebooks, use [../../legacy/README.md](../../legacy/RE
 - Artifact root: `paths.artifacts_dir`
 - Runtime inspection: `inspire-aki runtime inspect --config ...`
 - Full orchestration: `inspire-aki run all --config ...`
+- Focused reviewer-response utilities: `scripts/department_os_audit.py`, `scripts/department_ot_reviewer_report.py`
 
 Current shipped evaluation modes:
 
@@ -155,6 +156,7 @@ inspire-aki report manuscript --config configs/aki/default.yaml
 - The same operation-level annotation logic is shared between the audit report and default cohort preprocessing. The code validates that every audited operation receives both an `audit_class` and a final `retain` or `exclude` action.
 - `configs/aki/default.yaml` now uses the strict operation-level adjudicated noncardiac cohort as the canonical paper cohort. `configs/aki/strict_noncardiac_review.yaml` remains only as a compatibility alias when the same cohort needs to be rerun into a separate artifact root.
 - Until the next full rerun, any existing on-disk `artifacts/default` outputs should be treated as stale relative to this default-cohort promotion; do not cite new cohort counts from those old outputs.
+- The focused reviewer-response scripts `scripts/department_os_audit.py` and `scripts/department_ot_reviewer_report.py` are maintained utilities for narrow department provenance and ophthalmology subgroup questions. They are intentionally outside `run all` and the CLI stage map, and they default to writing repo-local markdown/CSV outputs under `reports/`.
 - When `gs_aki_rule` is enabled, the report stage adds the maintained preop baseline ordering `ASA Rule`, `Adapted GS-AKI`, then the learned preop models, plus a held-out GS-AKI incidence table by raw count and class.
 - In the main performance table, `ASA Rule` remains a prespecified binary rule, while `Adapted GS-AKI` is shown primarily with AUROC/AUPRC and blanks its threshold-dependent columns.
 - If model-selection policy changes, resume from `tune ...`, not `train ...`.
