@@ -11,7 +11,15 @@ import pandas as pd
 
 from inspire_aki.config import active_outcome_config, active_target_column
 from inspire_aki.io.artifacts import ArtifactManager
-from inspire_aki.reporting.rendering import FigureExportSpec, ColumnSpec, TableSection, TableSpec, save_figure_variants, write_table_outputs
+from inspire_aki.reporting.rendering import (
+    FigureExportSpec,
+    ColumnSpec,
+    TableSection,
+    TableSpec,
+    report_primary_figure_directory_parts,
+    save_figure_variants,
+    write_table_outputs,
+)
 
 _PREOP_SEQUENCE = (
     "raw_operations",
@@ -24,6 +32,7 @@ _PREOP_SEQUENCE = (
     "nonzero_height_weight",
     "after_antype_department_merge",
     "after_prefix_exclusions",
+    "after_procedure_audit_resolution",
 )
 _PREOP_EXCLUSION_LABELS = {
     "asa_lt_6": "ASA class 6",
@@ -35,6 +44,7 @@ _PREOP_EXCLUSION_LABELS = {
     "nonzero_height_weight": "Zero height or weight",
     "after_antype_department_merge": "Missing anesthesia type or department",
     "after_prefix_exclusions": "Excluded ICD-10 procedure prefixes",
+    "after_procedure_audit_resolution": "Excluded procedure-audit cases",
 }
 _LABEL_SEQUENCE = (
     "tabular_ops_before_labels",
@@ -323,8 +333,9 @@ def _render_consort_graphviz(dot_path: Path, artifacts: ArtifactManager, config:
     if dot_binary is None:
         return outputs
     png_dpi = int(config.get("reports", {}).get("figure_png_dpi", 600))
+    figure_directory_parts = report_primary_figure_directory_parts(config)
     for fmt in ("svg", "png"):
-        out_path = artifacts.resolve("reports", "figures", f"consort.{fmt}")
+        out_path = artifacts.resolve(*figure_directory_parts, f"consort.{fmt}")
         command = [dot_binary, f"-T{fmt}", str(dot_path), "-o", str(out_path)]
         if fmt == "png":
             command.insert(1, f"-Gdpi={png_dpi}")
@@ -575,7 +586,7 @@ def generate_consort_outputs(artifacts: ArtifactManager) -> list[Path]:
     )
     outputs.extend(write_table_outputs(artifacts, table_spec, config))
 
-    dot_path = artifacts.resolve("reports", "figures", "consort.dot")
+    dot_path = artifacts.resolve(*report_primary_figure_directory_parts(config), "consort.dot")
     dot_path.write_text(_consort_dot(consort_df, config), encoding="utf-8")
     outputs.append(dot_path)
 

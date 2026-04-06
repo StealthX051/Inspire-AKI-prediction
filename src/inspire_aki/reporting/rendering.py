@@ -30,6 +30,23 @@ def report_figure_png_dpi(config: dict | None) -> int:
     return int(config.get("reports", {}).get("figure_png_dpi", config.get("reports", {}).get("figure_dpi", 600)))
 
 
+def report_primary_figure_subdir(config: dict | None) -> str | None:
+    if not isinstance(config, dict):
+        return "primary_figures"
+    reports_cfg = config.get("reports", {})
+    if not bool(reports_cfg.get("route_top_level_figures_to_primary_figures", True)):
+        return None
+    subdir = str(reports_cfg.get("primary_figure_subdir", "primary_figures")).strip()
+    return subdir or None
+
+
+def report_primary_figure_directory_parts(config: dict | None) -> tuple[str, ...]:
+    subdir = report_primary_figure_subdir(config)
+    if subdir is None:
+        return ("reports", "figures")
+    return ("reports", "figures", subdir)
+
+
 @contextmanager
 def report_figure_style_context(config: dict | None = None):
     import matplotlib as mpl
@@ -423,8 +440,11 @@ def save_figure_variants(fig: object, artifacts: ArtifactManager, spec: FigureEx
     outputs: list[Path] = []
     if not hasattr(fig, "savefig"):
         raise TypeError("save_figure_variants expects a matplotlib Figure-like object.")
+    directory_parts = spec.directory_parts
+    if tuple(directory_parts) == ("reports", "figures"):
+        directory_parts = report_primary_figure_directory_parts(config)
     for fmt in report_figure_formats(config):
-        path = artifacts.resolve(*spec.directory_parts, f"{spec.stem}.{fmt}")
+        path = artifacts.resolve(*directory_parts, f"{spec.stem}.{fmt}")
         save_kwargs = {"bbox_inches": "tight"}
         if fmt == "png":
             save_kwargs["dpi"] = report_figure_png_dpi(config)

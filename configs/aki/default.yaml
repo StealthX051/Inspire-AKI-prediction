@@ -410,6 +410,8 @@ reports:
   table_formats: [html, md, csv]
   figure_formats: [png, svg]
   figure_png_dpi: 600
+  route_top_level_figures_to_primary_figures: true
+  primary_figure_subdir: primary_figures
   style_variant: legacy_manuscript
   highlight_best_values: true
   generate_supplemental_outputs: true

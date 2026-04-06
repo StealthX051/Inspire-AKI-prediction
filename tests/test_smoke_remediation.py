@@ -21,6 +21,7 @@ from inspire_aki.pipelines.preprocess import run_intraop, run_labels, run_preop,
 from inspire_aki.pipelines.report import run_manuscript
 from inspire_aki.pipelines.train import run_train_tabular
 from inspire_aki.reporting.reclassification import generate_reclassification_outputs
+from inspire_aki.reporting.rendering import report_primary_figure_directory_parts
 from inspire_aki.reporting.shap import (
     ShapExplanationBundle,
     _build_shap_explanation_bundle,
@@ -150,6 +151,7 @@ def test_report_manuscript_manifest_includes_outputs(synthetic_config: Path) -> 
 def test_generate_shap_outputs_accepts_grouped_nested_manifest_names(synthetic_config: Path) -> None:
     config = _prepare_reporting_inputs(synthetic_config)
     artifacts = ArtifactManager(config)
+    primary_figure_dir = report_primary_figure_directory_parts(config)
 
     run_train_tabular(config)
     grouped_path = artifacts.paths.artifact_path("datasets", "splits", "grouped_nested_cv_combined.parquet")
@@ -161,12 +163,13 @@ def test_generate_shap_outputs_accepts_grouped_nested_manifest_names(synthetic_c
     assert grouped_path.exists()
     assert not bootstrap_path.exists()
     assert artifacts.paths.artifact_path("explainability", "shap_importance_combined_log_reg.csv") in outputs
-    assert artifacts.paths.artifact_path("reports", "figures", "shap_beeswarm_combined_log_reg.png") in outputs
+    assert artifacts.paths.artifact_path(*primary_figure_dir, "shap_beeswarm_combined_log_reg.png") in outputs
 
 
 def test_generate_shap_outputs_writes_scatter_outputs_for_all_features(synthetic_config: Path) -> None:
     config = _prepare_reporting_inputs(synthetic_config)
     artifacts = ArtifactManager(config)
+    primary_figure_dir = report_primary_figure_directory_parts(config)
 
     run_train_tabular(config)
     config["reports"]["shap_jobs"] = [{"dataset_regime": "combined", "model_key": "log_reg", "plots": ["beeswarm", "scatter"]}]
@@ -176,7 +179,7 @@ def test_generate_shap_outputs_writes_scatter_outputs_for_all_features(synthetic
     outputs = generate_shap_outputs(artifacts, config)
     scatter_outputs = [path for path in outputs if "reports/figures/shap_scatter/" in str(path)]
 
-    assert artifacts.paths.artifact_path("reports", "figures", "shap_beeswarm_combined_log_reg.png") in outputs
+    assert artifacts.paths.artifact_path(*primary_figure_dir, "shap_beeswarm_combined_log_reg.png") in outputs
     assert len(scatter_outputs) == len(shap_bundle.feature_names) * len(config["reports"]["figure_formats"])
     first_feature = shap_bundle.importance.iloc[0]["feature"]
     assert (

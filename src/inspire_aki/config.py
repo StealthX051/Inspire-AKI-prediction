@@ -352,6 +352,12 @@ def _normalize_config(config: dict[str, Any]) -> dict[str, Any]:
         reports_cfg["shap_jobs"] = copy.deepcopy(reports_cfg.pop("batch_shap_jobs"))
     else:
         reports_cfg.pop("batch_shap_jobs", None)
+    if "mirror_top_level_figures_to_primary_figures" in reports_cfg and "route_top_level_figures_to_primary_figures" not in reports_cfg:
+        reports_cfg["route_top_level_figures_to_primary_figures"] = bool(
+            reports_cfg.pop("mirror_top_level_figures_to_primary_figures")
+        )
+    else:
+        reports_cfg.pop("mirror_top_level_figures_to_primary_figures", None)
     legacy_figure_dpi = reports_cfg.get("figure_dpi")
     if "figure_png_dpi" not in reports_cfg and legacy_figure_dpi is not None:
         reports_cfg["figure_png_dpi"] = legacy_figure_dpi
@@ -362,6 +368,8 @@ def _normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     reports_cfg.setdefault("style_variant", "legacy_manuscript")
     reports_cfg.setdefault("highlight_best_values", True)
     reports_cfg.setdefault("generate_supplemental_outputs", True)
+    reports_cfg.setdefault("route_top_level_figures_to_primary_figures", True)
+    reports_cfg["primary_figure_subdir"] = str(reports_cfg.get("primary_figure_subdir", "primary_figures")).strip() or "primary_figures"
     reports_cfg["shap_jobs"] = [_normalize_shap_job(job) for job in reports_cfg.get("shap_jobs", [])]
     reports_cfg["featured_shap_scatter_features"] = _normalize_string_list(
         reports_cfg.get("featured_shap_scatter_features", [])
@@ -551,6 +559,12 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError(f"Unknown reports.figure_formats values: {unknown_figure_formats}")
     if int(config.get("reports", {}).get("figure_png_dpi", 600)) < 72:
         raise ValueError("reports.figure_png_dpi must be at least 72.")
+    route_primary = config.get("reports", {}).get("route_top_level_figures_to_primary_figures", True)
+    if not isinstance(route_primary, bool):
+        raise ValueError("reports.route_top_level_figures_to_primary_figures must be a boolean.")
+    primary_figure_subdir = str(config.get("reports", {}).get("primary_figure_subdir", "primary_figures")).strip()
+    if not primary_figure_subdir or primary_figure_subdir in {".", ".."} or "/" in primary_figure_subdir or "\\" in primary_figure_subdir:
+        raise ValueError("reports.primary_figure_subdir must be a simple directory name.")
     featured_scatter_features = config.get("reports", {}).get("featured_shap_scatter_features", [])
     if not isinstance(featured_scatter_features, list):
         raise ValueError("reports.featured_shap_scatter_features must be a list of feature names.")

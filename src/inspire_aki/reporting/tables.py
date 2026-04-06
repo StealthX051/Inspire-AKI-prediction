@@ -384,8 +384,9 @@ def _cohort_sections(merged_df: pd.DataFrame, config: dict) -> list[TableSection
         return []
     total_operations = int(merged_df["op_id"].nunique()) if "op_id" in merged_df.columns else int(len(merged_df))
     cohort_df = merged_df.sort_values("op_id", kind="stable")
-    if "subject_id" in cohort_df.columns:
-        cohort_df = cohort_df.drop_duplicates(subset=["subject_id"], keep="last")
+    patient_id_col = next((column for column in ("patient_id", "subject_id") if column in cohort_df.columns), None)
+    if patient_id_col is not None:
+        cohort_df = cohort_df.drop_duplicates(subset=[patient_id_col], keep="last")
     total_patients = int(len(cohort_df))
 
     summary_rows: list[dict[str, object]] = [
@@ -417,17 +418,34 @@ def _cohort_sections(merged_df: pd.DataFrame, config: dict) -> list[TableSection
         sections.append(TableSection(title="ASA classification, n (%)", display_df=pd.DataFrame(asa_rows), csv_df=pd.DataFrame(asa_rows)))
 
     target_column = active_target_column(config)
-    if target_column in cohort_df.columns:
+    if target_column in merged_df.columns:
         outcome_cfg = active_outcome_config(config)
-        positive_count = float(cohort_df[target_column].astype(int).sum())
-        outcome_rows = pd.DataFrame(
-            [
+        operation_positive_count = float(merged_df[target_column].astype(int).sum())
+        outcome_rows_data: list[dict[str, object]] = []
+        if patient_id_col is not None and total_patients != total_operations:
+            patient_positive_count = float(
+                merged_df.groupby(patient_id_col, sort=False)[target_column].max().astype(int).sum()
+            )
+            outcome_rows_data.append(
+                {
+                    "characteristic": f"Patients with {outcome_cfg['display_name']}, n (%)",
+                    "finding": _format_count_pct(patient_positive_count, total_patients),
+                }
+            )
+            outcome_rows_data.append(
+                {
+                    "characteristic": f"Operations with {outcome_cfg['display_name']}, n (%)",
+                    "finding": _format_count_pct(operation_positive_count, total_operations),
+                }
+            )
+        else:
+            outcome_rows_data.append(
                 {
                     "characteristic": f"{outcome_cfg['display_name']}, n (%)",
-                    "finding": _format_count_pct(positive_count, total_patients),
+                    "finding": _format_count_pct(operation_positive_count, total_operations),
                 }
-            ]
-        )
+            )
+        outcome_rows = pd.DataFrame(outcome_rows_data)
         sections.append(TableSection(title=None, display_df=outcome_rows, csv_df=outcome_rows))
 
     dept_columns = [column for column in cohort_df.columns if column.startswith("department_")]

@@ -17,6 +17,7 @@ from inspire_aki.pipelines.train import run_train_tabular
 from inspire_aki.pipelines.tune import run_tune_tabular
 from inspire_aki.reporting.consort import generate_consort_outputs
 from inspire_aki.reporting.curves import generate_curve_outputs
+from inspire_aki.reporting.rendering import FigureExportSpec, report_primary_figure_directory_parts, save_figure_variants
 from inspire_aki.reporting.tables import _performance_prediction_frame, _performance_summary_frame, _performance_table_spec, generate_table_outputs
 from inspire_aki.reporting.rendering import write_table_outputs
 
@@ -61,6 +62,7 @@ def _macce_smoke_config(config_path) -> dict:
 
 def test_preprocess_and_evaluation_artifacts_exist(completed_pipeline) -> None:
     artifacts = ArtifactManager(completed_pipeline)
+    primary_figure_dir = report_primary_figure_directory_parts(completed_pipeline)
     expected_paths = [
         artifacts.paths.artifact_path("features", "preop", "preop_features.csv"),
         artifacts.paths.artifact_path("datasets", "tabular", "tabular_combined_labeled.csv"),
@@ -78,11 +80,11 @@ def test_preprocess_and_evaluation_artifacts_exist(completed_pipeline) -> None:
         artifacts.paths.artifact_path("reports", "tables", "performance_table_calibrated.csv"),
         artifacts.paths.artifact_path("reports", "tables", "consort_audit.md"),
         artifacts.paths.artifact_path("reports", "tables", "consort_audit.html"),
-        artifacts.paths.artifact_path("reports", "figures", "roc_curves_preop.png"),
-        artifacts.paths.artifact_path("reports", "figures", "roc_curves_preop.svg"),
-        artifacts.paths.artifact_path("reports", "figures", "calibration_curves_combined.png"),
-        artifacts.paths.artifact_path("reports", "figures", "consort.png"),
-        artifacts.paths.artifact_path("reports", "figures", "consort.svg"),
+        artifacts.paths.artifact_path(*primary_figure_dir, "roc_curves_preop.png"),
+        artifacts.paths.artifact_path(*primary_figure_dir, "roc_curves_preop.svg"),
+        artifacts.paths.artifact_path(*primary_figure_dir, "calibration_curves_combined.png"),
+        artifacts.paths.artifact_path(*primary_figure_dir, "consort.png"),
+        artifacts.paths.artifact_path(*primary_figure_dir, "consort.svg"),
     ]
     for path in expected_paths:
         assert path.exists(), str(path)
@@ -113,6 +115,7 @@ def test_export_legacy_rejects_non_aki_outcome(loaded_synthetic_config) -> None:
 
 def test_report_curves_separates_dca_figures_by_population(loaded_synthetic_config) -> None:
     artifacts = ArtifactManager(loaded_synthetic_config)
+    primary_figure_dir = report_primary_figure_directory_parts(loaded_synthetic_config)
     prediction_rows = []
     dca_rows = []
 
@@ -158,8 +161,8 @@ def test_report_curves_separates_dca_figures_by_population(loaded_synthetic_conf
 
     outputs = generate_curve_outputs(artifacts, loaded_synthetic_config)
 
-    intraop_path = artifacts.paths.artifact_path("reports", "figures", "dca_curve_intraop_Logistic_Regression.png")
-    sequence_path = artifacts.paths.artifact_path("reports", "figures", "dca_curve_intraop_LSTM_sequence_common.png")
+    intraop_path = artifacts.paths.artifact_path(*primary_figure_dir, "dca_curve_intraop_Logistic_Regression.png")
+    sequence_path = artifacts.paths.artifact_path(*primary_figure_dir, "dca_curve_intraop_LSTM_sequence_common.png")
     legacy_path = artifacts.paths.artifact_path("reports", "figures", "dca_curves_intraop.png")
 
     assert intraop_path in outputs
@@ -169,20 +172,70 @@ def test_report_curves_separates_dca_figures_by_population(loaded_synthetic_conf
     assert not legacy_path.exists()
 
 
+def test_save_figure_variants_writes_top_level_figures_directly_to_primary_figures(loaded_synthetic_config) -> None:
+    import matplotlib.pyplot as plt
+
+    artifacts = ArtifactManager(loaded_synthetic_config)
+    fig, ax = plt.subplots(figsize=(2.0, 2.0))
+    ax.plot([0, 1], [0, 1])
+    try:
+        outputs = save_figure_variants(fig, artifacts, FigureExportSpec(stem="unit_test_primary_figure"), loaded_synthetic_config)
+    finally:
+        plt.close(fig)
+
+    top_level = artifacts.paths.artifact_path("reports", "figures", "unit_test_primary_figure.png")
+    primary_figure = artifacts.paths.artifact_path("reports", "figures", "primary_figures", "unit_test_primary_figure.png")
+
+    assert primary_figure in outputs
+    assert primary_figure.exists()
+    assert top_level not in outputs
+    assert not top_level.exists()
+
+
+def test_save_figure_variants_does_not_mirror_nested_figure_directories(loaded_synthetic_config) -> None:
+    import matplotlib.pyplot as plt
+
+    artifacts = ArtifactManager(loaded_synthetic_config)
+    fig, ax = plt.subplots(figsize=(2.0, 2.0))
+    ax.plot([0, 1], [1, 0])
+    try:
+        outputs = save_figure_variants(
+            fig,
+            artifacts,
+            FigureExportSpec(
+                stem="unit_test_nested_figure",
+                directory_parts=("reports", "figures", "shap_scatter"),
+            ),
+            loaded_synthetic_config,
+        )
+    finally:
+        plt.close(fig)
+
+    nested = artifacts.paths.artifact_path("reports", "figures", "shap_scatter", "unit_test_nested_figure.png")
+    mirrored = artifacts.paths.artifact_path("reports", "figures", "primary_figures", "unit_test_nested_figure.png")
+
+    assert nested in outputs
+    assert nested.exists()
+    assert mirrored not in outputs
+    assert not mirrored.exists()
+
+
 def test_consort_outputs_branch_to_final_active_outcome_split(loaded_synthetic_config) -> None:
     config = _activate_outcome_config(loaded_synthetic_config, "macce")
     artifacts = ArtifactManager(config)
+    primary_figure_dir = report_primary_figure_directory_parts(config)
     preop_audit = pd.DataFrame(
         [
             {"step": "raw_operations", "count": 120, "note": "raw"},
             {"step": "adult_only", "count": 118, "note": "adult filter"},
             {"step": "has_opend_time", "count": 110, "note": "op end"},
             {"step": "after_prefix_exclusions", "count": 100, "note": "prefix"},
+            {"step": "after_procedure_audit_resolution", "count": 98, "note": "procedure audit"},
         ]
     )
     labels_audit = pd.DataFrame(
         [
-            {"step": "tabular_ops_before_labels", "count": 92, "note": "tabular"},
+            {"step": "tabular_ops_before_labels", "count": 90, "note": "tabular"},
             {"step": "has_preop_creatinine", "count": 88, "note": "preop creatinine"},
             {"step": "has_postop_creatinine_or_dialysis", "count": 80, "note": "postop creatinine"},
             {"step": "final_labeled_ops", "count": 80, "note": "final"},
@@ -190,13 +243,13 @@ def test_consort_outputs_branch_to_final_active_outcome_split(loaded_synthetic_c
     )
     artifacts.write_dataframe(preop_audit, "cohort", "preop_audit.csv")
     artifacts.write_dataframe(labels_audit, "cohort", "labels_audit.csv")
-    artifacts.write_dataframe(pd.DataFrame({"op_id": range(100)}), "features", "preop", "preop_features.csv")
-    artifacts.write_dataframe(pd.DataFrame({"op_id": range(92)}), "features", "intraop", "feature_engineered.csv")
+    artifacts.write_dataframe(pd.DataFrame({"op_id": range(98)}), "features", "preop", "preop_features.csv")
+    artifacts.write_dataframe(pd.DataFrame({"op_id": range(90)}), "features", "intraop", "feature_engineered.csv")
     artifacts.write_dataframe(pd.DataFrame({"op_id": range(80), "macce": [0] * 64 + [1] * 16}), "cohort", "labels.csv")
 
     outputs = generate_consort_outputs(artifacts)
 
-    dot_path = artifacts.paths.artifact_path("reports", "figures", "consort.dot")
+    dot_path = artifacts.paths.artifact_path(*primary_figure_dir, "consort.dot")
     dot_text = dot_path.read_text(encoding="utf-8")
 
     assert dot_path in outputs
@@ -204,6 +257,8 @@ def test_consort_outputs_branch_to_final_active_outcome_split(loaded_synthetic_c
     assert 'label="Study Cohort Flow and Final 30-day MACCE Split"' in dot_text
     assert "splines=ortho" in dot_text
     assert 'ordering="out"' in dot_text
+    assert "Analytic preoperative cohort\\nn = 98" in dot_text
+    assert "Excluded procedure-audit cases" in dot_text
     assert "final_labeled:s -> final_negative:n [minlen=1];" in dot_text
     assert "final_labeled:s -> final_positive:n [minlen=1];" in dot_text
     assert 'analytic_preop:e -> excluded_preop:w' in dot_text
@@ -315,6 +370,77 @@ def test_cohort_characteristics_use_legacy_sex_encoding_and_deduped_departments(
     assert "UR" not in cohort_table["characteristic"].tolist()
     assert "Department, n (%)" in cohort_markdown
     assert "Department Surgery type, n (%)" not in cohort_markdown
+
+
+def test_cohort_characteristics_separate_patient_and_operation_outcome_counts(loaded_synthetic_config) -> None:
+    artifacts = ArtifactManager(loaded_synthetic_config)
+    combined_df = pd.DataFrame(
+        [
+            {
+                "op_id": 1,
+                "patient_id": 101,
+                "subject_id": 101,
+                "age": 50.0,
+                "sex": False,
+                "height": 160.0,
+                "weight": 60.0,
+                "asa": 2.0,
+                "BSA": 1.6,
+                "BMI": 23.4,
+                "booking_case_length": 120.0,
+                "num_card_events": 0.0,
+                "department_GS": 1,
+            },
+            {
+                "op_id": 2,
+                "patient_id": 101,
+                "subject_id": 101,
+                "age": 50.0,
+                "sex": False,
+                "height": 160.0,
+                "weight": 60.0,
+                "asa": 2.0,
+                "BSA": 1.6,
+                "BMI": 23.4,
+                "booking_case_length": 140.0,
+                "num_card_events": 0.0,
+                "department_GS": 1,
+            },
+            {
+                "op_id": 3,
+                "patient_id": 202,
+                "subject_id": 202,
+                "age": 62.0,
+                "sex": True,
+                "height": 168.0,
+                "weight": 72.0,
+                "asa": 3.0,
+                "BSA": 1.8,
+                "BMI": 25.5,
+                "booking_case_length": 90.0,
+                "num_card_events": 1.0,
+                "department_GS": 0,
+            },
+        ]
+    )
+    labels_df = pd.DataFrame({"op_id": [1, 2, 3], "aki_boolean": [1, 0, 0]})
+
+    artifacts.write_dataframe(combined_df, "datasets", "tabular", "tabular_combined_unnormalized.csv")
+    artifacts.write_dataframe(combined_df[["op_id", "sex", "department_GS"]], "features", "preop", "preop_features.csv")
+    artifacts.write_dataframe(labels_df, "cohort", "labels.csv")
+
+    generate_table_outputs(artifacts)
+
+    cohort_table = pd.read_csv(artifacts.paths.artifact_path("reports", "tables", "cohort_characteristics.csv"))
+    patient_outcome_row = cohort_table.loc[
+        cohort_table["characteristic"] == "Patients with Postoperative AKI, n (%)"
+    ].iloc[0]
+    operation_outcome_row = cohort_table.loc[
+        cohort_table["characteristic"] == "Operations with Postoperative AKI, n (%)"
+    ].iloc[0]
+
+    assert patient_outcome_row["finding"] == "1 (50.00%)"
+    assert operation_outcome_row["finding"] == "1 (33.33%)"
 
 
 def test_performance_tables_filter_asa_rule_and_render_column_gradients(loaded_synthetic_config) -> None:

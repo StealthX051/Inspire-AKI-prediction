@@ -90,11 +90,11 @@ For grouped modes, `raw_predictions.parquet` now contains both outer-test rows (
 
 | Command | Main implementation | Primary outputs | Notes |
 | --- | --- | --- | --- |
-| `report consort` | `pipelines/report.py:run_consort` | `reports/tables/consort_audit.*`, `reports/figures/consort.{png,svg}`, DOT source | Standalone consort generation |
+| `report consort` | `pipelines/report.py:run_consort` | `reports/tables/consort_audit.*`, `reports/figures/primary_figures/consort.{png,svg}`, DOT source | Standalone consort generation; canonical top-level report figures now land under `reports/figures/primary_figures/` by default for easier download |
 | `report tables` | `pipelines/report.py:run_tables` | manuscript-facing tables in `html`, `md`, and `csv` | Performance, cohort, CI, DeLong, and reclassification tables |
-| `report curves` | `pipelines/report.py:run_curves` | ROC, PR, calibration, and DCA figures in `png` and `svg` | Fold/run aggregation happens here |
+| `report curves` | `pipelines/report.py:run_curves` | ROC, PR, calibration, and DCA figures in `png` and `svg` under `reports/figures/primary_figures/` | Fold/run aggregation happens here; nested figure directories such as SHAP scatter/dependence stay in place |
 | `report procedure-audit` | `pipelines/report.py:run_procedure_audit` | ICD-10-PCS audit tables plus `manifests/report_procedure_audit.json` | Explicit cardiothoracic/noncardiac procedure audit on final `cohort/labels.csv` `op_id`s joined back to raw `operations.csv`; transparency companion to the default strict noncardiac cohort, but still not part of `report manuscript` or `run all` |
-| `report manuscript` | `pipelines/report.py:run_manuscript` | combined outputs under `reports/` | Dispatches the configured manuscript sections, including SHAP when enabled |
+| `report manuscript` | `pipelines/report.py:run_manuscript` | combined outputs under `reports/` | Dispatches the configured manuscript sections, including SHAP when enabled; canonical top-level report figures land under `reports/figures/primary_figures/` by default |
 
 ### Compat And Runtime
 

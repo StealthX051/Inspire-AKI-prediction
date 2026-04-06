@@ -36,6 +36,7 @@ from inspire_aki.reporting.shap import (
     _sample_frame,
     _write_importance_csv,
 )
+from inspire_aki.reporting.rendering import report_primary_figure_directory_parts
 from inspire_aki.runtime import build_stage_runtime_plan
 
 
@@ -883,7 +884,10 @@ def run_missingness_sensitivity_analysis(
             context.baseline_artifacts.paths.artifact_path("explainability", "shap_importance_combined_xgb.csv")
         ),
         "baseline_shap_beeswarm": str(
-            context.baseline_artifacts.paths.artifact_path("reports", "figures", f"{BASELINE_FIGURE_STEM}.png")
+            context.baseline_artifacts.paths.artifact_path(
+                *report_primary_figure_directory_parts(context.config),
+                f"{BASELINE_FIGURE_STEM}.png",
+            )
         ),
         "sensitivity_artifacts_dir": str(context.sensitivity_artifacts.paths.artifacts_root),
         "raw_predictions": str(artifact_outputs["raw_predictions"]),
