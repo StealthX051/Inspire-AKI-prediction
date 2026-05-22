@@ -194,11 +194,7 @@ cython_debug/
 *.sqlite3
 
 !configs/clinical_baselines/intraperitoneal_proxy_map_5char.csv
-!reports/department_os_summary.csv
-!reports/department_os_top_icd10pcs4.csv
-!reports/department_raw_counts.csv
-!reports/department_ot_summary.csv
-!reports/department_ot_top_icd10pcs4.csv
+!dryad/data_sources_manifest.csv
 
 ### venv ###
 # Virtualenv
@@ -241,9 +237,69 @@ pip-selfcheck.json
 
 saved_data/
 artifacts/
+reports/
+outputs/
+results/
 logs/
 benchmarks/
 external/
-legacy/code/notebooks/mljar_results_improved/
+data/
+raw_data/
+inspire/
+models/
+checkpoints/
+*/ncs_inspire*/
 
 preoperative_models/AutogluonModels/
+AutogluonModels*/
+
+# --- Publication release / Dryad safety block ---
+# Raw INSPIRE or local data
+/data/
+/raw_data/
+/inspire/
+/external/
+/saved_data/
+*/ncs_inspire*/
+
+# Generated artifacts and reports
+/artifacts/
+/reports/
+/outputs/
+/results/
+/logs/
+/benchmarks/
+/models/
+/checkpoints/
+preoperative_models/
+AutogluonModels*/
+*/AutogluonModels*/
+
+# Data/model artifacts; keep only intentional source/config exceptions
+*.tsv
+*.xlsx
+*.xls
+*.parquet
+*.feather
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+*.onnx
+*.npy
+*.npz
+*.sqlite
+*.sqlite3
+*.db
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+
+# CSVs are generally unsafe unless explicitly allowed below
+*.csv
+!dryad/data_sources_manifest.csv
+!configs/clinical_baselines/intraperitoneal_proxy_map_5char.csv
+# --- End publication release / Dryad safety block ---

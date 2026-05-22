@@ -1,12 +1,25 @@
-# Inspire-AKI-prediction
+# INSPIRE AKI Prediction
 
-`inspire-aki` is the maintained interface for this repository. The package under `src/inspire_aki/` is the current pipeline for INSPIRE postoperative outcome modeling, with AKI as the default shipped target and additional outcome configs available for adjacent studies.
+Analysis code for the JAMIA Open article:
 
-Legacy scripts, notebooks, and historical outputs are still kept in-repo for audit and manuscript-reference work, but they now live under [`legacy/`](legacy/README.md) and are archive-only.
+**Integration of Intraoperative Data in Interpretable Machine Learning Models to Predict Postoperative AKI in Noncardiac Surgery Patients**
 
-## Quick Start
+This repository provides code, configuration files, tests, and environment files for reproducing the manuscript analyses after obtaining authorized access to the source data.
 
-Preferred reproducible setup:
+## Data access
+
+The source data analyzed in the study are INSPIRE version 1.3, available from PhysioNet:
+
+- INSPIRE version 1.3 DOI: https://doi.org/10.13026/46m4-f655
+- PhysioNet record: https://physionet.org/content/inspire/1.3/
+
+INSPIRE source files and row-level derived datasets are not included in this repository or in the associated Dryad record. Users must obtain authorized access through PhysioNet and agree to the applicable Data Use Agreement before running the full analysis.
+
+Although later INSPIRE versions may be available, this study used INSPIRE version 1.3.
+
+## Quick start
+
+Analyses were performed in Python 3.10. The preferred reproducible setup is:
 
 ```bash
 conda env create -f environment.yml
@@ -29,16 +42,28 @@ Then confirm the CLI is installed:
 inspire-aki --help
 ```
 
-## Primary Interface
+## Local paths
+
+The shipped configs contain site-specific defaults for the original analysis environment. Before running the pipeline, update local paths in the selected config, for example:
+
+```yaml
+paths:
+  raw_inspire_dir: /path/to/authorized/INSPIRE_v1.3
+  artifacts_dir: /path/to/local/artifacts
+```
+
+Generated artifacts, reports, trained models, predictions, train/test splits, patient-level SHAP values, and row-level derived datasets should remain local and are excluded from the publication release snapshot.
+
+## Primary interface
 
 - Package code: `src/inspire_aki/`
 - CLI entrypoint: `inspire-aki`
 - Shipped configs: `configs/aki/` and `configs/macce/`
 - Helper wrappers: `scripts/run_smoke_test.sh`, `scripts/benchmark_runtime_profiles.sh`
-- Focused reviewer-response audit utilities: `scripts/department_os_audit.py`, `scripts/department_ot_reviewer_report.py`, `scripts/combined_xgb_missingness_sensitivity.py`, `scripts/run_reviewer_missingness_sensitivity.sh`
+- Supplemental sensitivity and audit utilities: `scripts/department_os_audit.py`, `scripts/department_ot_reviewer_report.py`, `scripts/combined_xgb_missingness_sensitivity.py`, `scripts/run_reviewer_missingness_sensitivity.sh`
 - Tests: `tests/`
 
-## Typical Runs
+## Typical runs
 
 Inspect the resolved runtime plan before a new host-class run:
 
@@ -51,9 +76,6 @@ Run the full default AKI pipeline:
 ```bash
 inspire-aki run all --config configs/aki/default.yaml
 ```
-
-The default AKI config now includes two preoperative clinical baselines alongside the learned models:
-`asa_rule` and `gs_aki_rule` (`Adapted GS-AKI`). `gs_aki_rule` is a maintained reviewer-response baseline that reuses the same patient-grouped manifests, metrics, and report flow as the rest of the current pipeline, but it is kept as a deterministic ordinal count/class score rather than isotonic-calibrated or threshold-optimized.
 
 Resume stage-by-stage when needed:
 
@@ -71,68 +93,36 @@ inspire-aki evaluate reclassification --config configs/aki/default.yaml
 inspire-aki report manuscript --config configs/aki/default.yaml
 ```
 
-Iterate on manuscript-facing outputs without retraining:
+Run supplemental sensitivity or audit utilities only when needed:
 
 ```bash
-inspire-aki report consort --config configs/aki/default.yaml
-inspire-aki report tables --config configs/aki/default.yaml
-inspire-aki report manuscript --config configs/aki/default.yaml
-```
-
-Top-level manuscript figure exports now write directly into `reports/figures/primary_figures/` by default so the main figure bundle can be downloaded without pulling nested SHAP scatter/dependence directories.
-
-The default full-study configs now emit maintained SHAP beeswarms plus raw-value SHAP scatter plots for enabled SHAP jobs. Scatter and manual dependence plots explain the full held-out split, while the explainer background rows remain sampled for reproducible runtime. The SHAP stage now also balances its worker budget across active jobs instead of fanning out equally across every configured job, which shortens wall-clock time on larger hosts. The current featured manuscript scatter copies for `BSA`, `max_hr`, `max_inibg_mbp`, `op_len`, `preop_hb`, and `ward_rr` are mirrored under `reports/figures/shap_scatter_featured/` when those features are available in the selected SHAP job output.
-
-Run the focused department reviewer-response audits when needed:
-
-```bash
+bash scripts/run_reviewer_missingness_sensitivity.sh
 .venv/bin/python scripts/department_os_audit.py --config configs/aki/default.yaml
 .venv/bin/python scripts/department_ot_reviewer_report.py --config configs/aki/default.yaml
 ```
 
-These narrow audit scripts are maintained repo utilities under `scripts/`, not CLI stages. They now default to artifact-root reviewer outputs under `reports/reviewer_department_audit/`.
+## Data and scope
 
-Run the focused missingness reviewer workflow when needed:
-
-```bash
-bash scripts/run_reviewer_missingness_sensitivity.sh
-```
-
-This reviewer workflow is also intentionally outside `run all` and the CLI stage map. It reruns the combined `xgb` baseline into a fresh artifact root, then runs a fold-fit sensitivity analysis that replaces the `>10%` sentinel handling with median imputation plus explicit missingness indicators while preserving the current grouped split, outer-train-only calibration, thresholding, and reporting logic. Its comparison tables and markdown summary now default to the chosen sensitivity artifact root under `reports/reviewer_missingness_sensitivity/`.
-
-Run the cardiothoracic procedure audit explicitly when needed:
-
-```bash
-inspire-aki report procedure-audit --config configs/aki/default.yaml
-```
-
-The shipped default AKI config now points to the strict operation-level adjudicated noncardiac cohort used for the paper. The explicit procedure-audit report remains available as the transparency companion to that default filtering rule, but it is still not part of `report manuscript` or `run all`.
-
-If you want to rerun the same strict cohort into a separate artifact root for isolated review work, the compatibility alias remains available:
-
-```bash
-inspire-aki run all --config configs/aki/strict_noncardiac_review.yaml
-```
-
-The currently mounted `artifacts/default` tree may predate this default-cohort promotion. Regenerate it before citing updated cohort counts, event counts, or procedure-audit totals from the new default path.
-
-## Data And Scope
-
-- This repo is not turnkey. End-to-end execution still requires private INSPIRE data.
-- Raw data location is configured through `paths.raw_inspire_dir`; the shipped configs target the mounted volume path `/media/volume/ncs_inspire_data/ncs_aki/data/inspire`.
-- Stage outputs, manifests, predictions, and reports are written under the configured `paths.artifacts_dir`.
-- The mounted data/artifact volume in this environment is `/media/volume/ncs_inspire_data`, not `/media/volume`; check free space on that mountpoint before long runs.
+- End-to-end execution requires authorized INSPIRE data.
+- Raw data location is configured through `paths.raw_inspire_dir`.
+- Stage outputs, manifests, predictions, and reports are written under `paths.artifacts_dir`.
 - The maintained shipped configs use patient-grouped evaluation modes. `evaluate generate` materializes manifests on `patient_id` so the same patient does not cross train/test or train/validation boundaries in grouped runs.
 - Calibration and threshold selection are guarded against leakage in the maintained grouped modes: learned models generate outer-train OOF calibration predictions from patient-grouped inner folds, fit isotonic calibration on those outer-train rows only, choose thresholds on the same calibrated outer-train rows, and then apply both to untouched outer-test operations.
 - The maintained rule baselines keep prespecified thresholds instead of data-chosen cutoffs. `asa_rule` stays a binary preop rule, while `gs_aki_rule` is evaluated primarily by ordinal count/class with a prespecified Class III+ high-risk threshold only when binary metrics are needed.
 - The default AKI run evaluates both maintained clinical baselines (`asa_rule` and the proxy-based `gs_aki_rule`) on that same grouped leakage-safe path; `gs_aki_rule` is restricted to the AKI outcome and the preop dataset regime.
-- `inspire-aki compat export-legacy` remains explicit and AKI-only; it is not part of `run all`.
 
-## Repo Map
+## Documentation
 
-- Current pipeline docs: [`docs/current/README.md`](docs/current/README.md)
-- Reviewer-facing context: [`docs/reviewer/README.md`](docs/reviewer/README.md)
-- Legacy archive: [`legacy/README.md`](legacy/README.md)
-- Contributor notes: [`AGENTS.md`](AGENTS.md), `docs/HANDOFF/`, `docs/TODO/`
+- Current pipeline docs: `docs/current/README.md`
+- CLI stage map and artifact contracts: `docs/current/pipeline.md`
+- Dryad upload materials: `dryad/`
 
-For the detailed CLI stage map and artifact contracts, start at [`docs/README.md`](docs/README.md).
+## Citation
+
+If you use this software, please cite the associated JAMIA Open article, the archived software release, and the INSPIRE source dataset. See `CITATION.cff` for software citation metadata.
+
+## License
+
+This repository is released under the MIT License. See `LICENSE`.
+
+This license applies to the code and repository documentation. INSPIRE source data are not included in this repository and must be obtained separately through PhysioNet under the applicable access terms.

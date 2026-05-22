@@ -1,9 +1,0 @@
-rank,icd10_pcs4,n_ops,pct_of_ot_ops,aki_positive_n,aki_rate,body_system_desc,canonical_prefix_label,sample_long_title
-1,08DJ,178,37.39495798319328,37,20.786516853932586,Eye,Extraction of Right Lens,"Extraction of Right Lens, Percutaneous Approach"
-2,08R4,100,21.008403361344538,17,17.0,Eye,Replacement of Right Vitreous,"Replacement of Right Vitreous with Autologous Tissue Substitute, Percutaneous Approach"
-3,08RJ,63,13.23529411764706,9,14.285714285714285,Eye,Replacement of Right Lens,"Replacement of Right Lens with Autologous Tissue Substitute, Percutaneous Approach"
-4,08RK,49,10.294117647058822,9,18.367346938775512,Eye,Replacement of Left Lens,"Replacement of Left Lens with Autologous Tissue Substitute, Percutaneous Approach"
-5,08R5,18,3.7815126050420167,4,22.22222222222222,Eye,Replacement of Left Vitreous,"Replacement of Left Vitreous with Autologous Tissue Substitute, Percutaneous Approach"
-6,08R9,11,2.3109243697478994,0,0.0,Eye,Replacement of Left Cornea,"Replacement of Left Cornea with Autologous Tissue Substitute, Percutaneous Approach"
-7,08Q1,6,1.2605042016806722,0,0.0,Eye,Repair Left Eye,"Repair Left Eye, External Approach"
-8,08T0,5,1.050420168067227,0,0.0,Eye,Resection of Right Eye,"Resection of Right Eye, External Approach"

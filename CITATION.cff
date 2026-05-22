@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the associated JAMIA Open article, archived software release, and INSPIRE source dataset."
+title: "INSPIRE AKI Prediction"
+version: "1.0.0"
+date-released: "2026-05-21"
+repository-code: "https://github.com/VivaSuresh/Inspire-AKI-prediction"
+license: MIT
+authors:
+  - family-names: Do
+    given-names: Justin
+  - family-names: Shah
+    given-names: Karan H.
+  - family-names: Xu
+    given-names: Melissa Chen
+  - family-names: Kim
+    given-names: Andrew H.
+  - family-names: Suresh
+    given-names: Vivaswat
+  - family-names: Guggilla
+    given-names: Nidhir
+  - family-names: Li
+    given-names: Michael
+  - family-names: Kothari
+    given-names: Rishi
+references:
+  - type: data
+    title: "INSPIRE, a publicly available research dataset for perioperative medicine"
+    authors:
+      - family-names: Lim
+        given-names: Leerang
+      - family-names: Lee
+        given-names: Hyung-Chul
+    doi: "10.13026/46m4-f655"
+    version: "1.3"
