@@ -1,6 +1,6 @@
 # Inspire-AKI-prediction
 
-[![DOI](https://zenodo.org/badge/871799867.svg)](https://doi.org/10.5281/zenodo.20357628)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20357628-blue.svg)](https://doi.org/10.5281/zenodo.20357628)
 
 `inspire-aki` is the maintained interface for this repository. The package under `src/inspire_aki/` is the current pipeline for INSPIRE postoperative outcome modeling, with AKI as the default shipped target and additional outcome configs available for adjacent studies.
 
