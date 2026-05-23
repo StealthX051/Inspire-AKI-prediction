@@ -1,8 +1,18 @@
 # Inspire-AKI-prediction
 
+[![DOI](https://zenodo.org/badge/871799867.svg)](https://doi.org/10.5281/zenodo.20357628)
+
 `inspire-aki` is the maintained interface for this repository. The package under `src/inspire_aki/` is the current pipeline for INSPIRE postoperative outcome modeling, with AKI as the default shipped target and additional outcome configs available for adjacent studies.
 
 Legacy scripts, notebooks, and historical outputs are still kept in-repo for audit and manuscript-reference work, but they now live under [`legacy/`](legacy/README.md) and are archive-only.
+
+## Branch workflow
+
+`main` is the maintained development branch. Start new work from `main` and use short-lived feature branches, for example `feature/macce-outcome-modeling`.
+
+The `release/jamia-open-dryad-2026` branch and `v1.0.0-jamia-open` tag are the cleaned JAMIA Open reproducibility snapshot. They should remain fixed except for explicit release maintenance.
+
+Development branches may include internal contributor notes and workflow docs. Archived citable release branches should omit those materials unless they are intentionally publication-facing.
 
 ## Quick Start
 
@@ -133,6 +143,17 @@ The currently mounted `artifacts/default` tree may predate this default-cohort p
 - Current pipeline docs: [`docs/current/README.md`](docs/current/README.md)
 - Reviewer-facing context: [`docs/reviewer/README.md`](docs/reviewer/README.md)
 - Legacy archive: [`legacy/README.md`](legacy/README.md)
-- Contributor notes: [`AGENTS.md`](AGENTS.md), `docs/HANDOFF/`, `docs/TODO/`
 
 For the detailed CLI stage map and artifact contracts, start at [`docs/README.md`](docs/README.md).
+
+## Citation
+
+Published JAMIA Open reproducibility release: https://doi.org/10.5281/zenodo.20357629
+
+If you use this software, please cite the associated JAMIA Open article, the archived software release, and the INSPIRE source dataset. See `CITATION.cff` for software citation metadata.
+
+## License
+
+This repository is released under the MIT License. See `LICENSE`.
+
+INSPIRE source data are not included in this repository and must be obtained separately through PhysioNet under the applicable access terms.
